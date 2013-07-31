@@ -26,5 +26,19 @@ func TestBasics(t *testing.T) {
 		t.Logf("\tManufacturer: %s", manufact)
 		t.Logf("\tProduct: %s", product)
 		t.Logf("\tSerial: %s", serial)
+
+		dev, err := Open(i)
+		if err != nil {
+			t.Fatalf("Open failed: %+v", err)
+		}
+		t.Logf("\tTuner Type: %s", dev.GetTunerType())
+		if gains, err := dev.GetTunerGains(); err != nil {
+			t.Errorf("GetTunerGains failed: %+v", err)
+		} else {
+			t.Logf("\tTuner Gains: %+v", gains)
+		}
+		if err := dev.Close(); err != nil {
+			t.Fatalf("Close failed: %+v", err)
+		}
 	}
 }
