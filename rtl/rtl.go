@@ -2,8 +2,10 @@
 package rtl
 
 // #cgo LDFLAGS: -lrtlsdr
+// #cgo pkg-config: libusb-1.0
 // #include <stdlib.h>
 // #include <rtl-sdr.h>
+// #include <libusb.h>
 import "C"
 
 import (
@@ -39,6 +41,12 @@ var (
 		TunerTypeR820T:   "R820T",
 	}
 )
+
+type ErrLibUSB int
+
+func (e ErrLibUSB) Error() string {
+	return C.GoString(C.libusb_error_name(C.int(e)))
+}
 
 func (tt TunerType) String() string {
 	if name := tunerTypeNames[tt]; name == "" {
@@ -227,8 +235,8 @@ func (dev *Device) ResetBuffer() error {
 
 func (dev *Device) Read(buf []byte) (int, error) {
 	var nRead C.int
-	if C.rtlsdr_read_sync(dev.cDev, unsafe.Pointer(&buf[0]), C.int(len(buf)), &nRead) != 0 {
-		return 0, ErrFailed
+	if res := C.rtlsdr_read_sync(dev.cDev, unsafe.Pointer(&buf[0]), C.int(len(buf)), &nRead); res != 0 {
+		return 0, ErrLibUSB(int(res))
 	}
 	return int(nRead), nil
 }
