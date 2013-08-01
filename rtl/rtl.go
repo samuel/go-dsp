@@ -189,10 +189,46 @@ func (dev *Device) SetTunerGainMode(manual bool) error {
 	return nil
 }
 
-// select the baseband filters according to the requested sample rate
+// Enable or disable the internal digital AGC of the RTL2832.
+func (dev *Device) SetAGCMode(enabled bool) error {
+	cEnabled := C.int(0)
+	if enabled {
+		cEnabled = 1
+	}
+	if C.rtlsdr_set_agc_mode(dev.cDev, cEnabled) != 0 {
+		return ErrFailed
+	}
+	return nil
+}
+
+// Select the baseband filters according to the requested sample rate
 func (dev *Device) SetSampleRate(rate uint) error {
 	if C.rtlsdr_set_sample_rate(dev.cDev, C.uint32_t(rate)) != 0 {
 		return ErrFailed
 	}
 	return nil
+}
+
+// Get actual sample rate the device is configured to
+func (dev *Device) GetSampleRate() (int, error) {
+	if sampleRate := C.rtlsdr_get_sample_rate(dev.cDev); sampleRate == 0 {
+		return 0, ErrFailed
+	} else {
+		return int(sampleRate), nil
+	}
+}
+
+func (dev *Device) ResetBuffer() error {
+	if C.rtlsdr_reset_buffer(dev.cDev) < 0 {
+		return ErrFailed
+	}
+	return nil
+}
+
+func (dev *Device) Read(buf []byte) (int, error) {
+	var nRead C.int
+	if C.rtlsdr_read_sync(dev.cDev, unsafe.Pointer(&buf[0]), C.int(len(buf)), &nRead) != 0 {
+		return 0, ErrFailed
+	}
+	return int(nRead), nil
 }
