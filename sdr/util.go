@@ -21,25 +21,29 @@ type Demodulator interface {
 	Demodulate(input []complex64, output []float32) (int, error)
 }
 
-/////////// native complex128
-
 type Rotate90Filter struct {
-	currentAngle int
+	// currentAngle int
 }
 
 func (fi *Rotate90Filter) Filter(samples []complex64) ([]complex64, error) {
-	for i := 0; i < len(samples); i++ {
-		switch fi.currentAngle {
-		case 0:
-			// noop
-		case 1:
-			samples[i] = complex(-imag(samples[i+1]), real(samples[i+1]))
-		case 2:
-			samples[i] = -samples[i+2]
-		case 3:
-			samples[i] = complex(imag(samples[i+3]), -real(samples[i+3]))
-		}
-		fi.currentAngle = (fi.currentAngle + 1) & 3
+	// for i := 0; i < len(samples); i++ {
+	// 	switch fi.currentAngle {
+	// 	case 0:
+	// 		// noop
+	// 	case 1:
+	// 		samples[i] = complex(-imag(samples[i]), real(samples[i]))
+	// 	case 2:
+	// 		samples[i] = -samples[i]
+	// 	case 3:
+	// 		samples[i] = complex(imag(samples[i]), -real(samples[i]))
+	// 	}
+	// 	fi.currentAngle = (fi.currentAngle + 1) & 3
+	// }
+	// return samples, nil
+	for i := 0; i < len(samples); i += 4 {
+		samples[i+1] = complex(-imag(samples[i+1]), real(samples[i+1]))
+		samples[i+2] = -samples[i+2]
+		samples[i+3] = complex(imag(samples[i+3]), -real(samples[i+3]))
 	}
 	return samples, nil
 }
@@ -72,7 +76,7 @@ func PolarDiscriminator(a, b complex128) float64 {
 }
 
 func PolarDiscriminator32(a, b complex64) float32 {
-	return Phase32(a*Conj32(b)) / math.Pi
+	return FastPhase32(a * Conj32(b)) // / math.Pi
 }
 
 type FMDemodFilter struct {
@@ -88,44 +92,26 @@ func (fi *FMDemodFilter) Demodulate(input []complex64, output []float32) (int, e
 	return len(input), nil
 }
 
-type LowPassDownsampleFilter struct {
-	Downsample int
-}
-
-func (fi *LowPassDownsampleFilter) Filter(samples []float32) ([]float32, error) {
-	i := 0
-	for i < len(samples) {
-		sum := float32(0.0)
-		for i2 := 0; i2 < fi.Downsample; i2++ {
-			sum += samples[i+i2]
-		}
-		samples[i/fi.Downsample] = sum // /step
-		i += fi.Downsample
-	}
-	samples[i/fi.Downsample+1] = samples[i/fi.Downsample]
-	return samples[:len(samples)/fi.Downsample], nil
-}
-
 type LowPassDownsampleRationalFilter struct {
 	Fast, Slow int
 
-	nowLPR       float32
-	prevLPRIndex int
+	sum       float32
+	prevIndex int
 }
 
 func (fi *LowPassDownsampleRationalFilter) Filter(samples []float32) ([]float32, error) {
 	i2 := 0
-	fastSlowRatio := float32(fi.Fast) / float32(fi.Slow)
+	fastSlowRatio := float32(fi.Slow) / float32(fi.Fast)
 	for i := 0; i < len(samples); i++ {
-		fi.nowLPR += samples[i]
-		fi.prevLPRIndex += fi.Slow
-		if fi.prevLPRIndex < fi.Fast {
+		fi.sum += samples[i]
+		fi.prevIndex += fi.Slow
+		if fi.prevIndex < fi.Fast {
 			continue
 		}
-		samples[i2] = fi.nowLPR / fastSlowRatio
-		fi.prevLPRIndex -= fi.Fast
-		fi.nowLPR = 0
 		i2++
+		samples[i2] = fi.sum * fastSlowRatio
+		fi.prevIndex -= fi.Fast
+		fi.sum = 0.0
 	}
 	return samples[:i2], nil
 }
