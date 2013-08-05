@@ -121,6 +121,45 @@ func (dev *Device) Close() error {
 	return nil
 }
 
+/*!
+ * Set crystal oscillator frequencies used for the RTL2832 and the tuner IC.
+ *
+ * Usually both ICs use the same clock. Changing the clock may make sense if
+ * you are applying an external clock to the tuner or to compensate the
+ * frequency (and samplerate) error caused by the original (cheap) crystal.
+ *
+ * NOTE: Call this function only if you fully understand the implications.
+ *
+ * \param dev the device handle given by rtlsdr_open()
+ * \param rtl_freq frequency value used to clock the RTL2832 in Hz
+ * \param tuner_freq frequency value used to clock the tuner IC in Hz
+ * \return 0 on success
+ */
+func (dev *Device) SetXtalFreq(rtlFreq, tunerFreq uint) error {
+	if C.rtlsdr_set_xtal_freq(dev.cDev, C.uint32_t(rtlFreq), C.uint32_t(tunerFreq)) != 0 {
+		return ErrFailed
+	}
+	return nil
+}
+
+/*!
+ * Get crystal oscillator frequencies used for the RTL2832 and the tuner IC.
+ *
+ * Usually both ICs use the same clock.
+ *
+ * \param dev the device handle given by rtlsdr_open()
+ * \param rtl_freq frequency value used to clock the RTL2832 in Hz
+ * \param tuner_freq frequency value used to clock the tuner IC in Hz
+ * \return 0 on success
+ */
+func (dev *Device) GetXtalFreq() (uint, uint, error) {
+	var rtlFreq, tunerFreq C.uint32_t
+	if C.rtlsdr_get_xtal_freq(dev.cDev, &rtlFreq, &tunerFreq) != 0 {
+		return 0, 0, ErrFailed
+	}
+	return uint(rtlFreq), uint(tunerFreq), nil
+}
+
 // Get actual frequency the device is tuned to in Hz.
 func (dev *Device) GetCenterFreq() (uint, error) {
 	freq := C.rtlsdr_get_center_freq(dev.cDev)
