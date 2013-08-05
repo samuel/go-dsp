@@ -18,14 +18,17 @@ import (
 const (
 	debug = true
 
-	defaultPort      = 28888
-	eol              = "\n"
-	samplesPerPacket = 4096
+	defaultPort       = 28888
+	eol               = "\n"
+	samplesPerPacket  = 4096
+	defaultCenterFreq = 144.1e6
+	defaultSampleRate = 1000000
 	// deviceCacheUpdateInterval = time.Second * 60
 
 	cmdAntenna = "ANTENNA"
 	cmdDevice  = "DEVICE"
 	cmdFreq    = "FREQ"
+	cmdGain    = "GAIN"
 	cmdRate    = "RATE"
 
 	resOK      = "OK"
@@ -134,6 +137,8 @@ func (cli *client) sendResponse(cmd string, args ...string) error {
 	return err
 }
 
+// 2013/08/05 21:49:08 CLIENT: DEVICE RTL tuner=e4k
+
 func (cli *client) handleCommand(cmd string, args []string) error {
 	switch cmd {
 	default:
@@ -171,7 +176,7 @@ func (cli *client) handleCommand(cmd string, args []string) error {
 		if len(args) > 0 {
 			return cli.sendResponse(cmd, resOK)
 		} else {
-			return cli.sendResponse(cmd, resUnknown)
+			return cli.sendResponse(cmd, resOK, "default")
 		}
 	case cmdRate:
 		if cli.dev == nil {
@@ -190,10 +195,34 @@ func (cli *client) handleCommand(cmd string, args []string) error {
 			if err := cli.dev.SetSampleRate(uint(rate)); err != nil {
 				return cli.sendResponse(cmd, resFail, "failed to set sample rate")
 			} else {
-				if curRate, err := cli.dev.GetCenterFreq(); err != nil {
+				if curRate, err := cli.dev.GetSampleRate(); err != nil {
 					return cli.sendResponse(cmd, resFail, "failed to get sample rate")
 				} else {
 					return cli.sendResponse(cmd, resOK, strconv.FormatUint(uint64(curRate), 10))
+				}
+			}
+		}
+	case cmdGain:
+		if cli.dev == nil {
+			return cli.sendResponse(cmd, resDevice, "no active device")
+		}
+		if len(args) == 0 {
+			if gain, err := cli.dev.GetTunerGain(); err != nil {
+				return cli.sendResponse(cmd, "-", "failed to get gain")
+			} else {
+				return cli.sendResponse(cmd, strconv.Itoa(gain))
+			}
+		}
+		if gain, err := strconv.ParseFloat(args[0], 64); err != nil {
+			return cli.sendResponse(cmd, resFail, "invalid format for gain -- expected float")
+		} else {
+			if err := cli.dev.SetTunerGain(int(gain)); err != nil {
+				return cli.sendResponse(cmd, resFail, "failed to set gain")
+			} else {
+				if curGain, err := cli.dev.GetTunerGain(); err != nil {
+					return cli.sendResponse(cmd, resFail, "failed to get gain")
+				} else {
+					return cli.sendResponse(cmd, resOK, strconv.FormatUint(uint64(curGain), 10))
 				}
 			}
 		}
@@ -223,6 +252,8 @@ func (cli *client) handleCommand(cmd string, args []string) error {
 				} else {
 					cli.dev = dev
 					registerClientDevice(cli)
+					dev.SetCenterFreq(defaultCenterFreq)
+					dev.SetSampleRate(defaultSampleRate)
 					minGain := 0.0
 					maxGain := 1.0
 					gainStep := 1.0
