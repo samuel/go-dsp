@@ -316,7 +316,7 @@ func (dev *Device) ReadAsync(nBuffers, bufferSize int, cb AsyncCallback) error {
 				close(bufferCache)
 				break
 			}
-			sampleChan <- buf
+			bufferCache <- buf
 		}
 	}()
 
