@@ -2,6 +2,8 @@
 package rtl
 
 // #cgo LDFLAGS: -lrtlsdr
+// #cgo darwin CFLAGS: -I/usr/local/include
+// #cgo darwin LDFLAGS: -L/usr/local/lib
 // #cgo pkg-config: libusb-1.0
 // #include <stdlib.h>
 // #include <rtl-sdr.h>
@@ -54,6 +56,11 @@ func (tt TunerType) String() string {
 	} else {
 		return name
 	}
+}
+
+//export cbAsyncGo
+func cbAsyncGo(buf *C.uchar, size C.uint32_t, ctx unsafe.Pointer) {
+
 }
 
 type Device struct {
@@ -278,4 +285,55 @@ func (dev *Device) Read(buf []byte) (int, error) {
 		return 0, ErrLibUSB(int(res))
 	}
 	return int(nRead), nil
+}
+
+// Return true to stop the async loop
+type AsyncCallback func(buf []byte) bool
+
+type buffer struct {
+	bytes []byte
+	size  int
+}
+
+func (dev *Device) ReadAsync(nBuffers, bufferSize int, cb AsyncCallback) error {
+	bufferSize &^= 1
+	bufferCache := make(chan buffer, nBuffers)
+	sampleChan := make(chan buffer, nBuffers)
+
+	for i := 0; i < nBuffers; i++ {
+		bufferCache <- buffer{bytes: make([]byte, bufferSize)}
+	}
+
+	go func() {
+		for {
+			buf, ok := <-sampleChan
+			if !ok {
+				close(bufferCache)
+				cb(nil)
+				break
+			}
+			if cb(buf.bytes[:buf.size]) {
+				close(bufferCache)
+				break
+			}
+			sampleChan <- buf
+		}
+	}()
+
+	go func() {
+		for {
+			buf, ok := <-bufferCache
+			if !ok {
+				break
+			}
+			n, err := dev.Read(buf.bytes)
+			if err == nil {
+				close(sampleChan)
+				break
+			}
+			sampleChan <- buffer{bytes: buf.bytes, size: n}
+		}
+	}()
+
+	return nil
 }
