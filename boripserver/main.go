@@ -1,7 +1,8 @@
 package main
 
 // TODO:
-// * the device send loop should be a pool rethought
+// * when settings gain, pick gain closest to an available value as returned by GetRunerGains
+// * fix setting (or maybe getting) negative gains
 
 import (
 	"bufio"
@@ -246,8 +247,15 @@ func (cli *client) handleCommand(cmd string, args []string) error {
 			}
 
 			cli.dev = dev
-			dev.rtlDev.SetCenterFreq(defaultCenterFreq)
-			dev.rtlDev.SetSampleRate(defaultSampleRate)
+			if err := dev.rtlDev.SetCenterFreq(defaultCenterFreq); err != nil {
+				log.Printf("Failed to set default center frequency: %+v", err)
+			}
+			if err := dev.rtlDev.SetSampleRate(defaultSampleRate); err != nil {
+				log.Printf("Failed to set default sample rate: %+v", err)
+			}
+			if err := dev.rtlDev.SetAGCMode(false); err != nil {
+				log.Printf("Failed to diable AGC mode: %+v", err)
+			}
 			minGain := 0.0
 			maxGain := 1.0
 			gainStep := 1.0
@@ -257,8 +265,11 @@ func (cli *client) handleCommand(cmd string, args []string) error {
 			} else {
 				minGain = float64(gains[0])
 				maxGain = float64(gains[len(gains)-1])
-				// TODO: gainStep
+				gainStep = float64(gains[1] - gains[0])
 			}
+			// if debug {
+			// 	log.Printf("Gains: %+v", gains)
+			// }
 			_, tunerFreq, err := dev.rtlDev.GetXtalFreq()
 			if err != nil {
 				log.Printf("Failed to get tuner frequency: %s", err.Error())
