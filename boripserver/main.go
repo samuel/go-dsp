@@ -27,6 +27,8 @@ const (
 	defaultPort       = 28888
 	eol               = "\n"
 	samplesPerPacket  = 4096
+	packetsPerBuffer  = 4
+	sampleBufferSize  = samplesPerPacket * packetsPerBuffer
 	defaultCenterFreq = 144.1e6
 	defaultSampleRate = 1000000
 	headerSize        = 4
@@ -333,42 +335,48 @@ func (cli *client) startStreaming() error {
 	first := true
 	seq := 0
 
-	cli.dev.rtlDev.ReadAsyncUsingSync(nBuffers, samplesPerPacket*2, func(buf []byte) bool {
+	// cli.dev.rtlDev.ReadAsyncUsingSync(nBuffers, sampleBufferSize*2, func(buf []byte) bool {
+	cli.dev.rtlDev.ReadAsync(nBuffers, sampleBufferSize*2, func(buf []byte) bool {
 		if buf == nil {
 			cli.closeChan = nil
 			return true
 		}
 
-		select {
-		case _ = <-cli.closeChan:
-			cli.closeChan = nil
-			return true
-		default:
-		}
+		for bufferOffset := 0; bufferOffset < len(buf); bufferOffset += samplesPerPacket * 2 {
+			select {
+			case _ = <-cli.closeChan:
+				cli.closeChan = nil
+				return true
+			default:
+			}
 
-		n2 := headerSize + len(buf)*2
+			nValues := len(buf) - bufferOffset
+			if nValues > samplesPerPacket*2 {
+				nValues = samplesPerPacket * 2
+			}
 
-		bufOut[0] = 0
-		if first {
-			bufOut[0] |= flagStreamStart
-			first = false
-		}
-		bufOut[1] = 0 // notification: reserved (currently 0)
-		bufOut[2] = uint8(seq & 0xff)
-		bufOut[3] = uint8(seq >> 8)
-		seq++
+			bufOut[0] = 0
+			if first {
+				bufOut[0] |= flagStreamStart
+				first = false
+			}
+			bufOut[1] = 0 // notification: reserved (currently 0)
+			bufOut[2] = uint8(seq & 0xff)
+			bufOut[3] = uint8(seq >> 8)
+			seq++
 
-		o := headerSize
-		for i := 0; i < len(buf); i++ {
-			v := uint8(int(buf[i]) - 128)
-			bufOut[o] = v
-			bufOut[o+1] = v
-			o += 2
-		}
+			o := headerSize
+			for i := 0; i < nValues; i++ {
+				v := uint8(int(buf[i]) - 128)
+				bufOut[o] = v
+				bufOut[o+1] = v
+				o += 2
+			}
 
-		// TODO: check returned # of bytes written?
-		if _, err := conn.Write(bufOut[:n2]); err != nil {
-			// TODO: what to do if not "connection refused"?
+			// TODO: check returned # of bytes written?
+			if _, err := conn.Write(bufOut[:headerSize+nValues*2]); err != nil {
+				// TODO: what to do if not "connection refused"?
+			}
 		}
 
 		return false

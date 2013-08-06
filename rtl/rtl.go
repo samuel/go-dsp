@@ -8,10 +8,12 @@ package rtl
 // #include <stdlib.h>
 // #include <rtl-sdr.h>
 // #include <libusb.h>
+// #include "exports.h"
 import "C"
 
 import (
 	"errors"
+	"reflect"
 	"runtime"
 	"unsafe"
 )
@@ -58,9 +60,26 @@ func (tt TunerType) String() string {
 	}
 }
 
+// Return true to stop the async loop
+type AsyncCallback func(buf []byte) bool
+
+type asyncCallbackContext struct {
+	cb  AsyncCallback
+	dev *Device
+}
+
 //export cbAsyncGo
 func cbAsyncGo(buf *C.uchar, size C.uint32_t, ctx unsafe.Pointer) {
+	cbCtx := (*asyncCallbackContext)(ctx)
 
+	var goBuf []byte
+	sliceHeader := (*reflect.SliceHeader)((unsafe.Pointer(&goBuf)))
+	sliceHeader.Cap = int(size)
+	sliceHeader.Len = int(size)
+	sliceHeader.Data = uintptr(unsafe.Pointer(buf))
+	if cbCtx.cb(goBuf) {
+		C.rtlsdr_cancel_async(cbCtx.dev.cDev)
+	}
 }
 
 type Device struct {
@@ -287,9 +306,6 @@ func (dev *Device) Read(buf []byte) (int, error) {
 	return int(nRead), nil
 }
 
-// Return true to stop the async loop
-type AsyncCallback func(buf []byte) bool
-
 type buffer struct {
 	bytes []byte
 	size  int
@@ -342,39 +358,13 @@ func (dev *Device) ReadAsyncUsingSync(nBuffers, bufferSize int, cb AsyncCallback
 	return nil
 }
 
-// func (dev *Device) ReadAsync(nBuffers, bufferSize int, cb AsyncCallback) error {
-// 	bufferSize &^= 1
-
-// 	go func() {
-// 		for {
-// 			buf, ok := <-sampleChan
-// 			if !ok {
-// 				close(bufferCache)
-// 				cb(nil)
-// 				break
-// 			}
-// 			if cb(buf.bytes[:buf.size]) {
-// 				close(bufferCache)
-// 				break
-// 			}
-// 			bufferCache <- buf
-// 		}
-// 	}()
-
-// 	go func() {
-// 		for {
-// 			buf, ok := <-bufferCache
-// 			if !ok {
-// 				break
-// 			}
-// 			n, err := dev.Read(buf.bytes)
-// 			if err != nil {
-// 				close(sampleChan)
-// 				break
-// 			}
-// 			sampleChan <- buffer{bytes: buf.bytes, size: n}
-// 		}
-// 	}()
-
-// 	return nil
-// }
+func (dev *Device) ReadAsync(nBuffers, bufferSize int, cb AsyncCallback) error {
+	go func() {
+		ctx := &asyncCallbackContext{
+			cb:  cb,
+			dev: dev,
+		}
+		C.rtlsdr_read_async(dev.cDev, (*[0]byte)(unsafe.Pointer(C.cbAsyncPtr)), unsafe.Pointer(ctx), C.uint32_t(nBuffers), C.uint32_t(bufferSize))
+	}()
+	return nil
+}
