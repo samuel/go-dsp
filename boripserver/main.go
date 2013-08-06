@@ -6,7 +6,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"flag"
 	"fmt"
@@ -15,6 +14,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"runtime"
 	"runtime/pprof"
 	"strconv"
 	"strings"
@@ -58,8 +58,6 @@ const (
 )
 
 var (
-	endian = binary.LittleEndian
-
 	flagCpuProfile = flag.Bool("profile.cpu", false, "Enable CPU profiling")
 )
 
@@ -324,7 +322,12 @@ func (cli *client) startStreaming() error {
 	first := true
 	seq := 0
 
-	cli.dev.rtlDev.ReadAsync(nBuffers, samplesPerPacket*2, func(buf []byte) bool {
+	cli.dev.rtlDev.ReadAsyncUsingSync(nBuffers, samplesPerPacket*2, func(buf []byte) bool {
+		if buf == nil {
+			cli.closeChan = nil
+			return true
+		}
+
 		select {
 		case _ = <-cli.closeChan:
 			cli.closeChan = nil
@@ -340,13 +343,16 @@ func (cli *client) startStreaming() error {
 			first = false
 		}
 		bufOut[1] = 0 // notification: reserved (currently 0)
-		endian.PutUint16(bufOut[2:4], uint16(seq))
+		bufOut[2] = uint8(seq & 0xff)
+		bufOut[3] = uint8(seq >> 8)
 		seq++
 
+		o := headerSize
 		for i := 0; i < len(buf); i++ {
-			v := (int(buf[i]) - 128) * 255
-			o := headerSize + i*2
-			endian.PutUint16(bufOut[o:o+2], uint16(v))
+			v := uint8(int(buf[i]) - 128)
+			bufOut[o] = v
+			bufOut[o+1] = v
+			o += 2
 		}
 
 		// TODO: check returned # of bytes written?
@@ -356,47 +362,6 @@ func (cli *client) startStreaming() error {
 
 		return false
 	})
-
-	// go func() {
-	// 	defer conn.Close()
-	// 	for {
-	// 		select {
-	// 		case _ = <-cli.closeChan:
-	// 			cli.closeChan = nil
-	// 			return
-	// 		default:
-	// 		}
-
-	// 		n, err := cli.dev.rtlDev.Read(buf)
-	// 		if err != nil {
-	// 			log.Printf("Failed to read from device: %+v", err)
-	// 			// TODO: clean everything up and inform clients
-	// 			return
-	// 		}
-
-	// 		n2 := headerSize + n*2
-
-	// 		bufOut[0] = 0
-	// 		if first {
-	// 			bufOut[0] |= flagStreamStart
-	// 			first = false
-	// 		}
-	// 		bufOut[1] = 0 // notification: reserved (currently 0)
-	// 		endian.PutUint16(bufOut[2:4], uint16(seq))
-	// 		seq++
-
-	// 		for i := 0; i < n; i++ {
-	// 			v := (int(buf[i]) - 128) * 255
-	// 			o := headerSize + i*2
-	// 			endian.PutUint16(bufOut[o:o+2], uint16(v))
-	// 		}
-
-	// 		// TODO: check returned # of bytes written?
-	// 		if _, err := conn.Write(bufOut[:n2]); err != nil {
-	// 			// TODO: what to do if not "connection refused"?
-	// 		}
-	// 	}
-	// }()
 
 	return nil
 }
@@ -450,6 +415,8 @@ func handleConnection(conn net.Conn) {
 }
 
 func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
+
 	flag.Parse()
 
 	if *flagCpuProfile {

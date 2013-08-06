@@ -295,7 +295,7 @@ type buffer struct {
 	size  int
 }
 
-func (dev *Device) ReadAsync(nBuffers, bufferSize int, cb AsyncCallback) error {
+func (dev *Device) ReadAsyncUsingSync(nBuffers, bufferSize int, cb AsyncCallback) error {
 	bufferSize &^= 1
 	bufferCache := make(chan buffer, nBuffers)
 	sampleChan := make(chan buffer, nBuffers)
@@ -327,13 +327,54 @@ func (dev *Device) ReadAsync(nBuffers, bufferSize int, cb AsyncCallback) error {
 				break
 			}
 			n, err := dev.Read(buf.bytes)
-			if err == nil {
+			if err != nil {
 				close(sampleChan)
 				break
 			}
-			sampleChan <- buffer{bytes: buf.bytes, size: n}
+			select {
+			case sampleChan <- buffer{bytes: buf.bytes, size: n}:
+			default:
+				println("dropped packet")
+			}
 		}
 	}()
 
 	return nil
 }
+
+// func (dev *Device) ReadAsync(nBuffers, bufferSize int, cb AsyncCallback) error {
+// 	bufferSize &^= 1
+
+// 	go func() {
+// 		for {
+// 			buf, ok := <-sampleChan
+// 			if !ok {
+// 				close(bufferCache)
+// 				cb(nil)
+// 				break
+// 			}
+// 			if cb(buf.bytes[:buf.size]) {
+// 				close(bufferCache)
+// 				break
+// 			}
+// 			bufferCache <- buf
+// 		}
+// 	}()
+
+// 	go func() {
+// 		for {
+// 			buf, ok := <-bufferCache
+// 			if !ok {
+// 				break
+// 			}
+// 			n, err := dev.Read(buf.bytes)
+// 			if err != nil {
+// 				close(sampleChan)
+// 				break
+// 			}
+// 			sampleChan <- buffer{bytes: buf.bytes, size: n}
+// 		}
+// 	}()
+
+// 	return nil
+// }
