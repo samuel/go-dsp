@@ -330,8 +330,9 @@ func (cli *client) startStreaming() error {
 	}
 
 	cli.closeChan = make(chan bool, 1)
-	// buf := make([]byte, samplesPerPacket*2)
 	bufOut := make([]byte, headerSize+samplesPerPacket*2*2)
+	bufOut[0] = flagStreamStart
+	bufOut[1] = 0 // notification: reserved (currently 0)
 	first := true
 	seq := 0
 
@@ -342,25 +343,19 @@ func (cli *client) startStreaming() error {
 			return true
 		}
 
-		for bufferOffset := 0; bufferOffset < len(buf); bufferOffset += samplesPerPacket * 2 {
-			select {
-			case _ = <-cli.closeChan:
-				cli.closeChan = nil
-				return true
-			default:
-			}
+		select {
+		case _ = <-cli.closeChan:
+			cli.closeChan = nil
+			return true
+		default:
+		}
 
+		for bufferOffset := 0; bufferOffset < len(buf); bufferOffset += samplesPerPacket * 2 {
 			nValues := len(buf) - bufferOffset
 			if nValues > samplesPerPacket*2 {
 				nValues = samplesPerPacket * 2
 			}
 
-			bufOut[0] = 0
-			if first {
-				bufOut[0] |= flagStreamStart
-				first = false
-			}
-			bufOut[1] = 0 // notification: reserved (currently 0)
 			bufOut[2] = uint8(seq & 0xff)
 			bufOut[3] = uint8(seq >> 8)
 			seq++
@@ -373,9 +368,13 @@ func (cli *client) startStreaming() error {
 				o += 2
 			}
 
-			// TODO: check returned # of bytes written?
 			if _, err := conn.Write(bufOut[:headerSize+nValues*2]); err != nil {
 				// TODO: what to do if not "connection refused"?
+			}
+
+			if first {
+				bufOut[0] = 0
+				first = false
 			}
 		}
 
