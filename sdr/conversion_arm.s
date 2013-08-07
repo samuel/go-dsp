@@ -63,4 +63,38 @@ ui8toc64_done:
 	RET
 
 TEXT ·F32toi16b(SB),7,$0
-	JMP ·f32toi16b(SB)
+	MOVW	input+0(FP), R1
+	MOVW	input_len+4(FP), R2
+	MOVW	output+12(FP), R3
+	MOVW	output_len+16(FP), R0
+	MOVF	scale+24(FP), F0
+	// Choose the shortest length
+	MOVW	R2<<2, R2
+	CMP	R2, R0
+	MOVW.LT	R0, R2
+	// If no input then skip loop
+	CMP	$0, R2
+	BEQ	f32toi16b_done
+	ADD	R1, R2
+f32toi16b_loop:
+	MOVF	0(R1), F1
+	ADD	$4, R1
+
+	MULF	F0, F1
+	MOVFW.U	F1, F1
+	MOVW	F1, R0
+
+	// Native endianess
+	MOVHU	R0, (R3)
+
+	// Little endian
+	// MOVW	R0>>8, R4
+	// MOVBU	R0, 0(R3)
+	// MOVBU	R4, 1(R3)
+
+	ADD	$2, R3
+
+	CMP	R2, R1
+	BLT	f32toi16b_loop
+f32toi16b_done:
+	RET
