@@ -360,13 +360,7 @@ func (cli *client) startStreaming() error {
 			bufOut[3] = uint8(seq >> 8)
 			seq++
 
-			o := headerSize
-			for i := 0; i < nValues; i++ {
-				v := uint8(int(buf[i]) - 128)
-				bufOut[o] = v
-				bufOut[o+1] = v
-				o += 2
-			}
+			Ui8toi16(buf[:nValues], bufOut[headerSize:])
 
 			if _, err := conn.Write(bufOut[:headerSize+nValues*2]); err != nil {
 				// TODO: what to do if not "connection refused"?
