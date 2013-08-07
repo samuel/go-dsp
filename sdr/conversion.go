@@ -33,8 +33,8 @@ func F32toi16b(input []float32, output []byte, scale float32)
 
 func f32toi16b(input []float32, output []byte, scale float32) {
 	for i := 0; i < len(input); i++ {
-		v := int16(input[i] * scale)
-		output[i*2] = uint8(uint16(v) & 0xff)
-		output[i*2+1] = uint8(uint16(v) >> 8)
+		v := uint16(input[i] * scale)
+		output[i*2] = uint8(v & 0xff)
+		output[i*2+1] = uint8(v >> 8)
 	}
 }
