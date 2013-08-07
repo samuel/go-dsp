@@ -37,7 +37,7 @@ func TestUi8toc64(t *testing.T) {
 }
 
 func TestF32toi16b(t *testing.T) {
-	input := []float32{0.0, 1.0, -1.0, 10.0, -10.0}
+	input := []float32{0.0, 1.0, -1.0, 2.13, -2.13}
 	output := make([]byte, len(input)*2+4)
 	expected := make([]byte, len(input)*2+4)
 	f32toi16b(input, expected, 1<<13)
