@@ -115,11 +115,6 @@ func main() {
 			// 	log.Fatal(err)
 			// }
 			sdr.F32toi16b(pcm2, bytes, 1<<14)
-			// for i := 0; i < len(pcm2); i++ {
-			// 	v := uint16(int16(pcm2[i] * (1 << 14)))
-			// 	bytes[i*2] = uint8(v & 0xff)
-			// 	bytes[i*2+1] = uint8(v >> 8)
-			// }
 			if _, err := os.Stdout.Write(bytes[:len(pcm2)*2]); err != nil {
 				log.Fatal(err)
 			}
