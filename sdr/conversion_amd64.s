@@ -1,5 +1,5 @@
 
-TEXT ·Ui8toi16(SB),7,$0
+TEXT ·Ui8toi16b(SB),7,$0
 	MOVQ	input+0(FP), R11
 	MOVQ	input_len+8(FP), R9
 	MOVQ	output+24(FP), DI

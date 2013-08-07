@@ -19,6 +19,8 @@ import (
 	"runtime/pprof"
 	"strconv"
 	"strings"
+
+	"github.com/samuel/go-sdr/sdr"
 )
 
 const (
@@ -360,7 +362,7 @@ func (cli *client) startStreaming() error {
 			bufOut[3] = uint8(seq >> 8)
 			seq++
 
-			Ui8toi16(buf[:nValues], bufOut[headerSize:])
+			sdr.Ui8toi16(buf[:nValues], bufOut[headerSize:])
 
 			if _, err := conn.Write(bufOut[:headerSize+nValues*2]); err != nil {
 				// TODO: what to do if not "connection refused"?

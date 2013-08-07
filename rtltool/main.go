@@ -12,7 +12,10 @@ import (
 	"github.com/samuel/go-sdr/sdr"
 )
 
-const bufferSize = 256 * 1024 // in samples
+const (
+	nBuffers   = 32
+	bufferSize = 256 * 1024 // in samples
+)
 
 var flagCpuProfile = flag.Bool("profile.cpu", false, "Enable CPU profiling")
 
@@ -76,53 +79,22 @@ func main() {
 	// lowPass3 := &sdr.LowPassDownsampleRationalFilter{Fast: sampleRate / postDownsample, Slow: outputRate}
 	lowPass2 := &sdr.LowPassDownsampleRationalFilter{Fast: sampleRate, Slow: outputRate}
 
-	bufferCache := make(chan buffer, 32)
-	sampleChan := make(chan buffer, 32)
-
-	for i := 0; i < 32; i++ {
-		bufferCache <- buffer{bytes: make([]byte, bufferSize*2)}
-	}
-
 	stopChan := make(chan bool)
 
-	go func() {
+	bytes := make([]byte, bufferSize*2)
+	samples := make([]complex64, bufferSize)
+	pcm := make([]float32, bufferSize)
+	dev.ReadAsync(nBuffers, bufferSize, func(buf []byte) bool {
 		for {
 			select {
 			case _ = <-stopChan:
-				return
+				return true
 			default:
 			}
 
-			buf := <-bufferCache
-			n, err := dev.Read(buf.bytes)
-			if err != nil {
-				log.Fatal(err)
-			}
-			sampleChan <- buffer{bytes: buf.bytes, size: n}
-		}
-	}()
-
-	go func() {
-		bytes := make([]byte, bufferSize*2)
-		samples := make([]complex64, bufferSize)
-		pcm := make([]float32, bufferSize)
-		for {
-			select {
-			case _ = <-stopChan:
-				return
-			default:
-			}
-
-			buf := <-sampleChan
-			n := buf.size
+			n := len(buf)
 			n /= 2
-			for i := 0; i < n; i++ {
-				samples[i] = complex(
-					float32(buf.bytes[i*2])-128.0,
-					float32(buf.bytes[i*2+1])-128.0,
-				)
-			}
-			bufferCache <- buf
+			sdr.Ui8toc64(buf, samples[:n])
 
 			var samples2 []complex64
 			if samples2, err = rotate90.Filter(samples[:n]); err != nil {
@@ -142,16 +114,14 @@ func main() {
 			// if pcm2, err = lowPass3.Filter(pcm2); err != nil {
 			// 	log.Fatal(err)
 			// }
-			for i := 0; i < len(pcm2); i++ {
-				v := int16(pcm2[i] * (1 << 14))
-				bytes[i*2] = uint8(uint16(v) & 0xff)
-				bytes[i*2+1] = uint8(uint16(v) >> 8)
-			}
+			sdr.F32toi16b(pcm2, bytes, 1<<14)
 			if _, err := os.Stdout.Write(bytes[:len(pcm2)*2]); err != nil {
 				log.Fatal(err)
 			}
+
+			return false
 		}
-	}()
+	})
 
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt, os.Kill)

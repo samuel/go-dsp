@@ -1,7 +1,7 @@
 
-TEXT ·Ui8toi16(SB),7,$0
-	MOVW	input+0(FP),R1
-	MOVW   	input_len+4(FP),R2
+TEXT ·Ui8toi16b(SB),7,$0
+	MOVW	input+0(FP), R1
+	MOVW   	input_len+4(FP), R2
 	MOVW	output+12(FP), R3
 	MOVW	output_len+12(FP), R4
 	// Choose the shortest length
