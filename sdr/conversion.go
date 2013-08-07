@@ -24,7 +24,7 @@ func f32toi16b(input []float32, output []byte, scale float32) {
 	}
 }
 
-var Ui8toc64 = ui8toc64
+func Ui8toc64(input []byte, output []complex64)
 
 func ui8toc64(input []byte, output []complex64) {
 	n := len(input) / 2
@@ -33,8 +33,8 @@ func ui8toc64(input []byte, output []complex64) {
 	}
 	for i := 0; i < n; i++ {
 		output[i] = complex(
-			float32(input[i*2])-128.0,
-			float32(input[i*2+1])-128.0,
+			float32(int(input[i*2])-128),
+			float32(int(input[i*2+1])-128),
 		)
 	}
 }

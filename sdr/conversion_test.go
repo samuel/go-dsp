@@ -68,3 +68,25 @@ func BenchmarkUi8toi16b_Go(b *testing.B) {
 		ui8toi16b(input, output)
 	}
 }
+
+func BenchmarkUi8toc64(b *testing.B) {
+	input := make([]byte, 256)
+	for i := 0; i < 256; i++ {
+		input[i] = byte(i)
+	}
+	output := make([]complex64, len(input)/2)
+	for i := 0; i < b.N; i++ {
+		Ui8toc64(input, output)
+	}
+}
+
+func BenchmarkUi8toc64_Go(b *testing.B) {
+	input := make([]byte, 256)
+	for i := 0; i < 256; i++ {
+		input[i] = byte(i)
+	}
+	output := make([]complex64, len(input)/2)
+	for i := 0; i < b.N; i++ {
+		ui8toc64(input, output)
+	}
+}
