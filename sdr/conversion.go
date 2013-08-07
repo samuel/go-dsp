@@ -14,16 +14,6 @@ func ui8toi16b(input []byte, output []byte) {
 	}
 }
 
-var F32toi16b = f32toi16b
-
-func f32toi16b(input []float32, output []byte, scale float32) {
-	for i := 0; i < len(input); i++ {
-		v := int16(input[i] * scale)
-		output[i*2] = uint8(uint16(v) & 0xff)
-		output[i*2+1] = uint8(uint16(v) >> 8)
-	}
-}
-
 func Ui8toc64(input []byte, output []complex64)
 
 func ui8toc64(input []byte, output []complex64) {
@@ -36,5 +26,15 @@ func ui8toc64(input []byte, output []complex64) {
 			float32(int(input[i*2])-128),
 			float32(int(input[i*2+1])-128),
 		)
+	}
+}
+
+func F32toi16b(input []float32, output []byte, scale float32)
+
+func f32toi16b(input []float32, output []byte, scale float32) {
+	for i := 0; i < len(input); i++ {
+		v := int16(input[i] * scale)
+		output[i*2] = uint8(uint16(v) & 0xff)
+		output[i*2+1] = uint8(uint16(v) >> 8)
 	}
 }

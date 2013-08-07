@@ -7,14 +7,14 @@ TEXT ·Ui8toi16b(SB),7,$0
 	// Choose the shortest length
 	SARQ	$1, BX
 	CMPQ	BX, R9
-	JGE	L1
+	JGE	ui8toi16b_L1
 	MOVQ	BX, R9
-L1:
+ui8toi16b_L1:
 	// Calculate end of input
 	ADDQ	R11, R9
-loop:
+ui8toi16b_loop:
 	CMPQ	R11, R9
-	JGE	done
+	JGE	ui8toi16b_done
 
 	MOVBQZX	(R11), CX
 	INCQ	R11
@@ -26,6 +26,12 @@ loop:
 	MOVB	CX, (DI)
 	INCQ	DI
 
-	JMP	loop
-done:
+	JMP	ui8toi16b_loop
+ui8toi16b_done:
 	RET
+
+TEXT ·Ui8toc64(SB),7,$0
+	JMP ·ui8toc64(SB)
+
+TEXT ·F32toi16b(SB),7,$0
+	JMP ·f32toi16b(SB)

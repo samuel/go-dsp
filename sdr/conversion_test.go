@@ -23,17 +23,6 @@ func TestUi8toi16b(t *testing.T) {
 	Ui8toi16b([]byte{1, 2}, []byte{1, 2})
 }
 
-func TestF32toi16b(t *testing.T) {
-	input := []float32{0.0, 1.0, -1.0, 10.0, -10.0}
-	output := make([]byte, len(input)*2+4)
-	expected := make([]byte, len(input)*2+4)
-	f32toi16b(input, expected, 1<<13)
-	F32toi16b(input, output, 1<<13)
-	if bytes.Compare(output, expected) != 0 {
-		t.Fatalf("Output doesn't match expected: %+v != %+v", output, expected)
-	}
-}
-
 func TestUi8toc64(t *testing.T) {
 	input := []byte{0, 1, 192, 200}
 	output := make([]complex64, len(input)/2+4)
@@ -44,6 +33,17 @@ func TestUi8toc64(t *testing.T) {
 		if output[i] != expected[i] {
 			t.Fatalf("Output doesn't match expected: %+v != %+v", output, expected)
 		}
+	}
+}
+
+func TestF32toi16b(t *testing.T) {
+	input := []float32{0.0, 1.0, -1.0, 10.0, -10.0}
+	output := make([]byte, len(input)*2+4)
+	expected := make([]byte, len(input)*2+4)
+	f32toi16b(input, expected, 1<<13)
+	F32toi16b(input, output, 1<<13)
+	if bytes.Compare(output, expected) != 0 {
+		t.Fatalf("Output doesn't match expected: %+v != %+v", output, expected)
 	}
 }
 
@@ -88,5 +88,27 @@ func BenchmarkUi8toc64_Go(b *testing.B) {
 	output := make([]complex64, len(input)/2)
 	for i := 0; i < b.N; i++ {
 		ui8toc64(input, output)
+	}
+}
+
+func BenchmarkF32toi16b(b *testing.B) {
+	input := make([]float32, 256)
+	for i := 0; i < 256; i++ {
+		input[i] = float32(i) - 128.0
+	}
+	output := make([]byte, len(input)*2)
+	for i := 0; i < b.N; i++ {
+		F32toi16b(input, output, 1<<7)
+	}
+}
+
+func BenchmarkF32toi16b_Go(b *testing.B) {
+	input := make([]float32, 256)
+	for i := 0; i < 256; i++ {
+		input[i] = float32(i) - 128.0
+	}
+	output := make([]byte, len(input)*2)
+	for i := 0; i < b.N; i++ {
+		f32toi16b(input, output, 1<<7)
 	}
 }

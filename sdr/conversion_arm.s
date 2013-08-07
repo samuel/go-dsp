@@ -61,3 +61,6 @@ ui8toc64_loop:
 	BLT	ui8toc64_loop
 ui8toc64_done:
 	RET
+
+TEXT ·F32toi16b(SB),7,$0
+	JMP ·f32toi16b(SB)
