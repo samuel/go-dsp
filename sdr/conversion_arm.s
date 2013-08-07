@@ -69,9 +69,10 @@ TEXT ·F32toi16b(SB),7,$0
 	MOVW	output_len+16(FP), R0
 	MOVF	scale+24(FP), F0
 	// Choose the shortest length
-	MOVW	R2<<2, R2
+	MOVW	R2<<1, R2
 	CMP	R2, R0
 	MOVW.LT	R0, R2
+	MOVW    R2<<1, R2
 	// If no input then skip loop
 	CMP	$0, R2
 	BEQ	f32toi16b_done
@@ -81,7 +82,7 @@ f32toi16b_loop:
 	ADD	$4, R1
 
 	MULF	F0, F1
-	MOVFW.U	F1, F1
+	MOVFW	F1, F1
 	MOVW	F1, R0
 
 	// Native endianess
