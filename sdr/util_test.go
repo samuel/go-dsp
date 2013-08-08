@@ -2,11 +2,11 @@ package sdr
 
 import "testing"
 
-func TestLowPassDownsampleComplexFilter(t *testing.T) {
-	filter := &LowPassDownsampleComplexFilter{Downsample: 2}
+func TestRotate90Filter(t *testing.T) {
+	filter := &Rotate90Filter{}
 	input := []complex64{complex(0.0, 2.0), complex(1.0, 2.0), complex(-3.0, 7.0), complex(4.0, -9.0)}
-	output, _ := lowPassDownsampleComplexFilterAsm(filter, input)
-	expected, _ := lowPassDownsampleComplexFilter(filter, input)
+	output, _ := rotate90FilterAsm(filter, input)
+	expected, _ := rotate90Filter(filter, input)
 	if len(output) != len(expected) {
 		t.Fatalf("Output doesn't match expected: %+v != %+v", output, expected)
 	}
@@ -17,24 +17,24 @@ func TestLowPassDownsampleComplexFilter(t *testing.T) {
 	}
 }
 
-func BenchmarkLowPassDownsampleComplexFilter(b *testing.B) {
-	filter := &LowPassDownsampleComplexFilter{Downsample: 2}
+func BenchmarkRotate90Filter(b *testing.B) {
+	filter := &Rotate90Filter{}
 	input := make([]complex64, 256)
 	for i := 0; i < 256; i++ {
 		input[i] = complex(float32(i)-128.0, -(float32(i) - 128.0))
 	}
 	for i := 0; i < b.N; i++ {
-		_, _ = lowPassDownsampleComplexFilterAsm(filter, input)
+		_, _ = rotate90FilterAsm(filter, input)
 	}
 }
 
-func BenchmarkLowPassDownsampleComplexFilter_Go(b *testing.B) {
-	filter := &LowPassDownsampleComplexFilter{Downsample: 2}
+func BenchmarkRotate90Filter_Go(b *testing.B) {
+	filter := &Rotate90Filter{}
 	input := make([]complex64, 256)
 	for i := 0; i < 256; i++ {
 		input[i] = complex(float32(i)-128.0, -(float32(i) - 128.0))
 	}
 	for i := 0; i < b.N; i++ {
-		_, _ = lowPassDownsampleComplexFilter(filter, input)
+		_, _ = rotate90Filter(filter, input)
 	}
 }

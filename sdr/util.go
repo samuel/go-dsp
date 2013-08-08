@@ -26,6 +26,12 @@ type Rotate90Filter struct {
 }
 
 func (fi *Rotate90Filter) Filter(samples []complex64) ([]complex64, error) {
+	return rotate90FilterAsm(fi, samples)
+}
+
+func rotate90FilterAsm(fi *Rotate90Filter, samples []complex64) ([]complex64, error)
+
+func rotate90Filter(fi *Rotate90Filter, samples []complex64) ([]complex64, error) {
 	// for i := 0; i < len(samples); i++ {
 	// 	switch fi.currentAngle {
 	// 	case 0:
