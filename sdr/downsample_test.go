@@ -5,8 +5,12 @@ import "testing"
 func TestLowPassDownsampleComplexFilter(t *testing.T) {
 	filter := &LowPassDownsampleComplexFilter{Downsample: 2}
 	input := []complex64{complex(0.0, 2.0), complex(1.0, 2.0), complex(-3.0, 7.0), complex(4.0, -9.0)}
-	output, _ := lowPassDownsampleComplexFilterAsm(filter, input)
-	expected, _ := lowPassDownsampleComplexFilter(filter, input)
+	output := make([]complex64, 256)
+	copy(output, input)
+	output, _ = lowPassDownsampleComplexFilterAsm(filter, input)
+	expected := make([]complex64, 256)
+	copy(expected, input)
+	expected, _ = lowPassDownsampleComplexFilter(filter, input)
 	if len(output) != len(expected) {
 		t.Fatalf("Output doesn't match expected: %+v != %+v", output, expected)
 	}

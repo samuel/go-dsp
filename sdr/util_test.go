@@ -8,8 +8,12 @@ func TestRotate90Filter(t *testing.T) {
 	for i := 0; i < 256; i++ {
 		input[i] = complex(float32(i)-128.0, -(float32(i) - 128.0))
 	}
-	output, _ := rotate90FilterAsm(filter, input)
-	expected, _ := rotate90Filter(filter, input)
+	output := make([]complex64, 256)
+	copy(output, input)
+	output, _ = rotate90FilterAsm(filter, output)
+	expected := make([]complex64, 256)
+	copy(expected, input)
+	expected, _ = rotate90Filter(filter, expected)
 	if len(output) != len(expected) {
 		t.Fatalf("Output doesn't match expected: %+v != %+v", output, expected)
 	}

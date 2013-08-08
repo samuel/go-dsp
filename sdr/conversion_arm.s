@@ -19,8 +19,8 @@ ui8toi16b_loop:
 
 	SUB	$128, R0
 
-	MOVBU  	R0, 0(R3)
-	MOVBU  	R0, 1(R3)
+	MOVBU	R0, 0(R3)
+	MOVBU	R0, 1(R3)
 	ADD	$2, R3
 
 	CMP	R2, R1
