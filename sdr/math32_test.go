@@ -26,6 +26,13 @@ func TestAtan2(t *testing.T) {
 	}
 }
 
+func BenchmarkConj32(b *testing.B) {
+	in := complex64(complex(1.0, -0.2))
+	for i := 0; i < b.N; i++ {
+		_ = Conj32(in)
+	}
+}
+
 func BenchmarkFastAtan2(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		switch i & 3 {

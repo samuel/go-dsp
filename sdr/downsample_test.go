@@ -5,12 +5,48 @@ import "testing"
 func TestLowPassDownsampleComplexFilter(t *testing.T) {
 	filter := &LowPassDownsampleComplexFilter{Downsample: 2}
 	input := []complex64{complex(0.0, 2.0), complex(1.0, 2.0), complex(-3.0, 7.0), complex(4.0, -9.0)}
+
 	output := make([]complex64, 256)
 	copy(output, input)
-	output, _ = lowPassDownsampleComplexFilterAsm(filter, input)
+	filter.now = 0.0
+	filter.prevIndex = 0
+	output, _ = lowPassDownsampleComplexFilterAsm(filter, output)
+
 	expected := make([]complex64, 256)
 	copy(expected, input)
-	expected, _ = lowPassDownsampleComplexFilter(filter, input)
+	filter.now = 0.0
+	filter.prevIndex = 0
+	expected, _ = lowPassDownsampleComplexFilter(filter, expected)
+
+	if len(output) != len(expected) {
+		t.Fatalf("Output doesn't match expected: %+v != %+v", output, expected)
+	}
+	for i := 0; i < len(output); i++ {
+		if output[i] != expected[i] {
+			t.Fatalf("Output doesn't match expected: %+v != %+v", output, expected)
+		}
+	}
+}
+
+func TestLowPassDownsampleRationalFilter(t *testing.T) {
+	filter := &LowPassDownsampleRationalFilter{Fast: 3, Slow: 2}
+	input := make([]float32, 256)
+	for i := 0; i < len(input); i++ {
+		input[i] = float32(i - 128)
+	}
+
+	output := make([]float32, 256)
+	copy(output, input)
+	filter.prevIndex = 0
+	filter.sum = 0.0
+	output, _ = lowPassDownsampleRationalFilterAsm(filter, output)
+
+	expected := make([]float32, 256)
+	copy(expected, input)
+	filter.prevIndex = 0
+	filter.sum = 0.0
+	expected, _ = lowPassDownsampleRationalFilter(filter, expected)
+
 	if len(output) != len(expected) {
 		t.Fatalf("Output doesn't match expected: %+v != %+v", output, expected)
 	}
@@ -40,5 +76,27 @@ func BenchmarkLowPassDownsampleComplexFilter_Go(b *testing.B) {
 	}
 	for i := 0; i < b.N; i++ {
 		_, _ = lowPassDownsampleComplexFilter(filter, input)
+	}
+}
+
+func BenchmarkTestLowPassDownsampleRationalFilter(b *testing.B) {
+	filter := &LowPassDownsampleRationalFilter{Fast: 3, Slow: 2}
+	input := make([]float32, 256)
+	for i := 0; i < 256; i++ {
+		input[i] = float32(i) - 128.0
+	}
+	for i := 0; i < b.N; i++ {
+		_, _ = lowPassDownsampleRationalFilterAsm(filter, input)
+	}
+}
+
+func BenchmarkTestLowPassDownsampleRationalFilter_Go(b *testing.B) {
+	filter := &LowPassDownsampleRationalFilter{Fast: 3, Slow: 2}
+	input := make([]float32, 256)
+	for i := 0; i < 256; i++ {
+		input[i] = float32(i) - 128.0
+	}
+	for i := 0; i < b.N; i++ {
+		_, _ = lowPassDownsampleRationalFilter(filter, input)
 	}
 }
