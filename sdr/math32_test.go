@@ -41,6 +41,21 @@ func BenchmarkFastAtan2(b *testing.B) {
 	}
 }
 
+func BenchmarkFastAtan2_Go(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		switch i & 3 {
+		case 0:
+			fastAtan2(1.0, 1.0)
+		case 1:
+			fastAtan2(-1.0, 1.0)
+		case 2:
+			fastAtan2(-1.0, -1.0)
+		case 3:
+			fastAtan2(1.0, -1.0)
+		}
+	}
+}
+
 func BenchmarkFastAtan2_2(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		switch i & 3 {

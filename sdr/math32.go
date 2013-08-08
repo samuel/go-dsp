@@ -13,7 +13,8 @@ const (
 )
 
 // max |error| < 0.01
-func FastAtan2(y, x float32) float32 {
+func FastAtan2(y, x float32) float32
+func fastAtan2(y, x float32) float32 {
 	absY := y
 	if absY < 0 {
 		absY = -absY

@@ -1,10 +1,5 @@
 package sdr
 
-import (
-	"math"
-	"math/cmplx"
-)
-
 type ComplexSource interface {
 	Source() ([]complex64, error)
 }
@@ -52,27 +47,6 @@ func rotate90Filter(fi *Rotate90Filter, samples []complex64) ([]complex64, error
 		samples[i+3] = complex(imag(samples[i+3]), -real(samples[i+3]))
 	}
 	return samples, nil
-}
-
-func PolarDiscriminator(a, b complex128) float64 {
-	return cmplx.Phase(a*cmplx.Conj(b)) / math.Pi
-}
-
-func PolarDiscriminator32(a, b complex64) float32 {
-	return FastPhase32(a * Conj32(b)) // / math.Pi
-}
-
-type FMDemodFilter struct {
-	pre complex64
-}
-
-func (fi *FMDemodFilter) Demodulate(input []complex64, output []float32) (int, error) {
-	for i := 0; i < len(input); i++ {
-		pcm := PolarDiscriminator32(input[i], fi.pre)
-		fi.pre = input[i]
-		output[i] = pcm
-	}
-	return len(input), nil
 }
 
 type LowPassDownsampleRationalFilter struct {
