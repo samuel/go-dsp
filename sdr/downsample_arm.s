@@ -3,7 +3,7 @@ TEXT ·lowPassDownsampleComplexFilterAsm(SB),7,$0
 	MOVW	fi+0(FP), R3
 	MOVW	0(R3), R8	// fi.Downsample
 	MOVW	12(R3), R7	// fi.prevIndex
-	MOVW   	samples_len+8(FP), R2
+	MOVW	samples_len+8(FP), R2
 	MOVW	samples_data+4(FP), R5 // input
 	MOVW	R5, R6		// output
 	MOVF	4(R3), F0	// real(fi.now)
@@ -58,10 +58,12 @@ complexLoopEnd:
 	MOVW   	R4, ret_cap+24(FP)
 	MOVW   	samples_data+4(FP),R0
 	MOVW   	R0, ret_data+16(FP)
+
 	MOVW   	$0, R0
 	MOVW   	R0, err+28(FP)
 	MOVW   	R0, err+32(FP)
 	RET
+
 
 TEXT ·lowPassDownsampleRationalFilterAsm(SB),7,$0
 	MOVW	fi+0(FP), R4	// fi
@@ -79,47 +81,47 @@ TEXT ·lowPassDownsampleRationalFilterAsm(SB),7,$0
 	MOVF	8(R4), F3	// fi.sum
 	MOVW	12(R4), R2	// fi.prevIndex
 
-	MOVW   	samples_ptr+4(FP), R5
-	MOVW   	R5, R6
+	MOVW	samples_ptr+4(FP), R5	// input
+	MOVW	R5, R6			// output
 	MOVW	samples_len+8(FP), R3
-	ADD	R3<<2, R5, R3
+	ADD	R3<<2, R5, R3		// end of input
 
 rationalLoop:
-	CMP    	R5, R3
-	BLE    	rationalLoopEnd
+	CMP	R5, R3
+	BLE	rationalLoopEnd
 
-	MOVF   	(R5), F0	// samples[i]
+	MOVF	(R5), F0	// samples[i]
 	ADD	$4, R5
 
-	ADDF   	F0, F3		// fi.sum += samples[i]
-	ADD    	R7, R2		// fi.prevIndex += fi.Slow
+	ADDF	F0, F3		// fi.sum += samples[i]
+	ADD	R7, R2		// fi.prevIndex += fi.Slow
 
-	CMP    	R8, R2
-	BLT    	rationalLoop
+	CMP	R8, R2
+	BLT	rationalLoop
 
-	MULF   	F4, F3		// fi.sum * (Slow/Fast)
+	MULF	F4, F3		// fi.sum * (Slow/Fast)
 
 	MOVF	F3, (R6)
 	ADD	$4, R6
 
-	SUB    	R8, R2		// fi.prevIndex -= fi.Fast
-	MOVF   	$0.0, F3	// fi.sum = 0.0
+	SUB	R8, R2		// fi.prevIndex -= fi.Fast
+	MOVF	$0.0, F3	// fi.sum = 0.0
 
-	B      	rationalLoop
+	B	rationalLoop
 rationalLoopEnd:
-	MOVW   	R2, 12(R4)	// fi.prevIndex
+	MOVW	R2, 12(R4)	// fi.prevIndex
 	MOVF	F3, 8(R4)	// fi.sum
 
 	MOVW	samples_ptr+4(FP), R0
 	SUB	R0, R6
 	MOVW	R6>>2, R6
-	MOVW   	R6, res_len+20(FP)
-	MOVW   	samples_cap+12(FP), R4
-	MOVW   	R4, res_cap+24(FP)
-	MOVW   	samples_ptr+4(FP), R0
-	MOVW   	R0, res_ptr+16(FP)
+	MOVW	R6, res_len+20(FP)
+	MOVW	samples_cap+12(FP), R4
+	MOVW	R4, res_cap+24(FP)
+	MOVW	samples_ptr+4(FP), R0
+	MOVW	R0, res_ptr+16(FP)
 
-	MOVW   	$0, R0
-	MOVW   	R0, err+28(FP)
-	MOVW   	R0, err+32(FP)
+	MOVW	$0, R0
+	MOVW	R0, err+28(FP)
+	MOVW	R0, err+32(FP)
 	RET

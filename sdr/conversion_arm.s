@@ -72,7 +72,7 @@ TEXT ·F32toi16b(SB),7,$0
 	MOVW	R2<<1, R2
 	CMP	R2, R0
 	MOVW.LT	R0, R2
-	MOVW    R2<<1, R2
+	MOVW	R2<<1, R2
 	// If no input then skip loop
 	CMP	$0, R2
 	BEQ	f32toi16b_done
