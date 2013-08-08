@@ -1,124 +1,46 @@
 
 TEXT ·rotate90FilterAsm(SB),7,$0
-	B ·rotate90Filter(SB)
+	MOVW	samples_len+8(FP), R2
+	MOVW   	samples_ptr+4(FP), R5
+	AND	$(~3), R2	// round down to nearest multiple of 4
+	MOVW	$0, R3
+	B	loopStart
+loop:
+	ADD    	$4, R3
+loopStart:
+	CMP    	R3, R2
+	BLE    	loopEnd
 
-# 0498 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:28) TEXT   	(*Rotate90Filter).Filter+0(SB),$0-36
-# 0499 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:28) FUNCDATA	$0,gc·11+0(SB)
-# 0500 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:28) TYPE   	fi+0(FP){*"".Rotate90Filter},$4
-# 0501 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:28) TYPE   	samples+4(FP){[]complex64},$12
-# 0502 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:28) TYPE   	~anon1+16(FP){[]complex64},$12
-# 0503 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:28) TYPE   	~anon2+28(FP){error},$8
-# 0504 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:43) MOVW   	$0,R3
-# 0505 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:43) B      	,507(APC)
-# 0506 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:43) ADD    	$4,R3,R3
-# 0507 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:43) MOVW   	samples+8(FP),R4
-# 0508 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:43) CMP    	R3,R4,
-# 0509 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:43) BLE    	,608(APC)
-# 0510 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) ADD    	$1,R3,R4
-# 0511 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) ADD    	$1,R3,R0
-# 0512 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) MOVW   	$samples+4(FP),R1
-# 0513 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) MOVW   	4(R1),R2
-# 0514 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) CMP    	R2,R0,
-# 0515 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) BLO    	,517(APC)
-# 0516 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) BL     	,runtime.panicindex+0(SB)
-# 0517 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) MOVW   	0(R1),R1
-# 0518 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) ADD    	R0<<3,R1
-# 0519 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) MOVF   	0(R1),F1
-# 0520 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) MOVF   	4(R1),F2
-# 0521 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) MOVF   	$(-1.00000000000000000e+00),F0
-# 0522 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) MULF   	F0,F2,F1
-# 0523 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) MOVF   	F1,F4
-# 0524 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) ADD    	$1,R3,R0
-# 0525 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) MOVW   	$samples+4(FP),R1
-# 0526 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) MOVW   	4(R1),R2
-# 0527 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) CMP    	R2,R0,
-# 0528 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) BLO    	,530(APC)
-# 0529 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) BL     	,runtime.panicindex+0(SB)
-# 0530 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) MOVW   	0(R1),R1
-# 0531 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) ADD    	R0<<3,R1
-# 0532 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) MOVF   	0(R1),F3
-# 0533 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) MOVF   	4(R1),F0
-# 0534 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) MOVF   	F4,F2
-# 0535 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) MOVW   	$samples+4(FP),R0
-# 0536 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) MOVW   	R4,R1
-# 0537 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) MOVW   	4(R0),R2
-# 0538 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) CMP    	R2,R4,
-# 0539 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) BLO    	,541(APC)
-# 0540 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) BL     	,runtime.panicindex+0(SB)
-# 0541 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) MOVW   	0(R0),R0
-# 0542 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) ADD    	R1<<3,R0
-# 0543 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) MOVF   	F2,0(R0)
-# 0544 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:44) MOVF   	F3,4(R0)
-# 0545 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) ADD    	$2,R3,R4
-# 0546 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) ADD    	$2,R3,R0
-# 0547 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) MOVW   	$samples+4(FP),R1
-# 0548 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) MOVW   	4(R1),R2
-# 0549 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) CMP    	R2,R0,
-# 0550 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) BLO    	,552(APC)
-# 0551 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) BL     	,runtime.panicindex+0(SB)
-# 0552 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) MOVW   	0(R1),R1
-# 0553 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) ADD    	R0<<3,R1
-# 0554 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) MOVF   	0(R1),F3
-# 0555 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) MOVF   	4(R1),F2
-# 0556 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) MOVF   	$(-1.00000000000000000e+00),F0
-# 0557 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) MULF   	F0,F3,F3
-# 0558 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) MOVF   	$(-1.00000000000000000e+00),F0
-# 0559 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) MULF   	F0,F2,F1
-# 0560 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) MOVF   	F1,F2
-# 0561 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) MOVW   	$samples+4(FP),R0
-# 0562 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) MOVW   	R4,R1
-# 0563 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) MOVW   	4(R0),R2
-# 0564 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) CMP    	R2,R4,
-# 0565 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) BLO    	,567(APC)
-# 0566 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) BL     	,runtime.panicindex+0(SB)
-# 0567 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) MOVW   	0(R0),R0
-# 0568 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) ADD    	R1<<3,R0
-# 0569 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) MOVF   	F3,0(R0)
-# 0570 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:45) MOVF   	F2,4(R0)
-# 0571 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) ADD    	$3,R3,R4
-# 0572 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) ADD    	$3,R3,R0
-# 0573 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) MOVW   	$samples+4(FP),R1
-# 0574 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) MOVW   	4(R1),R2
-# 0575 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) CMP    	R2,R0,
-# 0576 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) BLO    	,578(APC)
-# 0577 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) BL     	,runtime.panicindex+0(SB)
-# 0578 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) MOVW   	0(R1),R1
-# 0579 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) ADD    	R0<<3,R1
-# 0580 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) MOVF   	0(R1),F0
-# 0581 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) MOVF   	4(R1),F2
-# 0582 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) MOVF   	F2,F4
-# 0583 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) ADD    	$3,R3,R0
-# 0584 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) MOVW   	$samples+4(FP),R1
-# 0585 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) MOVW   	4(R1),R2
-# 0586 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) CMP    	R2,R0,
-# 0587 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) BLO    	,589(APC)
-# 0588 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) BL     	,runtime.panicindex+0(SB)
-# 0589 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) MOVW   	0(R1),R1
-# 0590 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) ADD    	R0<<3,R1
-# 0591 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) MOVF   	0(R1),F2
-# 0592 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) MOVF   	4(R1),F1
-# 0593 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) MOVF   	$(-1.00000000000000000e+00),F0
-# 0594 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) MULF   	F0,F2,F1
-# 0595 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) MOVF   	F1,F3
-# 0596 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) MOVF   	F4,F2
-# 0597 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) MOVW   	$samples+4(FP),R0
-# 0598 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) MOVW   	R4,R1
-# 0599 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) MOVW   	4(R0),R2
-# 0600 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) CMP    	R2,R4,
-# 0601 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) BLO    	,603(APC)
-# 0602 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) BL     	,runtime.panicindex+0(SB)
-# 0603 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) MOVW   	0(R0),R0
-# 0604 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) ADD    	R1<<3,R0
-# 0605 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) MOVF   	F2,0(R0)
-# 0606 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:46) MOVF   	F3,4(R0)
-# 0607 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:43) B      	,506(APC)
-# 0608 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:48) MOVW   	samples+4(FP),R0
-# 0609 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:48) MOVW   	R0,~anon1+16(FP)
-# 0610 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:48) MOVW   	samples+8(FP),R0
-# 0611 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:48) MOVW   	R0,~anon1+20(FP)
-# 0612 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:48) MOVW   	samples+12(FP),R0
-# 0613 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:48) MOVW   	R0,~anon1+24(FP)
-# 0614 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:48) MOVW   	$0,R0
-# 0615 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:48) MOVW   	R0,~anon2+28(FP)
-# 0616 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:48) MOVW   	R0,~anon2+32(FP)
-# 0617 (/home/pi/workspace/go/src/github.com/samuel/go-sdr/sdr/util.go:48) RET    	,
+	MOVW	8(R5), R0
+	MOVW	12(R5), R1
+	EOR	$(1<<31), R1
+	MOVW	R1, 0(R5)
+	MOVW	R0, 4(R5)
+
+	MOVW	16(R5), R0
+	MOVW	20(R5), R1
+	EOR	$(1<<31), R0
+	EOR	$(1<<31), R1
+	MOVW	R0, 0(R5)
+	MOVW	R1, 4(R5)
+
+	MOVW	24(R5), R0
+	MOVW	28(R5), R1
+	EOR	$(1<<31), R0
+	MOVW	R1, 0(R5)
+	MOVW	R0, 4(R5)
+
+	ADD	$32, R5
+
+	B      	loop
+loopEnd:
+	MOVW   	samples_ptr+4(FP), R0
+	MOVW   	R0, ret_ptr+16(FP)
+	MOVW   	samples_len+8(FP), R0
+	MOVW   	R0, ret_len+20(FP)
+	MOVW   	samples_cap+12(FP), R0
+	MOVW   	R0, ret_cap+24(FP)
+	MOVW   	$0, R0
+	MOVW   	R0, err+28(FP)
+	MOVW   	R0, err+32(FP)
+	RET
