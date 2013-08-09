@@ -10,7 +10,8 @@ func PolarDiscriminator(a, b complex128) float64 {
 }
 
 func PolarDiscriminator32(a, b complex64) float32 {
-	return FastPhase32(a * Conj32(b)) // / math.Pi
+	// return FastPhase32(a * Conj32(b)) // / math.Pi
+	return FastAtan2(imag(a)*real(b)-real(a)*imag(b), real(a)*real(b)+imag(a)*imag(b))
 }
 
 type FMDemodFilter struct {
@@ -24,10 +25,12 @@ func (fi *FMDemodFilter) Demodulate(input []complex64, output []float32) (int, e
 	// func fmDemodulateAsm(fi *FMDemodFilter, input []complex64, output []float32) (int, error)
 
 	// func fmDemodulate(fi *FMDemodFilter, input []complex64, output []float32) (int, error) {
-	for i := 0; i < len(input); i++ {
-		inp := input[i]
-		output[i] = PolarDiscriminator32(inp, fi.pre)
-		fi.pre = inp
+	pre := fi.pre
+	for i, inp := range input {
+		// output[i] = PolarDiscriminator32(inp, pre)
+		output[i] = FastAtan2(imag(inp)*real(pre)-real(inp)*imag(pre), real(inp)*real(pre)+imag(inp)*imag(pre))
+		pre = inp
 	}
+	fi.pre = pre
 	return len(input), nil
 }

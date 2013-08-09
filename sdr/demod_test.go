@@ -1,6 +1,9 @@
 package sdr
 
-import "testing"
+import (
+	// "math/rand"
+	"testing"
+)
 
 // func TestFMDemodulation(t *testing.T) {
 // 	filter := &FMDemodFilter{}
@@ -21,7 +24,27 @@ import "testing"
 // 	}
 // }
 
-func BenchmarkTestFMDemodulation(b *testing.B) {
+// func TestPolarDiscriminator32(t *testing.T) {
+// 	for i := 0; i < 1000; i++ {
+// 		x := complex(rand.Float32()-0.5, rand.Float32()-0.5)
+// 		y := complex(rand.Float32()-0.5, rand.Float32()-0.5)
+// 		expected := polarDiscriminator32(x, y)
+// 		output := PolarDiscriminator32(x, y)
+// 		if expected != output {
+// 			t.Fatalf("Output differs: %f != %f", output, expected)
+// 		}
+// 	}
+// }
+
+func BenchmarkPolarDiscriminator32(b *testing.B) {
+	x := complex(float32(1), float32(2))
+	y := complex(float32(-3), float32(9))
+	for i := 0; i < b.N; i++ {
+		_ = PolarDiscriminator32(x, y)
+	}
+}
+
+func BenchmarkFMDemodulation(b *testing.B) {
 	filter := &FMDemodFilter{}
 	input := make([]complex64, 256)
 	output := make([]float32, 256)
@@ -33,7 +56,7 @@ func BenchmarkTestFMDemodulation(b *testing.B) {
 	}
 }
 
-// func BenchmarkTestFMDemodulation_Go(b *testing.B) {
+// func BenchmarkFMDemodulation_Go(b *testing.B) {
 // 	filter := &FMDemodFilter{}
 // 	input := make([]complex64, 256)
 // 	output := make([]float32, 256)
