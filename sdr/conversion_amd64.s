@@ -5,7 +5,7 @@ TEXT ·Ui8toi16b(SB),7,$0
 	MOVQ	output+24(FP), DI
 	MOVQ	output_len+32(FP), BX
 	// Choose the shortest length
-	SARQ	$1, BX
+	SHRQ	$1, BX
 	CMPQ	BX, R9
 	JGE	ui8toi16b_L1
 	MOVQ	BX, R9
