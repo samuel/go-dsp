@@ -83,7 +83,8 @@ func cbAsyncGo(buf *C.uchar, size C.uint32_t, ctx unsafe.Pointer) {
 }
 
 type Device struct {
-	cDev *C.rtlsdr_dev_t
+	cDev        *C.rtlsdr_dev_t
+	callbackCtx *asyncCallbackContext
 }
 
 func GetDeviceCount() int {
@@ -360,11 +361,11 @@ func (dev *Device) ReadAsyncUsingSync(nBuffers, bufferSize int, cb AsyncCallback
 
 func (dev *Device) ReadAsync(nBuffers, bufferSize int, cb AsyncCallback) error {
 	go func() {
-		ctx := &asyncCallbackContext{
+		dev.callbackCtx = &asyncCallbackContext{
 			cb:  cb,
 			dev: dev,
 		}
-		C.rtlsdr_read_async(dev.cDev, (*[0]byte)(unsafe.Pointer(C.cbAsyncPtr)), unsafe.Pointer(ctx), C.uint32_t(nBuffers), C.uint32_t(bufferSize))
+		C.rtlsdr_read_async(dev.cDev, (*[0]byte)(unsafe.Pointer(C.cbAsyncPtr)), unsafe.Pointer(dev.callbackCtx), C.uint32_t(nBuffers), C.uint32_t(bufferSize))
 	}()
 	return nil
 }
