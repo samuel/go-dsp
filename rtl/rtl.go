@@ -79,6 +79,7 @@ func cbAsyncGo(buf *C.uchar, size C.uint32_t, ctx unsafe.Pointer) {
 	sliceHeader.Data = uintptr(unsafe.Pointer(buf))
 	if cbCtx.cb(goBuf) {
 		C.rtlsdr_cancel_async(cbCtx.dev.cDev)
+		cbCtx.dev.callbackCtx = nil
 	}
 }
 
