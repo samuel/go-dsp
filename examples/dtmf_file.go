@@ -19,7 +19,6 @@ func main() {
 	samples := make([]float32, blockSize)
 
 	rd := os.Stdin
-
 	if len(os.Args) > 1 && os.Args[1] != "-" {
 		fi, err := os.Open(os.Args[1])
 		if err != nil {
