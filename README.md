@@ -1,6 +1,34 @@
-go-sdr
-======
+Software Defined Radio (SDR) package and tools for Go
+=====================================================
 
-Software Defined Radio (SDR) package for Go
+This repo is a collection of packages and tools for working with SDR in Go.
 
-Currently this repo is a collection of explorations rather than a fully formed thought.
+It also includes ARM assembly optimized filters and conversions which
+allow real-time FM demodulation on the Raspberry Pi.
+
+Demodulators
+------------
+
+* FM
+* AFSK
+
+Decoders
+--------
+
+* AX.25
+* DTMF
+
+Other Algorithms
+----------------
+
+* Goertzel
+
+Hardware Interfaces
+-------------------
+
+* Wrapper for librtlsdr
+
+Clients & Servers
+-----------------
+
+* borip compatible client and server
