@@ -33,7 +33,7 @@ func NewStandard(sampleRate, blockSize int) *DTMF {
 	return New(StdLowFreq, StdHighFreq, sampleRate, blockSize)
 }
 
-// Return key number (lowFreqIndex * numHighFreq + highFreqIndex) and minimum threshold
+// Return key number (lowFreqIndex * numHighFreq + highFreqIndex) and minimum magnitude
 func (d *DTMF) Feed(samples []float32) (int, float32) {
 	d.lowFreq.Reset()
 	d.highFreq.Reset()
