@@ -62,7 +62,7 @@ func (g *Goertzel) Magnitude() []float32 {
 	return g.mag
 }
 
-func (g *Goertzel) IQ() []complex64 {
+func (g *Goertzel) Complex() []complex64 {
 	for i, freq := range g.freq {
 		g.cplx[i] = complex(freq.q1-freq.q2*freq.cos, freq.q2*freq.sin)
 	}
