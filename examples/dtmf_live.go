@@ -37,6 +37,9 @@ func main() {
 		log.Fatalf("Start: %+v", err)
 	}
 	defer stream.Stop()
+
+	fmt.Printf("%+v\n", stream.Info())
+
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, os.Kill)
 	for {

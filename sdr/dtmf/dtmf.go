@@ -16,25 +16,41 @@ var (
 )
 
 type DTMF struct {
-	lowFreq  *sdr.Goertzel
-	highFreq *sdr.Goertzel
-	nHigh    int
+	lowFreq   *sdr.Goertzel
+	highFreq  *sdr.Goertzel
+	nHigh     int
+	blockSize int
+	w         []float32
 }
 
-func New(lowFreq, highFreq []int, sampleRate, blockSize int) *DTMF {
+func New(lowFreq, highFreq []int, sampleRate, blockSize int, windowFunc func([]float32)) *DTMF {
+	w := make([]float32, blockSize)
+	if windowFunc != nil {
+		windowFunc(w)
+	} else {
+		sdr.HammingWindow(w)
+	}
 	return &DTMF{
-		lowFreq:  sdr.NewGoertzel(lowFreq, sampleRate, blockSize),
-		highFreq: sdr.NewGoertzel(highFreq, sampleRate, blockSize),
-		nHigh:    len(highFreq),
+		lowFreq:   sdr.NewGoertzel(lowFreq, sampleRate, blockSize),
+		highFreq:  sdr.NewGoertzel(highFreq, sampleRate, blockSize),
+		nHigh:     len(highFreq),
+		blockSize: blockSize,
+		w:         w,
 	}
 }
 
 func NewStandard(sampleRate, blockSize int) *DTMF {
-	return New(StdLowFreq, StdHighFreq, sampleRate, blockSize)
+	return New(StdLowFreq, StdHighFreq, sampleRate, blockSize, sdr.HammingWindow)
 }
 
 // Return key number (lowFreqIndex * numHighFreq + highFreqIndex) and minimum magnitude
 func (d *DTMF) Feed(samples []float32) (int, float32) {
+	if len(samples) > d.blockSize {
+		samples = samples[:d.blockSize]
+	}
+	for i, s := range samples {
+		samples[i] = s * d.w[i]
+	}
 	d.lowFreq.Reset()
 	d.highFreq.Reset()
 	d.lowFreq.Feed(samples)

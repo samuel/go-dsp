@@ -84,6 +84,7 @@ func main() {
 	bytes := make([]byte, bufferSize*2)
 	samples := make([]complex64, bufferSize)
 	pcm := make([]float32, bufferSize)
+
 	dev.ReadAsync(nBuffers, bufferSize, func(buf []byte) bool {
 		for {
 			select {
@@ -114,7 +115,7 @@ func main() {
 			// if pcm2, err = lowPass3.Filter(pcm2); err != nil {
 			// 	log.Fatal(err)
 			// }
-			sdr.F32toi16b(pcm2, bytes, 1<<14)
+			sdr.F32toi16ble(pcm2, bytes, 1<<14)
 			if _, err := os.Stdout.Write(bytes[:len(pcm2)*2]); err != nil {
 				log.Fatal(err)
 			}
@@ -125,7 +126,7 @@ func main() {
 
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt, os.Kill)
-	_ = <-signalChan
+	<-signalChan
 	close(stopChan)
 
 	if *flagCpuProfile {
