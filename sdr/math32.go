@@ -2,6 +2,18 @@ package sdr
 
 import "math"
 
+func Scalef32(input, output []float32, scale float32)
+
+func scalef32(input, output []float32, scale float32) {
+	n := len(input)
+	if len(output) < n {
+		n = len(output)
+	}
+	for i, v := range input[:n] {
+		output[i] = v * scale
+	}
+}
+
 func Conj32(x complex64) complex64    { return complex(real(x), -imag(x)) }
 func FastPhase32(x complex64) float32 { return FastAtan2(imag(x), real(x)) }
 func Phase32(x complex64) float32     { return float32(math.Atan2(float64(imag(x)), float64(real(x)))) }

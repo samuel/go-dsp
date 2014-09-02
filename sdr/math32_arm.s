@@ -36,3 +36,7 @@ L2:
 	MULF.LT	F0, F1
 	MOVF	F1, ret+8(FP)
 	RET
+
+
+TEXT ·Scalef32(SB),7,$0
+	B ·scalef32(SB)

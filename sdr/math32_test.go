@@ -26,6 +26,34 @@ func TestAtan2(t *testing.T) {
 	}
 }
 
+func TestScaleF32(t *testing.T) {
+	input := make([]float32, 257)
+	for i := 0; i < len(input); i++ {
+		input[i] = float32(i)
+	}
+	expected := make([]float32, len(input))
+	output := make([]float32, len(input))
+	scalef32(input, expected, 1.0/256.0)
+	Scalef32(input, output, 1.0/256.0)
+	for i, v := range expected {
+		if output[i] != v {
+			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		}
+	}
+
+	// Unaligned
+	input = input[1:]
+	expected = make([]float32, len(input)+1)[1:]
+	output = make([]float32, len(input)+1)[1:]
+	scalef32(input, expected, 1.0/256.0)
+	Scalef32(input, output, 1.0/256.0)
+	for i, v := range expected {
+		if output[i] != v {
+			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		}
+	}
+}
+
 func BenchmarkConj32(b *testing.B) {
 	in := complex64(complex(1.0, -0.2))
 	for i := 0; i < b.N; i++ {
@@ -90,5 +118,25 @@ func BenchmarkAtan2(b *testing.B) {
 		case 3:
 			math.Atan2(1.0, -1.0)
 		}
+	}
+}
+
+func BenchmarkScalef32(b *testing.B) {
+	input := make([]float32, benchSize)
+	output := make([]float32, len(input))
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Scalef32(input, output, 1.0/benchSize)
+	}
+}
+
+func BenchmarkScalef32_Go(b *testing.B) {
+	input := make([]float32, benchSize)
+	output := make([]float32, len(input))
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		scalef32(input, output, 1.0/benchSize)
 	}
 }
