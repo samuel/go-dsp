@@ -1,5 +1,6 @@
 package sdr
 
+// Ui8toi16 converts and scales unsigned 8-bit samples to 16-bit signed samples.
 func Ui8toi16(input []byte, output []int16)
 
 func ui8toi16(input []byte, output []int16) {
@@ -14,6 +15,7 @@ func ui8toi16(input []byte, output []int16) {
 	}
 }
 
+// Ui8toi16b converts and scales unsigned 8-bit samples to 16-bit signed samples.
 func Ui8toi16b(input []byte, output []byte)
 
 func ui8toi16b(input []byte, output []byte) {
@@ -28,6 +30,8 @@ func ui8toi16b(input []byte, output []byte) {
 	}
 }
 
+// Ui8tof32 converts unsigned 8-bit samples to 32-bit float samples.
+// It does not scale the samples.
 func Ui8tof32(input []byte, output []float32)
 
 func ui8tof32(input []byte, output []float32) {

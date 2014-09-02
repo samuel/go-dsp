@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-const benchSize = 4096
+const benchSize = 1 << 12
 
 func TestUi8toi16(t *testing.T) {
 	input := make([]byte, 300)
@@ -15,6 +15,18 @@ func TestUi8toi16(t *testing.T) {
 	input = input[:256]
 	output := make([]int16, len(input)+8)
 	expected := make([]int16, len(input)+8)
+	ui8toi16(input, expected) // Use Go implementation as reference
+	Ui8toi16(input, output)
+	for i, v := range expected {
+		if output[i] != v {
+			t.Fatalf("Output doesn't match expected: %+v != %+v", output, expected)
+		}
+	}
+
+	// Unaligned input
+	input = input[1:]
+	output = make([]int16, len(input)+8)
+	expected = make([]int16, len(input)+8)
 	ui8toi16(input, expected) // Use Go implementation as reference
 	Ui8toi16(input, output)
 	for i, v := range expected {
@@ -132,9 +144,24 @@ func TestUi8toc64(t *testing.T) {
 func TestF32toi16(t *testing.T) {
 	// Make sure there's non-zero value after the expected length of the slice
 	// to detect out of bound access.
-	input := []float32{0.0, 1.0, -1.0, 0.1, -0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, -0.1, -0.2, -0.3, -0.4, -0.5, -0.6, -0.7, -0.8, -1.0}[:15]
+	input := make([]float32, 256)
+	for i := 0; i < len(input); i++ {
+		input[i] = 2.0*float32(i)/float32(len(input)) - 1.0
+	}
 	output := make([]int16, len(input)+4)
 	expected := make([]int16, len(input)+4)
+	f32toi16(input, expected, 1<<13) // Use Go implementation as reference
+	F32toi16(input, output, 1<<13)
+	for i, v := range expected {
+		if output[i] != v {
+			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		}
+	}
+
+	// Unaligned
+	input = input[1:]
+	output = make([]int16, len(input)+4)[1:]
+	expected = make([]int16, len(input)+4)[1:]
 	f32toi16(input, expected, 1<<13) // Use Go implementation as reference
 	F32toi16(input, output, 1<<13)
 	for i, v := range expected {
@@ -258,10 +285,9 @@ func BenchmarkUi8toc64_Go(b *testing.B) {
 
 func BenchmarkF32toi16(b *testing.B) {
 	input := make([]float32, benchSize)
-	for i := 0; i < benchSize; i++ {
-		input[i] = float32(i) - 128.0
-	}
 	output := make([]int16, len(input))
+	b.SetBytes(benchSize)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		F32toi16(input, output, 1<<7)
 	}
@@ -269,10 +295,9 @@ func BenchmarkF32toi16(b *testing.B) {
 
 func BenchmarkF32toi16_Unaligned(b *testing.B) {
 	input := make([]float32, benchSize+1)[1:]
-	for i := 0; i < benchSize; i++ {
-		input[i] = float32(i) - 128.0
-	}
-	output := make([]int16, len(input))
+	output := make([]int16, len(input)+1)[1:]
+	b.SetBytes(benchSize)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		F32toi16(input, output, 1<<7)
 	}
@@ -280,10 +305,9 @@ func BenchmarkF32toi16_Unaligned(b *testing.B) {
 
 func BenchmarkF32toi16_Go(b *testing.B) {
 	input := make([]float32, benchSize)
-	for i := 0; i < benchSize; i++ {
-		input[i] = float32(i) - 128.0
-	}
 	output := make([]int16, len(input))
+	b.SetBytes(benchSize)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		f32toi16(input, output, 1<<7)
 	}
@@ -291,10 +315,9 @@ func BenchmarkF32toi16_Go(b *testing.B) {
 
 func BenchmarkF32toi16ble(b *testing.B) {
 	input := make([]float32, benchSize)
-	for i := 0; i < benchSize; i++ {
-		input[i] = float32(i) - 128.0
-	}
 	output := make([]byte, len(input)*2)
+	b.SetBytes(benchSize)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		F32toi16ble(input, output, 1<<7)
 	}
@@ -302,10 +325,9 @@ func BenchmarkF32toi16ble(b *testing.B) {
 
 func BenchmarkF32toi16ble_Go(b *testing.B) {
 	input := make([]float32, benchSize)
-	for i := 0; i < benchSize; i++ {
-		input[i] = float32(i) - 128.0
-	}
 	output := make([]byte, len(input)*2)
+	b.SetBytes(benchSize)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		f32toi16ble(input, output, 1<<7)
 	}

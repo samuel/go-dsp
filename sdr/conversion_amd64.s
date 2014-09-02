@@ -35,22 +35,34 @@ ui8toi16_head_loop:
 	JNZ	ui8toi16_head_loop
 
 ui8toi16_aligned:
-	// Work 8 bytes at a time
 	MOVQ	$0x8080808080808080, AX
-	MOVQ	AX, X1
+	MOVQ	AX, X8
+	PUNPCKLBW	X8, X8
 	MOVQ	BX, AX
-	SHRQ	$3, AX
+	SHRQ	$5, AX
 	JZ	ui8toi16_tail
 ui8toi16_aligned_loop:
-	MOVQ	(SI), X0
-	ADDQ	$8, SI
-	PSUBB	X1, X0
+	MOVOU	(SI), X0
+	MOVOU	16(SI), X1
+	PSUBB	X8, X0
+	PSUBB	X8, X1
+	MOVO	X0, X9
 	PUNPCKLBW	X0, X0
+	PUNPCKHBW	X9, X9
 	MOVO	X0, (DI)
-	ADDQ	$16, DI
-	SUBQ	$8, BX
+	MOVO	X9, 16(DI)
+	MOVO	X1, X9
+	PUNPCKLBW	X1, X1
+	PUNPCKHBW	X9, X9
+	MOVO	X1, 32(DI)
+	MOVO	X9, 48(DI)
+	ADDQ	$32, SI
+	ADDQ	$64, DI
+	SUBQ	$32, BX
 	DECQ	AX
 	JNZ	ui8toi16_aligned_loop
+
+	// TODO: work smaller sizes of blocks
 
 ui8toi16_tail:
 	// Single step anything that is left
@@ -71,10 +83,9 @@ ui8toi16_done:
 	RET
 
 
-
 TEXT ·Ui8toi16b(SB),7,$0
 	MOVQ	output_len+32(FP), CX
-	SHRQ	$1, CX	// output_len /= 2
+	SHRQ	$1, CX
 	MOVQ	output+24(FP), DI
 	MOVQ	DI, AX
 	ANDQ	$1, AX
@@ -96,22 +107,34 @@ ui8toi16b_unaligned:
 ui8toi16b_min_length:
 	// BX = length
 
-	// Work 8 bytes at a time
 	MOVQ	$0x8080808080808080, AX
-	MOVQ	AX, X1
+	MOVQ	AX, X8
+	PUNPCKLBW	X8, X8
 	MOVQ	BX, AX
-	SHRQ	$3, AX
+	SHRQ	$5, AX
 	JZ	ui8toi16b_tail
-ui8toi16b_loop:
-	MOVQ	(SI), X0
-	ADDQ	$8, SI
-	PSUBB	X1, X0
+ui8toi16b_aligned_loop:
+	MOVOU	(SI), X0
+	PSUBB	X8, X0
+	MOVOU	16(SI), X1
+	PSUBB	X8, X1
+	MOVO	X0, X9
 	PUNPCKLBW	X0, X0
+	PUNPCKHBW	X9, X9
 	MOVOU	X0, (DI)
-	ADDQ	$16, DI
-	SUBQ	$8, BX
+	MOVOU	X9, 16(DI)
+	MOVO	X1, X9
+	PUNPCKLBW	X1, X1
+	PUNPCKHBW	X9, X9
+	MOVOU	X1, 32(DI)
+	MOVOU	X9, 48(DI)
+	ADDQ	$32, SI
+	ADDQ	$64, DI
+	SUBQ	$32, BX
 	DECQ	AX
-	JNZ	ui8toi16b_loop
+	JNZ	ui8toi16b_aligned_loop
+
+	// TODO: work increasingly smaller blocks
 
 ui8toi16b_tail:
 	// Single step anything that is left
@@ -184,6 +207,8 @@ ui8tof32_aligned:
 ui8tof32_loop:
 	MOVL	(SI), X0
 	ADDQ	$4, SI
+	// PSUBW	X1, X0
+	// BYTE $0x66; BYTE $0x0f; BYTE $0x38; BYTE $0x21; BYTE $0xC0 // PMOVSXBD	X0, X0
 	PUNPCKLBW	X2, X0
 	PUNPCKLWL	X2, X0
 	PSUBL	X1, X0
@@ -226,8 +251,8 @@ TEXT ·F32toi16(SB),7,$0
 	MOVQ	input_len+8(FP), AX
 	MOVQ	output+24(FP), DI
 	MOVQ	output_len+32(FP), CX
-	MOVQ	scale+48(FP), X1
-	PSHUFD	$0, X1, X1
+	MOVQ	scale+48(FP), X8
+	PSHUFD	$0, X8, X8
 
 	CMPQ	AX, CX
 	JGE	f32toi16_min_len
@@ -235,7 +260,8 @@ TEXT ·F32toi16(SB),7,$0
 f32toi16_min_len:
 
 	MOVQ	CX, DX
-	ANDQ	$0xfffffffffffffffc, CX
+	// ANDQ	$(~7), CX
+	ANDQ	$(~31), CX
 
 	MOVQ	$0, AX
 	CMPQ	AX, CX
@@ -243,13 +269,24 @@ f32toi16_min_len:
 
 f32toi16_loop:
 	MOVUPS	(SI), X0
+	MOVUPS	16(SI), X1
+	MOVUPS	32(SI), X2
+	MOVUPS	48(SI), X3
 	LEAQ	(DI)(AX*2), BX
-	MULPS	X1, X0
-	CVTTPS2PL	X0, X2
-	PACKSSLW	X2, X2
-	MOVQ	X2, (BX)
-	ADDQ	$16, SI
-	ADDQ	$4, AX
+	MULPS	X8, X0
+	MULPS	X8, X1
+	MULPS	X8, X2
+	MULPS	X8, X3
+	CVTTPS2PL	X0, X0
+	CVTTPS2PL	X1, X1
+	CVTTPS2PL	X2, X2
+	CVTTPS2PL	X3, X3
+	PACKSSLW	X1, X0
+	PACKSSLW	X3, X2
+	MOVOU	X0, (BX)
+	MOVOU	X2, 16(BX)
+	ADDQ	$64, SI
+	ADDQ	$16, AX
 	CMPQ	AX, CX
 	JLT	f32toi16_loop
 
@@ -260,7 +297,7 @@ f32toi16_stepper:
 f32toi16_step:
 	MOVSS	(SI), X0
 	LEAQ	(DI)(AX*2), BX
-	MULSS	X1, X0
+	MULSS	X8, X0
 	CVTTSS2SL	X0, BP
 	MOVW	BP, (BX)
 	ADDQ	$4, SI
