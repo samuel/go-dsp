@@ -186,10 +186,9 @@ func TestF32toi16ble(t *testing.T) {
 
 func BenchmarkUi8toi16(b *testing.B) {
 	input := make([]byte, benchSize)
-	for i := 0; i < benchSize; i++ {
-		input[i] = byte(i)
-	}
 	output := make([]int16, len(input))
+	b.SetBytes(benchSize)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		Ui8toi16(input, output)
 	}
@@ -197,10 +196,9 @@ func BenchmarkUi8toi16(b *testing.B) {
 
 func BenchmarkUi8toi16_Go(b *testing.B) {
 	input := make([]byte, benchSize)
-	for i := 0; i < benchSize; i++ {
-		input[i] = byte(i)
-	}
 	output := make([]int16, len(input))
+	b.SetBytes(benchSize)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ui8toi16(input, output)
 	}
@@ -208,10 +206,9 @@ func BenchmarkUi8toi16_Go(b *testing.B) {
 
 func BenchmarkUi8toi16b(b *testing.B) {
 	input := make([]byte, benchSize)
-	for i := 0; i < benchSize; i++ {
-		input[i] = byte(i)
-	}
 	output := make([]byte, len(input)*2)
+	b.SetBytes(benchSize)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		Ui8toi16b(input, output)
 	}
@@ -219,10 +216,9 @@ func BenchmarkUi8toi16b(b *testing.B) {
 
 func BenchmarkUi8toi16b_Unaligned(b *testing.B) {
 	input := make([]byte, benchSize)
-	for i := 0; i < benchSize; i++ {
-		input[i] = byte(i)
-	}
 	output := make([]byte, len(input)*2+3)[1:]
+	b.SetBytes(benchSize)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		Ui8toi16b(input, output)
 	}
@@ -230,10 +226,9 @@ func BenchmarkUi8toi16b_Unaligned(b *testing.B) {
 
 func BenchmarkUi8toi16b_Go(b *testing.B) {
 	input := make([]byte, benchSize)
-	for i := 0; i < benchSize; i++ {
-		input[i] = byte(i)
-	}
 	output := make([]byte, len(input)*2)
+	b.SetBytes(benchSize)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ui8toi16b(input, output)
 	}
@@ -241,10 +236,9 @@ func BenchmarkUi8toi16b_Go(b *testing.B) {
 
 func BenchmarkUi8tof32(b *testing.B) {
 	input := make([]byte, benchSize)
-	for i := 0; i < benchSize; i++ {
-		input[i] = byte(i)
-	}
 	output := make([]float32, len(input))
+	b.SetBytes(benchSize)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		Ui8tof32(input, output)
 	}
@@ -252,10 +246,9 @@ func BenchmarkUi8tof32(b *testing.B) {
 
 func BenchmarkUi8tof32_Go(b *testing.B) {
 	input := make([]byte, benchSize)
-	for i := 0; i < benchSize; i++ {
-		input[i] = byte(i)
-	}
 	output := make([]float32, len(input))
+	b.SetBytes(benchSize)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ui8tof32(input, output)
 	}
@@ -263,10 +256,9 @@ func BenchmarkUi8tof32_Go(b *testing.B) {
 
 func BenchmarkUi8toc64(b *testing.B) {
 	input := make([]byte, benchSize)
-	for i := 0; i < benchSize; i++ {
-		input[i] = byte(i)
-	}
 	output := make([]complex64, len(input)/2)
+	b.SetBytes(benchSize)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		Ui8toc64(input, output)
 	}
@@ -274,10 +266,9 @@ func BenchmarkUi8toc64(b *testing.B) {
 
 func BenchmarkUi8toc64_Go(b *testing.B) {
 	input := make([]byte, benchSize)
-	for i := 0; i < benchSize; i++ {
-		input[i] = byte(i)
-	}
 	output := make([]complex64, len(input)/2)
+	b.SetBytes(benchSize)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ui8toc64(input, output)
 	}
