@@ -19,7 +19,7 @@ func TestUi8toi16(t *testing.T) {
 	Ui8toi16(input, output)
 	for i, v := range expected {
 		if output[i] != v {
-			t.Fatalf("Output doesn't match expected: %+v != %+v", output, expected)
+			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
 		}
 	}
 
@@ -31,7 +31,7 @@ func TestUi8toi16(t *testing.T) {
 	Ui8toi16(input, output)
 	for i, v := range expected {
 		if output[i] != v {
-			t.Fatalf("Output doesn't match expected: %+v != %+v", output, expected)
+			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
 		}
 	}
 }
@@ -47,7 +47,7 @@ func TestUi8toi16b(t *testing.T) {
 	ui8toi16b(input, expected) // Use Go implementation as reference
 	Ui8toi16b(input, output)
 	if bytes.Compare(output, expected) != 0 {
-		t.Fatalf("Output doesn't match expected: %+v != %+v", output, expected)
+		t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
 	}
 
 	// Make sure unmatched input and output lengths don't cause a panic/segfault
@@ -61,7 +61,7 @@ func TestUi8toi16b(t *testing.T) {
 	ui8toi16b(input, expected) // Use Go implementation as reference
 	Ui8toi16b(input, output)
 	if bytes.Compare(output, expected) != 0 {
-		t.Fatalf("Output doesn't match expected: %+v != %+v", output, expected)
+		t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
 	}
 
 	// Unaligned output (odd), non 8-byte multiple input
@@ -71,7 +71,7 @@ func TestUi8toi16b(t *testing.T) {
 	ui8toi16b(input, expected) // Use Go implementation as reference
 	Ui8toi16b(input, output)
 	if bytes.Compare(output, expected) != 0 {
-		t.Fatalf("Output doesn't match expected: %+v != %+v", output, expected)
+		t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
 	}
 }
 
@@ -244,6 +244,16 @@ func BenchmarkUi8tof32(b *testing.B) {
 	}
 }
 
+func BenchmarkUi8tof32_Unaligned(b *testing.B) {
+	input := make([]byte, benchSize+1)[1:]
+	output := make([]float32, len(input)+1)[1:]
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Ui8tof32(input, output)
+	}
+}
+
 func BenchmarkUi8tof32_Go(b *testing.B) {
 	input := make([]byte, benchSize)
 	output := make([]float32, len(input))
@@ -257,7 +267,7 @@ func BenchmarkUi8tof32_Go(b *testing.B) {
 func BenchmarkUi8toc64(b *testing.B) {
 	input := make([]byte, benchSize)
 	output := make([]complex64, len(input)/2)
-	b.SetBytes(benchSize)
+	b.SetBytes(benchSize / 2)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		Ui8toc64(input, output)
@@ -267,7 +277,7 @@ func BenchmarkUi8toc64(b *testing.B) {
 func BenchmarkUi8toc64_Go(b *testing.B) {
 	input := make([]byte, benchSize)
 	output := make([]complex64, len(input)/2)
-	b.SetBytes(benchSize)
+	b.SetBytes(benchSize / 2)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ui8toc64(input, output)
