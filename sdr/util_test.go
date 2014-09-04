@@ -26,10 +26,9 @@ func TestRotate90Filter(t *testing.T) {
 
 func BenchmarkRotate90Filter(b *testing.B) {
 	filter := &Rotate90Filter{}
-	input := make([]complex64, 256)
-	for i := 0; i < 256; i++ {
-		input[i] = complex(float32(i)-128.0, -(float32(i) - 128.0))
-	}
+	input := make([]complex64, benchSize)
+	b.SetBytes(benchSize)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = rotate90FilterAsm(filter, input)
 	}
@@ -37,10 +36,9 @@ func BenchmarkRotate90Filter(b *testing.B) {
 
 func BenchmarkRotate90Filter_Go(b *testing.B) {
 	filter := &Rotate90Filter{}
-	input := make([]complex64, 256)
-	for i := 0; i < 256; i++ {
-		input[i] = complex(float32(i)-128.0, -(float32(i) - 128.0))
-	}
+	input := make([]complex64, benchSize)
+	b.SetBytes(benchSize)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = rotate90Filter(filter, input)
 	}
