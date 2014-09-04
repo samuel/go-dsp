@@ -31,56 +31,6 @@ TEXT ·Ui8toi16b(SB),4,$0
 
 
 
-// TEXT ·Ui8tof32(SB),4,$0
-// 	MOVW	input+0(FP), R1
-// 	MOVW	input_len+4(FP), R2
-// 	MOVW	output+12(FP), R3
-// 	MOVW	output_len+16(FP), R0
-// 	// Choose the shortest length
-// 	CMP	R2, R0
-// 	MOVW.LT	R0, R2
-// 	// If no input then skip loop
-// 	CMP	$0, R2
-// 	BEQ	ui8tof32_done
-
-// 	MOVW	$128, R0
-// 	WORD	$0xeee00b10 // vdup.8 q0, r0
-
-// 	AND	$(~15), R2, R4
-// 	ADD	R1, R2
-// 	ADD	R1, R4
-// ui8tof32_loop:
-// 	// WORD	$0xf461428f // vld1.32 {d20, d21, d22, d23}, [r1]
-// 	WORD	$0xf461478d // vld1.32 {d20}, [r1]!
-// 	WORD	$0xf3842280 // vsubl.u8 q1, d20, d0
-// 	// WORD	$0xf3854280 // vsubl.u8 q2, d21, d0
-// 	// WORD	$0xf3866280 // vsubl.u8 q3, d22, d0
-// 	// WORD	$0xf3878280 // vsubl.u8 q4, d23, d0
-// 	WORD	$0xf2904a12 // vmovl.s16 q2, d2
-// 	WORD	$0xf2906a13 // vmovl.s16 q3, d3
-// 	WORD	$0xf3bb4644 // vcvt.f32.s32 q2, q2
-// 	WORD	$0xf3bb6646 // vcvt.f32.s32 q3, q3
-// 	WORD	$0xf403428d // vst1.32 {d4, d5, d6, d7}, [r3]!
-// 	CMP	R4, R1
-// 	BLT	ui8tof32_loop
-
-// 	CMP	R1, R2
-// 	BEQ	ui8tof32_done
-
-// ui8tof32_loop2:
-// 	MOVBU	0(R1), R4
-// 	ADD	$1, R1
-// 	SUB	$128, R4
-// 	MOVWF	R4, F0
-// 	MOVF	F0, 0(R3)
-// 	ADD	$4, R3
-// 	CMP	R2, R1
-// 	BLT	ui8tof32_loop2
-
-// ui8tof32_done:
-// 	RET
-
-
 TEXT ·Ui8tof32(SB),4,$0
 	MOVW	input+0(FP), R1
 	MOVW	input_len+4(FP), R2
@@ -92,6 +42,10 @@ TEXT ·Ui8tof32(SB),4,$0
 	// If no input then skip loop
 	CMP	$0, R2
 	BEQ	ui8tof32_done
+
+	MOVBU	·HaveNEON+0(SB),R0
+	CMP	$0, R0
+	BNE	ui8tof32_neon
 
 	AND	$(~3), R2, R0
 	ADD	R1, R2
@@ -118,6 +72,55 @@ ui8tof32_loop:
 	CMP	R0, R1
 	BLT	ui8tof32_loop
 
+	B	ui8tof32_tail
+
+	////////////// Neon ////////////
+ui8tof32_neon:
+	// PLD	(R1)
+	// PLD	64(R1)
+	// PLD	(2*64)(R1)
+	// PLD	(3*64)(R1)
+
+	MOVW	$128, R0
+	WORD	$0xeee00b10 // vdup.8 q0, r0
+
+	AND	$(~(16*4-1)), R2, R4
+	ADD	R1, R2
+	CMP	$0, R4
+	BEQ	ui8tof32_tail
+	ADD	R1, R4
+ui8tof32_neon_loop:
+	// PLD	(4*64)(R1)
+
+	WORD	$0xf461428d // vld1.32 {d20, d21, d22, d23}, [r1]!
+	WORD	$0xf3842280 // vsubl.u8 q1, d20, d0
+	WORD	$0xf3858280 // vsubl.u8 q4, d21, d0
+	WORD	$0xf386e280 // vsubl.u8 q7, d22, d0
+	WORD	$0xf3c74280 // vsubl.u8 q10, d23, d0
+	WORD	$0xf2904a12 // vmovl.s16 q2, d2
+	WORD	$0xf2906a13 // vmovl.s16 q3, d3
+	WORD	$0xf290aa18 // vmovl.s16 q5, d8
+	WORD	$0xf290ca19 // vmovl.s16 q6, d9
+	WORD	$0xf2d00a1e // vmovl.s16 q8, d14
+	WORD	$0xf2d02a1f // vmovl.s16 q9, d15
+	WORD	$0xf2d06a34 // vmovl.s16 q11, d20
+	WORD	$0xf2d08a35 // vmovl.s16 q12, d21
+	WORD	$0xf3bb4644 // vcvt.f32.s32 q2, q2
+	WORD	$0xf3bb6646 // vcvt.f32.s32 q3, q3
+	WORD	$0xf3bba64a // vcvt.f32.s32 q5, q5
+	WORD	$0xf3bbc64c // vcvt.f32.s32 q6, q6
+	WORD	$0xf3fb0660 // vcvt.f32.s32 q8, q8
+	WORD	$0xf3fb2662 // vcvt.f32.s32 q9, q9
+	WORD	$0xf3fb6666 // vcvt.f32.s32 q11, q11
+	WORD	$0xf3fb8668 // vcvt.f32.s32 q12, q12
+	WORD	$0xf403428d // vst1.32 {d4, d5, d6, d7}, [r3]!
+	WORD	$0xf403a28d // vst1.32 {d10, d11, d12, d13}, [r3]!
+	WORD	$0xf443028d // vst1.32 {d16, d17, d18, d19}, [r3]!
+	WORD	$0xf443628d // vst1.32 {d22, d23, d24, d25}, [r3]!
+	CMP	R4, R1
+	BLT	ui8tof32_neon_loop
+
+ui8tof32_tail:
 	CMP	R1, R2
 	BEQ	ui8tof32_done
 
@@ -125,13 +128,11 @@ ui8tof32_tail_loop:
 	MOVBU	0(R1), R4
 	SUB	$128, R4
 	MOVWF	R4, F0
-	// MOVF	F0, (R3)
-	// MOVM.IA.W	[F0], (R3)
-	WORD	$0xeca30a01 // vstmia     r3!, {s0}
 	ADD	$1, R1
-	// ADD	$4, R3
+	WORD	$0xeca30a01 // vstmia     r3!, {s0}
 	CMP	R2, R1
 	BLT	ui8tof32_tail_loop
+
 ui8tof32_done:
 	RET
 
