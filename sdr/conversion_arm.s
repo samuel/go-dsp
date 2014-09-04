@@ -47,36 +47,38 @@ TEXT ·Ui8tof32(SB),4,$0
 	CMP	$0, R0
 	BNE	ui8tof32_neon
 
-	// MOVW	$0x80808080, R8
-
 	AND	$(~3), R2, R0
 	ADD	R1, R2
-	CMP	$0, R0
+	TEQ	$0, R0
 	BEQ	ui8tof32_tail
 	ADD	R1, R0
-ui8tof32_loop:
-	MOVBU	0(R1), R4
-	MOVBU	1(R1), R5
-	MOVBU	2(R1), R6
-	MOVBU	3(R1), R7
-	ADD	$4, R1
-	SUB	$128, R4
-	SUB	$128, R5
-	SUB	$128, R6
-	SUB	$128, R7
 
-	// MOVW	(R1), R4
+	MOVW	$0x80808080, R8
+ui8tof32_loop:
+	// This is slower on Raspberry Pi but faster on Udoo Quad (which uses NEON anyway)
+	// MOVBU	0(R1), R4
+	// MOVBU	1(R1), R5
+	// MOVBU	2(R1), R6
+	// MOVBU	3(R1), R7
 	// ADD	$4, R1
-	// WORD	$0xe6544ff8 // usub8 r4, r4, r8
-	// WORD	$0xe6af5474 // sxtb r5, r4, ror #8
-	// WORD	$0xe6af6874 // sxtb r6, r4, ror #16
-	// WORD	$0xe6af7c74 // sxtb r7, r4, ror #24
-	// WORD	$0xe6af4074 // sxtb r4, r4
+	// SUB	$128, R4
+	// SUB	$128, R5
+	// SUB	$128, R6
+	// SUB	$128, R7
+
+	// This is faster on Raspberry Pi but slower on Udoo Quad (which uses NEON anyway)
+	MOVW	(R1), R4
+	ADD	$4, R1
+	WORD	$0xe6544ff8 // usub8 r4, r4, r8
+	WORD	$0xe6af5474 // sxtb r5, r4, ror #8
+	WORD	$0xe6af6874 // sxtb r6, r4, ror #16
+	WORD	$0xe6af7c74 // sxtb r7, r4, ror #24
+	WORD	$0xe6af4074 // sxtb r4, r4
 
 	WORD	$0xec454a1e // vmov s28, s29, r4, r5
+	WORD	$0xec476a1f // vmov s30, s31, r6, r7
 	WORD	$0xeeb80ace // vcvt.f32.s32 s0, s28
 	WORD	$0xeef80aee // vcvt.f32.s32 s1, s29
-	WORD	$0xec476a1f // vmov s30, s31, r6, r7
 	WORD	$0xeeb81acf // vcvt.f32.s32 s2, s30
 	WORD	$0xeef81aef // vcvt.f32.s32 s3, s31
 
@@ -87,23 +89,17 @@ ui8tof32_loop:
 	B	ui8tof32_tail
 
 	////////////// Neon ////////////
-ui8tof32_neon:
-	// PLD	(R1)
-	// PLD	64(R1)
-	// PLD	(2*64)(R1)
-	// PLD	(3*64)(R1)
 
+ui8tof32_neon:
 	MOVW	$128, R0
 	WORD	$0xeee00b10 // vdup.8 q0, r0
 
 	AND	$(~(16*4-1)), R2, R4
 	ADD	R1, R2
-	CMP	$0, R4
+	TEQ	$0, R4
 	BEQ	ui8tof32_tail
 	ADD	R1, R4
 ui8tof32_neon_loop:
-	// PLD	(4*64)(R1)
-
 	WORD	$0xf461c28d // vld1.32 {d28, d29, d30, d31}, [r1]!
 	// WORD	$0xf461c2bd // vld1.32 {d28, d29, d30, d31}, [r1:256]!
 	WORD	$0xf3cc4280 // vsubl.u8 q10, d28, d0
@@ -172,32 +168,30 @@ TEXT ·F32toi16(SB),4,$0
 	// Choose the shortest length
 	CMP	R2, R0
 	MOVW.LT	R0, R2
-	// If no input then skip loop
+	// If no input then we're done
 	TEQ	$0, R2
 	BEQ	f32toi16_done
 
-	// WORD	$0xeef10a10 // vmrs r0, fpscr
-	// BIC	$((7<<16)|(3<<20)), R0
-	// ORR	$((0<<16)|(0<<20)), R0
+	MOVW	R2, R7
+	ADD	R2<<2, R1, R2
 
-	AND	$(~3), R2, R7
-	MOVW	R2<<2, R2
+	// R1 = input
+	// R2 = end of output
+	// R3 = output
+	// R7 = count
 
-	ADD	R1, R2
+	MOVBU	·UseVector+0(SB),R0
+	TEQ	$0, R0
+	BNE	f32toi16_vector
+
+	//////////////// VFP Scalar /////////////
+
+	AND	$(~3), R7
 	TEQ	$0, R7
 	BEQ	f32toi16_tail
-	ADD	R1, R7
-f32toi16_loop:
-	// WORD	$0xecb11a02 // vldmia r1!, {s2, s3}
-	// WORD	$0xee211a00 // vmul.f32 s2, s2, s0
-	// WORD	$0xee611a80 // vmul.f32 s3, s3, s0
-	// WORD	$0xeebd1ac1 // vcvt.s32.f32 s2, s2
-	// WORD	$0xeefd1ae1 // vcvt.s32.f32 s3, s3
-	// WORD	$0xec540a11 // vmov r0, r4, s2, s3
-	// MOVH	R0, 0(R3)
-	// MOVH	R4, 2(R3)
-	// ADD	$4, R3
+	ADD	R7<<2, R1, R7 // R7 = end of output truncated to block size
 
+f32toi16_scalar_loop:
 	WORD	$0xecb11a04 // vldmia r1!, {s2, s3, s4, s5}
 	WORD	$0xee211a00 // vmul.f32 s2, s2, s0
 	WORD	$0xee611a80 // vmul.f32 s3, s3, s0
@@ -208,15 +202,70 @@ f32toi16_loop:
 	WORD	$0xeebd2ac2 // vcvt.s32.f32 s4, s4
 	WORD	$0xeefd2ae2 // vcvt.s32.f32 s5, s5
 	WORD	$0xec540a11 // vmov r0, r4, s2, s3
-	WORD	$0xec5b8a12 // vmov r8, r11, s4, s5
 	MOVH	R0, 0(R3)
 	MOVH	R4, 2(R3)
+	WORD	$0xec5b8a12 // vmov r8, r11, s4, s5
 	MOVH	R8, 4(R3)
 	MOVH	R11, 6(R3)
 	ADD	$8, R3
 
 	CMP	R7, R1
-	BLT	f32toi16_loop
+	BLT	f32toi16_scalar_loop
+
+	B	f32toi16_tail
+
+	///////////// VFP Vector //////////////
+
+f32toi16_vector:
+	AND	$(~7), R7
+	TEQ	$0, R7
+	BEQ	f32toi16_tail
+	ADD	R7<<2, R1, R7 // R7 = end of output truncated to block size
+
+	PLD	(R1)
+	PLD	64(R1)
+	PLD	(2*64)(R1)
+	PLD	(3*64)(R1)
+
+	// Set vector length to 8
+	WORD	$0xeef10a10 // vmrs r0, fpscr
+	BIC	$((7<<16)|(3<<20)), R0
+	ORR	$((7<<16)|(0<<20)), R0
+	WORD	$0xeee10a10 // fmxr fpscr, r0
+
+f32toi16_vector_loop:
+	PLD	(4*64)(R1)
+	WORD	$0xecb14a08 // vldmia r1!, {s8-s15}
+	WORD	$0xee244a00 // vmul.f32 s8, s8, s0
+	WORD	$0xeebd4ac4 // vcvt.s32.f32 s8, s8
+	WORD	$0xeefd4ae4 // vcvt.s32.f32 s9, s9
+	WORD	$0xeebd5ac5 // vcvt.s32.f32 s10, s10
+	WORD	$0xeefd5ae5 // vcvt.s32.f32 s11, s11
+	WORD	$0xec540a14 // vmov r0, r4, s8, s9
+	WORD	$0xec5b8a15 // vmov r8, r11, s10, s11
+	MOVH	R0, 0(R3)
+	MOVH	R4, 2(R3)
+	MOVH	R8, 4(R3)
+	MOVH	R11, 6(R3)
+	WORD	$0xeebd6ac6 // vcvt.s32.f32 s12, s12
+	WORD	$0xeefd6ae6 // vcvt.s32.f32 s13, s13
+	WORD	$0xeebd7ac7 // vcvt.s32.f32 s14, s14
+	WORD	$0xeefd7ae7 // vcvt.s32.f32 s15, s15
+	WORD	$0xec540a16 // vmov r0, r4, s12, s13
+	WORD	$0xec5b8a17 // vmov r8, r11, s14, s15
+	MOVH	R0, 8(R3)
+	MOVH	R4, 10(R3)
+	MOVH	R8, 12(R3)
+	MOVH	R11, 14(R3)
+	ADD	$16, R3
+
+	CMP	R7, R1
+	BLT	f32toi16_vector_loop
+
+	// Clear vector mode
+	WORD	$0xeef10a10 // vmrs r0, fpscr
+	BIC	$((7<<16)|(3<<20)), R0
+	WORD	$0xeee10a10 // fmxr fpscr, r0
 
 f32toi16_tail:
 	CMP	R1, R2
@@ -237,46 +286,9 @@ f32toi16_done:
 
 
 
-// TODO: detect endianess and use non-native code on big-endian
+// TODO: detect endianess and use non-native order writes on big-endian
 TEXT ·F32toi16ble(SB),4,$0
 	MOVW	output_len+16(FP), R0
 	MOVW	R0>>1, R0
 	MOVW	R0, output_len+16(FP)
 	B	·F32toi16(SB)
-
-// 	MOVW	input+0(FP), R1
-// 	MOVW	input_len+4(FP), R2
-// 	MOVW	output+12(FP), R3
-// 	MOVW	output_len+16(FP), R0
-// 	MOVF	scale+24(FP), F0
-// 	// Choose the shortest length
-// 	MOVW	R2<<1, R2
-// 	CMP	R2, R0
-// 	MOVW.LT	R0, R2
-// 	MOVW	R2<<1, R2
-// 	// If no input then skip loop
-// 	CMP	$0, R2
-// 	BEQ	f32toi16b_done
-// 	ADD	R1, R2
-// f32toi16b_loop:
-// 	MOVF	0(R1), F1
-// 	ADD	$4, R1
-
-// 	MULF	F0, F1
-// 	MOVFW	F1, F1
-// 	MOVW	F1, R0
-
-// 	// Native endianess
-// 	MOVHU	R0, (R3)
-
-// 	// Little endian
-// 	// MOVW	R0>>8, R4
-// 	// MOVBU	R0, 0(R3)
-// 	// MOVBU	R4, 1(R3)
-
-// 	ADD	$2, R3
-
-// 	CMP	R2, R1
-// 	BLT	f32toi16b_loop
-// f32toi16b_done:
-// 	RET

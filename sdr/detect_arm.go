@@ -8,7 +8,10 @@ import (
 	"regexp"
 )
 
-var HaveNEON bool
+var (
+	HaveNEON  bool
+	UseVector bool
+)
 
 var neonRE = regexp.MustCompile(`(?m)^Features.*neon.*$`)
 
@@ -30,4 +33,9 @@ func init() {
 	}
 
 	HaveNEON = neonRE.Match(b)
+	// Vector ops are considerably slower on more recent ARM (ARM8, ARM9).
+	// These generally have NEON so use that as a flag. Another (possibly
+	// better option) is to have a small benchmark to test the performance
+	// of vector ops.
+	UseVector = !HaveNEON
 }
