@@ -144,10 +144,11 @@ func TestUi8toc64(t *testing.T) {
 func TestF32toi16(t *testing.T) {
 	// Make sure there's non-zero value after the expected length of the slice
 	// to detect out of bound access.
-	input := make([]float32, 256)
+	input := make([]float32, 300)
 	for i := 0; i < len(input); i++ {
 		input[i] = 2.0*float32(i)/float32(len(input)) - 1.0
 	}
+	input = input[:256]
 	output := make([]int16, len(input)+4)
 	expected := make([]int16, len(input)+4)
 	f32toi16(input, expected, 1<<13) // Use Go implementation as reference
@@ -180,7 +181,7 @@ func TestF32toi16ble(t *testing.T) {
 	f32toi16ble(input, expected, 1<<13) // Use Go implementation as reference
 	F32toi16ble(input, output, 1<<13)
 	if bytes.Compare(output, expected) != 0 {
-		t.Fatalf("Output doesn't match expected: %+v != %+v", output, expected)
+		t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
 	}
 }
 
