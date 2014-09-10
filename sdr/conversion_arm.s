@@ -8,7 +8,7 @@ TEXT ·Ui8toi16(SB),4,$0
 	CMP	R2, R4
 	MOVW.LT	R4, R2
 	// If no input then skip loop
-	CMP	$0, R2
+	TEQ	$0, R2
 	BEQ	ui8toi16_done
 	ADD	R1, R2
 ui8toi16_loop:
