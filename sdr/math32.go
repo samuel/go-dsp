@@ -80,3 +80,34 @@ func FastAtan2_2(y, x float32) float32 {
 		return atan
 	}
 }
+
+// const (
+// 	atanLUTSize = 131072 // 512 KiB
+// 	atanLUTCoef = 8
+// )
+
+// var atanLUT []int
+
+// func init() {
+// 	atanLUT = make([]int, atanLUTSize)
+// 	for i := 0; i < atanLUTSize; i++ {
+// 		atan_lut[i] = int(math.Atan(float64(i) / float64(1<<atanLUTCoef)) / math.Pi * (1<<14))
+// 	}
+// }
+
+// func AtanLUT(y, x float32) float32 {
+// 	x := 
+// 	x = (cj << atan_lut_coef) / cr;
+// 	x_abs = abs(x);
+
+// 	if (x_abs >= atan_lut_size) {
+// 		/* we can use linear range, but it is not necessary */
+// 		return (cj > 0) ? 1<<13 : -1<<13;
+// 	}
+
+// 	if (x > 0) {
+// 		return (cj > 0) ? atan_lut[x] : atan_lut[x] - (1<<14);
+// 	} else {
+// 		return (cj > 0) ? (1<<14) - atan_lut[-x] : -atan_lut[-x];
+// 	}
+// }
