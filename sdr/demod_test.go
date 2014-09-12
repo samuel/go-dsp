@@ -1,9 +1,19 @@
 package sdr
 
 import (
-	// "math/rand"
+	"math/rand"
 	"testing"
 )
+
+var demodBenchSamples []complex64
+
+func init() {
+	rand.Seed(0)
+	demodBenchSamples = make([]complex64, benchSize)
+	for i := 0; i < benchSize; i++ {
+		demodBenchSamples[i] = complex(rand.Float32(), rand.Float32())
+	}
+}
 
 func TestFMDemodulation(t *testing.T) {
 	filter := &FMDemodFilter{}
@@ -54,22 +64,20 @@ func BenchmarkPolarDiscriminator32(b *testing.B) {
 
 func BenchmarkFMDemodulation(b *testing.B) {
 	filter := &FMDemodFilter{}
-	input := make([]complex64, benchSize)
 	output := make([]float32, benchSize)
 	b.SetBytes(benchSize)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = fmDemodulateAsm(filter, input, output)
+		_, _ = fmDemodulateAsm(filter, demodBenchSamples, output)
 	}
 }
 
 func BenchmarkFMDemodulation_Go(b *testing.B) {
 	filter := &FMDemodFilter{}
-	input := make([]complex64, benchSize)
 	output := make([]float32, benchSize)
 	b.SetBytes(benchSize)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = fmDemodulate(filter, input, output)
+		_, _ = fmDemodulate(filter, demodBenchSamples, output)
 	}
 }

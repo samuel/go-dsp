@@ -34,3 +34,24 @@ func fmDemodulate(fi *FMDemodFilter, input []complex64, output []float32) (int, 
 	fi.pre = pre
 	return len(input), nil
 }
+
+// type I32FMDemodFilter struct {
+// 	preR, preI int32
+// }
+
+// func (fi *I32FMDemodFilter) Demodulate(input []int32, output []int32) (int, error) {
+// 	// 	return i32FMDemodulateAsm(fi, input, output)
+// 	// }
+
+// 	// func i32FMDemodulateAsm(fi *I32FMDemodFilter, input []complex64, output []float32) (int, error)
+
+// 	// func i32FMDemodulate(fi *I32FMDemodFilter, input []complex64, output []float32) (int, error) {
+// 	pre := fi.pre
+// 	for i, inp := range input {
+// 		// output[i] = PolarDiscriminator32(inp, pre)
+// 		output[i] = FastAtan2Fixed(imag(inp)*real(pre)-real(inp)*imag(pre), real(inp)*real(pre)+imag(inp)*imag(pre))
+// 		pre = inp
+// 	}
+// 	fi.pre = pre
+// 	return len(input), nil
+// }

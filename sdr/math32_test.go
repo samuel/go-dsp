@@ -2,28 +2,91 @@ package sdr
 
 import (
 	"math"
-	"math/rand"
 	"testing"
 )
 
 const approxErrorLimit = 0.011
 
-func TestAtan2(t *testing.T) {
-	for i := 0; i < 1000; i++ {
-		x := rand.Float32() - 0.5
-		y := rand.Float32() - 0.5
-		expected := float32(math.Atan2(float64(y), float64(x)))
-		if err := math.Abs(float64(expected - FastAtan2(y, x))); err > approxErrorLimit {
-			t.Errorf("FastArctan2 gave an error of %f for x=%f y=%f", err, x, y)
-			// } else {
-			// 	t.Logf("FastArctan2 error %f", err)
-		}
-		if err := math.Abs(float64(expected - FastAtan2_2(y, x))); err > approxErrorLimit {
-			t.Errorf("FastArctan2_2 gave an error of %f for x=%f y=%f", err, x, y)
-			// } else {
-			// 	t.Logf("FastArctan2 error %f", err)
+var (
+	atanBenchTable      = [][2]float32{}
+	atanBenchTableFixed = [][2]int{}
+)
+
+func init() {
+	for y := -1.0; y <= 1.0; y += 0.5 {
+		for x := -1.0; x <= 1.0; x += 0.5 {
+			atanBenchTable = append(atanBenchTable, [2]float32{float32(x), float32(y)})
+			atanBenchTableFixed = append(atanBenchTableFixed, [2]int{int(x * (1 << 14)), int(y * (1 << 14))})
 		}
 	}
+}
+
+func TestAtan2(t *testing.T) {
+	for y := -1.0; y <= 1.0; y += 0.01 {
+		for x := -1.0; x <= 1.0; x += 0.01 {
+			expected := float32(math.Atan2(y, x))
+			if err := math.Abs(float64(expected - FastAtan2(float32(y), float32(x)))); err > approxErrorLimit {
+				t.Errorf("FastAtan2 gave an error of %f for x=%f y=%f", err, x, y)
+			}
+			if err := math.Abs(float64(expected - FastAtan2_2(float32(y), float32(x)))); err > approxErrorLimit {
+				t.Errorf("FastAtan2_2 gave an error of %f for x=%f y=%f", err, x, y)
+			}
+		}
+	}
+	x, y := 0.0, 0.0
+	expected := float32(math.Atan2(y, x))
+	if err := math.Abs(float64(expected - FastAtan2(float32(y), float32(x)))); err > approxErrorLimit {
+		t.Errorf("FastAtan2 gave an error of %f for x=%f y=%f", err, x, y)
+	}
+	if err := math.Abs(float64(expected - FastAtan2_2(float32(y), float32(x)))); err > approxErrorLimit {
+		t.Errorf("FastAtan2_2 gave an error of %f for x=%f y=%f", err, x, y)
+	}
+}
+
+func TestFastAtan2Error(t *testing.T) {
+	maxE := 0.0
+	sumE := 0.0
+	count := 0
+	for y := -1.0; y <= 1.0; y += 0.01 {
+		for x := -1.0; x <= 1.0; x += 0.01 {
+			ai := float64(FastAtan2(float32(y), float32(x)))
+			af := math.Atan2(y, x)
+			e := math.Abs(ai - af)
+			sumE += e
+			if e > maxE {
+				maxE = e
+			}
+			count++
+		}
+	}
+	if maxE > 0.0102 {
+		t.Errorf("Expected max error of 0.0102 got %f", maxE)
+	}
+	t.Logf("Max error %f\n", maxE)
+	t.Logf("Mean absolute error %f", sumE/float64(count))
+}
+
+func TestFastAtan2_2Error(t *testing.T) {
+	maxE := 0.0
+	sumE := 0.0
+	count := 0
+	for y := -1.0; y <= 1.0; y += 0.01 {
+		for x := -1.0; x <= 1.0; x += 0.01 {
+			ai := float64(FastAtan2_2(float32(y), float32(x)))
+			af := math.Atan2(y, x)
+			e := math.Abs(ai - af)
+			sumE += e
+			if e > maxE {
+				maxE = e
+			}
+			count++
+		}
+	}
+	if maxE > 0.005 {
+		t.Errorf("Expected max error of 0.005 got %f", maxE)
+	}
+	t.Logf("Max error %f\n", maxE)
+	t.Logf("Mean absolute error %f", sumE/float64(count))
 }
 
 func TestScaleF32(t *testing.T) {
@@ -63,60 +126,40 @@ func BenchmarkConj32(b *testing.B) {
 
 func BenchmarkFastAtan2(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		switch i & 3 {
-		case 0:
-			FastAtan2(1.0, 1.0)
-		case 1:
-			FastAtan2(-1.0, 1.0)
-		case 2:
-			FastAtan2(-1.0, -1.0)
-		case 3:
-			FastAtan2(1.0, -1.0)
+		for _, xy := range atanBenchTable {
+			FastAtan2(xy[1], xy[0])
 		}
 	}
 }
 
 func BenchmarkFastAtan2_Go(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		switch i & 3 {
-		case 0:
-			fastAtan2(1.0, 1.0)
-		case 1:
-			fastAtan2(-1.0, 1.0)
-		case 2:
-			fastAtan2(-1.0, -1.0)
-		case 3:
-			fastAtan2(1.0, -1.0)
+		for _, xy := range atanBenchTable {
+			fastAtan2(xy[1], xy[0])
 		}
 	}
 }
 
 func BenchmarkFastAtan2_2(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		switch i & 3 {
-		case 0:
-			FastAtan2_2(1.0, 1.0)
-		case 1:
-			FastAtan2_2(-1.0, 1.0)
-		case 2:
-			FastAtan2_2(-1.0, -1.0)
-		case 3:
-			FastAtan2_2(1.0, -1.0)
+		for _, xy := range atanBenchTable {
+			FastAtan2_2(xy[1], xy[0])
+		}
+	}
+}
+
+func BenchmarkFastAtan2_2_Go(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		for _, xy := range atanBenchTable {
+			fastAtan2_2(xy[1], xy[0])
 		}
 	}
 }
 
 func BenchmarkAtan2(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		switch i & 3 {
-		case 0:
-			math.Atan2(1.0, 1.0)
-		case 1:
-			math.Atan2(-1.0, 1.0)
-		case 2:
-			math.Atan2(-1.0, -1.0)
-		case 3:
-			math.Atan2(1.0, -1.0)
+		for _, xy := range atanBenchTable {
+			math.Atan2(float64(xy[1]), float64(xy[0]))
 		}
 	}
 }

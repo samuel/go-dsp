@@ -10,10 +10,10 @@ func TestRotate90Filter(t *testing.T) {
 	}
 	output := make([]complex64, 256)
 	copy(output, input)
-	output, _ = rotate90FilterAsm(filter, output)
+	output = rotate90FilterAsm(filter, output)
 	expected := make([]complex64, 256)
 	copy(expected, input)
-	expected, _ = rotate90Filter(filter, expected)
+	expected = rotate90Filter(filter, expected)
 	if len(output) != len(expected) {
 		t.Fatalf("Output doesn't match expected: %+v != %+v", output, expected)
 	}
@@ -30,7 +30,7 @@ func BenchmarkRotate90Filter(b *testing.B) {
 	b.SetBytes(benchSize)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = rotate90FilterAsm(filter, input)
+		_ = rotate90FilterAsm(filter, input)
 	}
 }
 
@@ -40,6 +40,26 @@ func BenchmarkRotate90Filter_Go(b *testing.B) {
 	b.SetBytes(benchSize)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = rotate90Filter(filter, input)
+		_ = rotate90Filter(filter, input)
+	}
+}
+
+func BenchmarkI32Rotate90Filter(b *testing.B) {
+	filter := &I32Rotate90Filter{}
+	input := make([]int32, 2*benchSize)
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = i32Rotate90FilterAsm(filter, input)
+	}
+}
+
+func BenchmarkI32Rotate90Filter_Go(b *testing.B) {
+	filter := &I32Rotate90Filter{}
+	input := make([]int32, 2*benchSize)
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = i32Rotate90Filter(filter, input)
 	}
 }

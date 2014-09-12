@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	nBuffers   = 32
+	nBuffers   = 15
 	bufferSize = 256 * 1024 // in samples
 )
 

@@ -31,16 +31,21 @@ func fastAtan2(y, x float32) float32 {
 	if absY < 0 {
 		absY = -absY
 	}
-	absY += 1e-10 // kludge to prevent 0/0 condition
-	var r, angle float32
+	absY += 1e-20 // kludge to prevent 0/0 condition
+	var angle float32
 	if x < 0.0 {
-		r = (x + absY) / (absY - x)
-		angle = pi34
+		r := (x + absY) / (absY - x)
+		angle = pi34 + (0.1963*r*r-0.9817)*r
+	} else if x > 0.0 {
+		r := (x - absY) / (x + absY)
+		angle = pi4 + (0.1963*r*r-0.9817)*r
+	} else if y < 0.0 {
+		return -pi2
+	} else if y > 0.0 {
+		return pi2
 	} else {
-		r = (x - absY) / (x + absY)
-		angle = pi4
+		return 0.0
 	}
-	angle += (0.1963*r*r - 0.9817) * r
 	if y < 0.0 {
 		return -angle // negate if in quad III or IV
 	}
@@ -48,23 +53,21 @@ func fastAtan2(y, x float32) float32 {
 }
 
 // |error| < 0.005
-func FastAtan2_2(y, x float32) float32 {
+func FastAtan2_2(y, x float32) float32
+func fastAtan2_2(y, x float32) float32 {
 	if x == 0.0 {
-		if y > 0.0 {
+		switch {
+		case y > 0.0:
 			return pi2
+		case y < 0.0:
+			return -pi2
 		}
-		if y == 0.0 {
-			return 0.0
-		}
-		return -pi2
+		return 0.0
 	}
 	z := y / x
-	absZ := z
-	if absZ < 0 {
-		absZ = -absZ
-	}
-	if absZ < 1.0 {
-		atan := z / (1.0 + 0.28*z*z)
+	zz := z * z
+	if zz < 1.0 {
+		atan := z / (1.0 + 0.28*zz)
 		if x < 0.0 {
 			if y < 0.0 {
 				return atan - math.Pi
@@ -73,41 +76,10 @@ func FastAtan2_2(y, x float32) float32 {
 		}
 		return atan
 	} else {
-		atan := pi2 - z/(z*z+0.28)
+		atan := pi2 - z/(zz+0.28)
 		if y < 0.0 {
 			return atan - math.Pi
 		}
 		return atan
 	}
 }
-
-// const (
-// 	atanLUTSize = 131072 // 512 KiB
-// 	atanLUTCoef = 8
-// )
-
-// var atanLUT []int
-
-// func init() {
-// 	atanLUT = make([]int, atanLUTSize)
-// 	for i := 0; i < atanLUTSize; i++ {
-// 		atan_lut[i] = int(math.Atan(float64(i) / float64(1<<atanLUTCoef)) / math.Pi * (1<<14))
-// 	}
-// }
-
-// func AtanLUT(y, x float32) float32 {
-// 	x := 
-// 	x = (cj << atan_lut_coef) / cr;
-// 	x_abs = abs(x);
-
-// 	if (x_abs >= atan_lut_size) {
-// 		/* we can use linear range, but it is not necessary */
-// 		return (cj > 0) ? 1<<13 : -1<<13;
-// 	}
-
-// 	if (x > 0) {
-// 		return (cj > 0) ? atan_lut[x] : atan_lut[x] - (1<<14);
-// 	} else {
-// 		return (cj > 0) ? (1<<14) - atan_lut[-x] : -atan_lut[-x];
-// 	}
-// }

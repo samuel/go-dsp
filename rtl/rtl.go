@@ -13,6 +13,7 @@ import "C"
 
 import (
 	"errors"
+	"log"
 	"reflect"
 	"runtime"
 	"unsafe"
@@ -346,7 +347,7 @@ func (dev *Device) ReadAsyncUsingSync(nBuffers, bufferSize int, cb AsyncCallback
 			select {
 			case sampleChan <- buffer{bytes: buf.bytes, size: n}:
 			default:
-				println("dropped packet")
+				log.Print("dropped packet")
 			}
 		}
 	}()
