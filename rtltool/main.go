@@ -98,9 +98,7 @@ func main() {
 			sdr.Ui8toc64(buf, samples[:n])
 
 			var samples2 []complex64
-			if samples2, err = rotate90.Filter(samples[:n]); err != nil {
-				log.Fatal(err)
-			}
+			samples2 = rotate90.Filter(samples[:n])
 			if samples2, err = lowPass1.Filter(samples2); err != nil {
 				log.Fatal(err)
 			}
