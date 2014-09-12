@@ -24,13 +24,13 @@ fmDemod_loop:
 
 	MULF	F3, F5, F6 // imag(inp)*real(pre)
 	MULF	F2, F1, F0 // real(inp)*imag(pre)
-	SUBF	F0, F6
 	MULF	F2, F5, F4 // real(inp)*real(pre)
 	MULF	F3, F1, F7 // imag(inp)*imag(pre)
+	SUBF	F0, F6
 	ADDF	F7, F4
 
-	MOVF	F2, F5
-	MOVF	F3, F1
+	MOVF	F2, F5	// real(pre) = real(inp)
+	MOVF	F3, F1	// imag(pre) = imag(inp)
 
 	// FastAtan2(y=F6, x=F4)
 

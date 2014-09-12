@@ -8,13 +8,12 @@ TEXT ·lowPassDownsampleComplexFilterAsm(SB),7,$0
 	MOVW	R5, R6		// output
 	MOVF	4(R3), F0	// real(fi.now)
 	MOVF	8(R3), F1	// imag(fi.now)
-	MOVW	$0, R4		// i
 	B	complexLoopStart
 complexLoop:
-	ADD    	$1, R4
+	SUB    	$1, R2
 complexLoopStart:
-	CMP    	R4, R2
-	BLE    	complexLoopEnd
+	TEQ	$0, R2
+	BEQ	complexLoopEnd
 
 	// samples[i]
 	MOVF   	0(R5), F2	// real
