@@ -22,8 +22,6 @@ func init() {
 	}
 }
 
-// func Atan2LUT(y, x int) int
-
 func Atan2LUT(y, x int) int {
 	if x == 0 {
 		switch {

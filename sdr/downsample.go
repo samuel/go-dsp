@@ -7,13 +7,13 @@ type LowPassDownsampleComplexFilter struct {
 	prevIndex int
 }
 
-func (fi *LowPassDownsampleComplexFilter) Filter(samples []complex64) ([]complex64, error) {
+func (fi *LowPassDownsampleComplexFilter) Filter(samples []complex64) []complex64 {
 	return lowPassDownsampleComplexFilterAsm(fi, samples)
 }
 
-func lowPassDownsampleComplexFilterAsm(fi *LowPassDownsampleComplexFilter, samples []complex64) ([]complex64, error)
+func lowPassDownsampleComplexFilterAsm(fi *LowPassDownsampleComplexFilter, samples []complex64) []complex64
 
-func lowPassDownsampleComplexFilter(fi *LowPassDownsampleComplexFilter, samples []complex64) ([]complex64, error) {
+func lowPassDownsampleComplexFilter(fi *LowPassDownsampleComplexFilter, samples []complex64) []complex64 {
 	i2 := 0
 	for i := 0; i < len(samples); i++ {
 		fi.now += samples[i]
@@ -26,7 +26,7 @@ func lowPassDownsampleComplexFilter(fi *LowPassDownsampleComplexFilter, samples 
 		fi.now = 0
 		i2++
 	}
-	return samples[:i2], nil
+	return samples[:i2]
 }
 
 type LowPassDownsampleRationalFilter struct {
@@ -36,13 +36,13 @@ type LowPassDownsampleRationalFilter struct {
 	prevIndex int
 }
 
-func (fi *LowPassDownsampleRationalFilter) Filter(samples []float32) ([]float32, error) {
+func (fi *LowPassDownsampleRationalFilter) Filter(samples []float32) []float32 {
 	return lowPassDownsampleRationalFilterAsm(fi, samples)
 }
 
-func lowPassDownsampleRationalFilterAsm(fi *LowPassDownsampleRationalFilter, samples []float32) ([]float32, error)
+func lowPassDownsampleRationalFilterAsm(fi *LowPassDownsampleRationalFilter, samples []float32) []float32
 
-func lowPassDownsampleRationalFilter(fi *LowPassDownsampleRationalFilter, samples []float32) ([]float32, error) {
+func lowPassDownsampleRationalFilter(fi *LowPassDownsampleRationalFilter, samples []float32) []float32 {
 	i2 := 0
 	fastSlowRatio := float32(fi.Slow) / float32(fi.Fast)
 	for i := 0; i < len(samples); i++ {
@@ -56,5 +56,5 @@ func lowPassDownsampleRationalFilter(fi *LowPassDownsampleRationalFilter, sample
 		fi.prevIndex -= fi.Fast
 		fi.sum = 0.0
 	}
-	return samples[:i2], nil
+	return samples[:i2]
 }

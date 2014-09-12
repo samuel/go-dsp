@@ -99,17 +99,10 @@ func main() {
 
 			var samples2 []complex64
 			samples2 = rotate90.Filter(samples[:n])
-			if samples2, err = lowPass1.Filter(samples2); err != nil {
-				log.Fatal(err)
-			}
-			n, err = fmDemod.Demodulate(samples2, pcm)
-			if err != nil {
-				log.Fatal(err)
-			}
+			samples2 = lowPass1.Filter(samples2)
+			n = fmDemod.Demodulate(samples2, pcm)
 			var pcm2 []float32
-			if pcm2, err = lowPass2.Filter(pcm[:n]); err != nil {
-				log.Fatal(err)
-			}
+			pcm2 = lowPass2.Filter(pcm[:n])
 			// if pcm2, err = lowPass3.Filter(pcm2); err != nil {
 			// 	log.Fatal(err)
 			// }

@@ -54,14 +54,10 @@ complexLoopEnd:
 	SUB	R0, R6
 	MOVW	R6>>3, R6
 	MOVW   	R6, ret_len+20(FP)
-	MOVW   	samples_cap+12(FP),R4
+	MOVW   	samples_cap+12(FP), R4
 	MOVW   	R4, ret_cap+24(FP)
-	MOVW   	samples_data+4(FP),R0
+	MOVW   	samples_data+4(FP), R0
 	MOVW   	R0, ret_data+16(FP)
-
-	MOVW   	$0, R0
-	MOVW   	R0, err+28(FP)
-	MOVW   	R0, err+32(FP)
 	RET
 
 
@@ -120,8 +116,4 @@ rationalLoopEnd:
 	MOVW	R4, res_cap+24(FP)
 	MOVW	samples_ptr+4(FP), R0
 	MOVW	R0, res_ptr+16(FP)
-
-	MOVW	$0, R0
-	MOVW	R0, err+28(FP)
-	MOVW	R0, err+32(FP)
 	RET

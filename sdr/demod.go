@@ -18,13 +18,13 @@ type FMDemodFilter struct {
 	pre complex64
 }
 
-func (fi *FMDemodFilter) Demodulate(input []complex64, output []float32) (int, error) {
+func (fi *FMDemodFilter) Demodulate(input []complex64, output []float32) int {
 	return fmDemodulateAsm(fi, input, output)
 }
 
-func fmDemodulateAsm(fi *FMDemodFilter, input []complex64, output []float32) (int, error)
+func fmDemodulateAsm(fi *FMDemodFilter, input []complex64, output []float32) int
 
-func fmDemodulate(fi *FMDemodFilter, input []complex64, output []float32) (int, error) {
+func fmDemodulate(fi *FMDemodFilter, input []complex64, output []float32) int {
 	pre := fi.pre
 	for i, inp := range input {
 		// output[i] = PolarDiscriminator32(inp, pre)
@@ -32,7 +32,7 @@ func fmDemodulate(fi *FMDemodFilter, input []complex64, output []float32) (int, 
 		pre = inp
 	}
 	fi.pre = pre
-	return len(input), nil
+	return len(input)
 }
 
 // type I32FMDemodFilter struct {

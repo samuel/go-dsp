@@ -20,16 +20,12 @@ func TestFMDemodulation(t *testing.T) {
 	input := []complex64{complex(0.0, 2.0), complex(1.0, 2.0), complex(-3.0, 7.0), complex(4.0, -9.0)}
 	output := make([]float32, len(input))
 	filter.pre = 0.0
-	if n, err := fmDemodulateAsm(filter, input, output); err != nil {
-		t.Fatal(err)
-	} else if n != len(input) {
+	if n := fmDemodulateAsm(filter, input, output); n != len(input) {
 		t.Fatalf("Expected n %d instead of %d", len(input), n)
 	}
 	expected := make([]float32, len(input))
 	filter.pre = 0.0
-	if n, err := fmDemodulate(filter, input, expected); err != nil {
-		t.Fatal(err)
-	} else if n != len(input) {
+	if n := fmDemodulate(filter, input, expected); n != len(input) {
 		t.Fatalf("Expected n %d instead of %d", len(input), n)
 	}
 	if len(output) != len(expected) {
@@ -68,7 +64,7 @@ func BenchmarkFMDemodulation(b *testing.B) {
 	b.SetBytes(benchSize)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = fmDemodulateAsm(filter, demodBenchSamples, output)
+		_ = fmDemodulateAsm(filter, demodBenchSamples, output)
 	}
 }
 
@@ -78,6 +74,6 @@ func BenchmarkFMDemodulation_Go(b *testing.B) {
 	b.SetBytes(benchSize)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = fmDemodulate(filter, demodBenchSamples, output)
+		_ = fmDemodulate(filter, demodBenchSamples, output)
 	}
 }

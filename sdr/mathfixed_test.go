@@ -66,18 +66,3 @@ func BenchmarkAtan2LUT(b *testing.B) {
 		}
 	}
 }
-
-// func BenchmarkAtan2LUT_Go(b *testing.B) {
-// 	for i := 0; i < b.N; i++ {
-// 		switch i & 3 {
-// 		case 0:
-// 			atan2LUT(10000, 10000)
-// 		case 1:
-// 			atan2LUT(-10000, 10000)
-// 		case 2:
-// 			atan2LUT(-10000, -10000)
-// 		case 3:
-// 			atan2LUT(10000, -10000)
-// 		}
-// 	}
-// }

@@ -85,7 +85,4 @@ fmDemod_atan_done:
 fmDemod_done:
 	MOVW   	input_len+8(FP), R0
 	MOVW   	R0,output_len+28(FP)
-	MOVW   	$0, R0
-	MOVW   	R0, err+32(FP)
-	MOVW   	R0, err+36(FP)
 	RET
