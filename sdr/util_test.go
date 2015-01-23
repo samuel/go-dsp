@@ -1,6 +1,17 @@
 package sdr
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
+
+func approxEqual(a, b, e float64) bool {
+	return math.Abs(a-b) <= e
+}
+
+func approxEqual32(a, b, e float32) bool {
+	return math.Abs(float64(a)-float64(b)) <= float64(e)
+}
 
 func TestRotate90Filter(t *testing.T) {
 	filter := &Rotate90Filter{}

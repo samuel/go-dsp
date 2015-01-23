@@ -274,7 +274,7 @@ TEXT ·F32toi16(SB),7,$0
 	MOVQ	input_len+8(FP), AX
 	MOVQ	output+24(FP), DI
 	MOVQ	output_len+32(FP), CX
-	MOVQ	scale+48(FP), X8
+	MOVSS	scale+48(FP), X8
 	PSHUFD	$0, X8, X8
 
 	CMPQ	AX, CX

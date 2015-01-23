@@ -2,10 +2,13 @@ package sdr
 
 import (
 	"math"
+	"math/rand"
 	"testing"
 )
 
-const approxErrorLimit = 0.011
+const (
+	approxErrorLimit = 0.011
+)
 
 var (
 	atanBenchTable      = [][2]float32{}
@@ -89,15 +92,15 @@ func TestFastAtan2_2Error(t *testing.T) {
 	t.Logf("Mean absolute error %f", sumE/float64(count))
 }
 
-func TestScaleF32(t *testing.T) {
+func TestVScaleF32(t *testing.T) {
 	input := make([]float32, 257)
 	for i := 0; i < len(input); i++ {
 		input[i] = float32(i)
 	}
 	expected := make([]float32, len(input))
 	output := make([]float32, len(input))
-	scalef32(input, expected, 1.0/256.0)
-	Scalef32(input, output, 1.0/256.0)
+	vscaleF32(input, expected, 1.0/256.0)
+	VScaleF32(input, output, 1.0/256.0)
 	for i, v := range expected {
 		if output[i] != v {
 			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
@@ -108,12 +111,46 @@ func TestScaleF32(t *testing.T) {
 	input = input[1:]
 	expected = make([]float32, len(input)+1)[1:]
 	output = make([]float32, len(input)+1)[1:]
-	scalef32(input, expected, 1.0/256.0)
-	Scalef32(input, output, 1.0/256.0)
+	vscaleF32(input, expected, 1.0/256.0)
+	VScaleF32(input, output, 1.0/256.0)
 	for i, v := range expected {
 		if output[i] != v {
 			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
 		}
+	}
+}
+
+func TestVAbsC64(t *testing.T) {
+	input := []complex64{
+		complex(0.0, 0.0),
+		complex(1.0, 1.0),
+		complex(1.3, -2.7),
+		complex(0.0, -1.0),
+		complex(1.0, 0.0),
+		complex(-2.3, 1.9),
+	}
+	expected := make([]float32, len(input))
+	for i, v := range input {
+		expected[i] = float32(math.Sqrt(float64(real(v)*real(v) + imag(v)*imag(v))))
+	}
+	output := make([]float32, len(input))
+	VAbsC64(input, output)
+	for i, v := range output {
+		if !approxEqual32(v, expected[i], 1e-20) {
+			t.Errorf("Expected %+v got %+v for %+v", expected[i], v, input[i])
+		}
+	}
+}
+
+func TestVMaxF32(t *testing.T) {
+	input := make([]float32, 123)
+	for i := 0; i < len(input); i++ {
+		input[i] = rand.Float32() - 0.5
+	}
+	expected := vMaxF32(input)
+	max := VMaxF32(input)
+	if max != expected {
+		t.Fatalf("Expected %f got %f", expected, max)
 	}
 }
 
@@ -164,22 +201,68 @@ func BenchmarkAtan2(b *testing.B) {
 	}
 }
 
-func BenchmarkScalef32(b *testing.B) {
+func BenchmarkVScaleF32(b *testing.B) {
 	input := make([]float32, benchSize)
 	output := make([]float32, len(input))
 	b.SetBytes(benchSize)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		Scalef32(input, output, 1.0/benchSize)
+		VScaleF32(input, output, 1.0/benchSize)
 	}
 }
 
-func BenchmarkScalef32_Go(b *testing.B) {
+func BenchmarkVScaleF32_Go(b *testing.B) {
 	input := make([]float32, benchSize)
 	output := make([]float32, len(input))
 	b.SetBytes(benchSize)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		scalef32(input, output, 1.0/benchSize)
+		vscaleF32(input, output, 1.0/benchSize)
+	}
+}
+
+func BenchmarkVAbsC64(b *testing.B) {
+	input := make([]complex64, benchSize)
+	output := make([]float32, len(input))
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		VAbsC64(input, output)
+	}
+}
+
+func BenchmarkVAbsC64_Go(b *testing.B) {
+	input := make([]complex64, benchSize)
+	output := make([]float32, len(input))
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		vAbsC64(input, output)
+	}
+}
+
+func BenchmarkVMaxF32(b *testing.B) {
+	input := make([]float32, benchSize)
+	rand.Seed(0)
+	for i := 0; i < len(input); i++ {
+		input[i] = rand.Float32()
+	}
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = VMaxF32(input)
+	}
+}
+
+func BenchmarkVMaxF32_Go(b *testing.B) {
+	input := make([]float32, benchSize)
+	rand.Seed(0)
+	for i := 0; i < len(input); i++ {
+		input[i] = rand.Float32()
+	}
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = vMaxF32(input)
 	}
 }

@@ -6,10 +6,6 @@ import (
 	"testing"
 )
 
-func approxEqual(a, b, e float64) bool {
-	return math.Abs(a-b) <= e
-}
-
 func TestGoertzel(t *testing.T) {
 	samplerate := 1024
 	blocksize := 1024

@@ -14,7 +14,6 @@ import "C"
 import (
 	"errors"
 	"log"
-	"reflect"
 	"runtime"
 	"unsafe"
 )
@@ -73,11 +72,7 @@ type asyncCallbackContext struct {
 func cbAsyncGo(buf *C.uchar, size C.uint32_t, ctx unsafe.Pointer) {
 	cbCtx := (*asyncCallbackContext)(ctx)
 
-	var goBuf []byte
-	sliceHeader := (*reflect.SliceHeader)((unsafe.Pointer(&goBuf)))
-	sliceHeader.Cap = int(size)
-	sliceHeader.Len = int(size)
-	sliceHeader.Data = uintptr(unsafe.Pointer(buf))
+	goBuf := (*[1 << 30]byte)(unsafe.Pointer(buf))[:size:size]
 	if cbCtx.cb(goBuf) {
 		C.rtlsdr_cancel_async(cbCtx.dev.cDev)
 		cbCtx.dev.callbackCtx = nil
@@ -98,16 +93,15 @@ func GetDeviceName(index int) string {
 	return C.GoString(cName)
 }
 
-// Get USB device strings.
-// Return manufacturer, product name, and serial number
-func GetDeviceUSBStrings(index int) (string, string, string, error) {
+// GetDeviceUSBStrings returns the USB device strings.
+func GetDeviceUSBStrings(index int) (manufacturer, productName, serialNumber string, err error) {
 	var manufact [256]C.char
-	var product [256]C.char
-	var serial [256]C.char
-	if C.rtlsdr_get_device_usb_strings(C.uint32_t(index), (*C.char)(&manufact[0]), (*C.char)(&product[0]), (*C.char)(&serial[0])) != 0 {
+	var prod [256]C.char
+	var ser [256]C.char
+	if C.rtlsdr_get_device_usb_strings(C.uint32_t(index), (*C.char)(&manufact[0]), (*C.char)(&prod[0]), (*C.char)(&ser[0])) != 0 {
 		return "", "", "", ErrFailed
 	}
-	return C.GoString((*C.char)(&manufact[0])), C.GoString((*C.char)(&product[0])), C.GoString((*C.char)(&serial[0])), nil
+	return C.GoString((*C.char)(&manufact[0])), C.GoString((*C.char)(&prod[0])), C.GoString((*C.char)(&ser[0])), nil
 }
 
 // Get device index by USB serial string descriptor.

@@ -30,7 +30,7 @@ func ui8toi16b(input []byte, output []byte) {
 	}
 }
 
-// Ui8tof32 converts unsigned 8-bit samples to 32-bit float samples.
+// Ui8tof32 converts unsigned 8-bit samples to 32-bit float.
 // It does not scale the samples.
 func Ui8tof32(input []byte, output []float32)
 
@@ -44,6 +44,8 @@ func ui8tof32(input []byte, output []float32) {
 	}
 }
 
+// Ui8toc64 converts unsigned 8-bit interleaved complex samples to 32-bit float.
+// It does not scale the samples.
 func Ui8toc64(input []byte, output []complex64)
 
 func ui8toc64(input []byte, output []complex64) {

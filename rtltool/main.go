@@ -86,33 +86,31 @@ func main() {
 	pcm := make([]float32, bufferSize)
 
 	dev.ReadAsync(nBuffers, bufferSize, func(buf []byte) bool {
-		for {
-			select {
-			case _ = <-stopChan:
-				return true
-			default:
-			}
-
-			n := len(buf)
-			n /= 2
-			sdr.Ui8toc64(buf, samples[:n])
-
-			var samples2 []complex64
-			samples2 = rotate90.Filter(samples[:n])
-			samples2 = lowPass1.Filter(samples2)
-			n = fmDemod.Demodulate(samples2, pcm)
-			var pcm2 []float32
-			pcm2 = lowPass2.Filter(pcm[:n])
-			// if pcm2, err = lowPass3.Filter(pcm2); err != nil {
-			// 	log.Fatal(err)
-			// }
-			sdr.F32toi16ble(pcm2, bytes, 1<<14)
-			if _, err := os.Stdout.Write(bytes[:len(pcm2)*2]); err != nil {
-				log.Fatal(err)
-			}
-
-			return false
+		select {
+		case _ = <-stopChan:
+			return true
+		default:
 		}
+
+		n := len(buf)
+		n /= 2
+		sdr.Ui8toc64(buf, samples[:n])
+
+		var samples2 []complex64
+		samples2 = rotate90.Filter(samples[:n])
+		samples2 = lowPass1.Filter(samples2)
+		n = fmDemod.Demodulate(samples2, pcm)
+		var pcm2 []float32
+		pcm2 = lowPass2.Filter(pcm[:n])
+		// if pcm2, err = lowPass3.Filter(pcm2); err != nil {
+		// 	log.Fatal(err)
+		// }
+		sdr.F32toi16ble(pcm2, bytes, 1<<14)
+		if _, err := os.Stdout.Write(bytes[:len(pcm2)*2]); err != nil {
+			log.Fatal(err)
+		}
+
+		return false
 	})
 
 	signalChan := make(chan os.Signal, 1)

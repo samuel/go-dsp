@@ -15,13 +15,14 @@ func lowPassDownsampleComplexFilterAsm(fi *LowPassDownsampleComplexFilter, sampl
 
 func lowPassDownsampleComplexFilter(fi *LowPassDownsampleComplexFilter, samples []complex64) []complex64 {
 	i2 := 0
+	// outputScale := 1.0 / float32(fi.Downsample)
 	for i := 0; i < len(samples); i++ {
 		fi.now += samples[i]
 		fi.prevIndex++
 		if fi.prevIndex < fi.Downsample {
 			continue
 		}
-		samples[i2] = fi.now // * outputScale
+		samples[i2] = fi.now // complex(real(fi.now)*outputScale, imag(fi.now)*outputScale)
 		fi.prevIndex = 0
 		fi.now = 0
 		i2++
