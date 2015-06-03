@@ -8,7 +8,7 @@ allow real-time FM demodulation on the Raspberry Pi.
 
 ### Demodulators
 
-* FM
+* FM (polar disciminator)
 * AFSK
 
 ### Decoders
@@ -19,6 +19,7 @@ allow real-time FM demodulation on the Raspberry Pi.
 ### Other Algorithms
 
 * Goertzel
+* Sliding DFT
 
 ### Hardware Interfaces
 

@@ -11,28 +11,28 @@ var (
 		'7', '8', '9', 'C',
 		'*', '0', '#', 'D',
 	}
-	StdLowFreq  = []int{697, 770, 852, 941}
-	StdHighFreq = []int{1209, 1336, 1477, 1633}
+	StdLowFreq  = []uint64{697, 770, 852, 941}
+	StdHighFreq = []uint64{1209, 1336, 1477, 1633}
 )
 
 type DTMF struct {
-	lowFreq   *sdr.Goertzel
-	highFreq  *sdr.Goertzel
+	lowFreq   *sdr.Goertzel32
+	highFreq  *sdr.Goertzel32
 	nHigh     int
 	blockSize int
 	w         []float32
 }
 
-func New(lowFreq, highFreq []int, sampleRate, blockSize int, windowFunc func([]float32)) *DTMF {
+func New(lowFreq, highFreq []uint64, sampleRate, blockSize int, windowFunc func([]float32)) *DTMF {
 	w := make([]float32, blockSize)
 	if windowFunc != nil {
 		windowFunc(w)
 	} else {
-		sdr.HammingWindow(w)
+		sdr.HammingWindowF32(w)
 	}
 	return &DTMF{
-		lowFreq:   sdr.NewGoertzel(lowFreq, sampleRate, blockSize),
-		highFreq:  sdr.NewGoertzel(highFreq, sampleRate, blockSize),
+		lowFreq:   sdr.NewGoertzel32(lowFreq, sampleRate, blockSize),
+		highFreq:  sdr.NewGoertzel32(highFreq, sampleRate, blockSize),
 		nHigh:     len(highFreq),
 		blockSize: blockSize,
 		w:         w,
@@ -40,7 +40,7 @@ func New(lowFreq, highFreq []int, sampleRate, blockSize int, windowFunc func([]f
 }
 
 func NewStandard(sampleRate, blockSize int) *DTMF {
-	return New(StdLowFreq, StdHighFreq, sampleRate, blockSize, sdr.HammingWindow)
+	return New(StdLowFreq, StdHighFreq, sampleRate, blockSize, sdr.HammingWindowF32)
 }
 
 // Return key number (lowFreqIndex * numHighFreq + highFreqIndex) and minimum magnitude

@@ -25,6 +25,19 @@ func vMulC64xF32(input, output []complex64, mul []float32) {
 	}
 }
 
+func VMulC64(input, output, mul []complex64) {
+	n := len(input)
+	if len(output) < n {
+		n = len(output)
+	}
+	if len(mul) < n {
+		n = len(mul)
+	}
+	for i, v := range input[:n] {
+		output[i] = v * mul[i]
+	}
+}
+
 func VAddC64(input, output []complex64) {
 	for i, v := range input {
 		output[i] += v

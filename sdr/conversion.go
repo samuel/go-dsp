@@ -16,9 +16,9 @@ func ui8toi16(input []byte, output []int16) {
 }
 
 // Ui8toi16b converts and scales unsigned 8-bit samples to 16-bit signed samples.
-func Ui8toi16b(input []byte, output []byte)
+func Ui8toi16b(input, output []byte)
 
-func ui8toi16b(input []byte, output []byte) {
+func ui8toi16b(input, output []byte) {
 	n := len(output) / 2
 	if len(input) < n {
 		n = len(input)
@@ -61,6 +61,7 @@ func ui8toc64(input []byte, output []complex64) {
 	}
 }
 
+// F32toi16 converts scaled 32-bit floats to 16-bit integers.
 func F32toi16(input []float32, output []int16, scale float32)
 
 func f32toi16(input []float32, output []int16, scale float32) {

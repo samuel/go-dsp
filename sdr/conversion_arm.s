@@ -180,7 +180,7 @@ TEXT ·F32toi16(SB),4,$0
 	// R3 = output
 	// R7 = count
 
-	MOVBU	·UseVector+0(SB),R0
+	MOVBU	·UseVector+0(SB), R0
 	TEQ	$0, R0
 	BNE	f32toi16_vector
 

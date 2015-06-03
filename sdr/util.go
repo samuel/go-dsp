@@ -52,3 +52,19 @@ func i32Rotate90Filter(fi *I32Rotate90Filter, samples []int32) []int32 {
 	}
 	return samples
 }
+
+func rtoc(r []float64) []complex128 {
+	c := make([]complex128, len(r))
+	for i, v := range r {
+		c[i] = complex(v, 0)
+	}
+	return c
+}
+
+func rtoc32(r []float32) []complex64 {
+	c := make([]complex64, len(r))
+	for i, v := range r {
+		c[i] = complex(v, 0)
+	}
+	return c
+}
