@@ -25,6 +25,9 @@ func vMulC64xF32(input, output []complex64, mul []float32) {
 	}
 }
 
+// VMulC64 multiplies eache value of the input by the matching value in the multiplier.
+//
+//     output[i] = input[i] * mul[i]
 func VMulC64(input, output, mul []complex64) {
 	n := len(input)
 	if len(output) < n {
