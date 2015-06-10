@@ -25,6 +25,12 @@ allow real-time FM demodulation on the Raspberry Pi.
 
 * borip compatible client and server
 
+## Filter design
+
+Go packages for filter design:
+
+- [Parks-McClellan aka Remez](https://github.com/samuel/go-remez)
+
 ## SDR Hardware Interfaces
 
 Go packages to utilize SDR hardware:
