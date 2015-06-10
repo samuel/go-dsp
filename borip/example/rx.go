@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/samuel/go-sdr/borip"
+	"github.com/samuel/go-dsp/borip"
 )
 
 func polarDiscriminant(a, b complex128) float64 {

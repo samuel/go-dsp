@@ -1,4 +1,4 @@
-package sdr
+package dsp
 
 import "math/cmplx"
 

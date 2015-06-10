@@ -20,7 +20,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/samuel/go-sdr/sdr"
+	"github.com/samuel/go-dsp/dsp"
 )
 
 const (
@@ -362,7 +362,7 @@ func (cli *client) startStreaming() error {
 			bufOut[3] = uint8(seq >> 8)
 			seq++
 
-			sdr.Ui8toi16b(buf[:nValues], bufOut[headerSize:])
+			dsp.Ui8toi16b(buf[:nValues], bufOut[headerSize:])
 
 			if _, err := conn.Write(bufOut[:headerSize+nValues*2]); err != nil {
 				// TODO: what to do if not "connection refused"?

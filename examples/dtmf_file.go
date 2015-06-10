@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/samuel/go-sdr/sdr/dtmf"
+	"github.com/samuel/go-dsp/dsp/dtmf"
 )
 
 func main() {

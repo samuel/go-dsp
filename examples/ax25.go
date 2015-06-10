@@ -9,8 +9,8 @@ import (
 	"math"
 	"os"
 
-	"github.com/samuel/go-sdr/sdr"
-	"github.com/samuel/go-sdr/sdr/ax25"
+	"github.com/samuel/go-dsp/dsp"
+	"github.com/samuel/go-dsp/dsp/ax25"
 )
 
 var flagVerbose = flag.Bool("v", false, "Verbose output")
@@ -34,7 +34,7 @@ func main() {
 	interp := 1
 	blockSize := sampleRate / baud
 
-	goer := sdr.NewGoertzel([]int{1200, 2200}, sampleRate*interp, blockSize*interp)
+	goer := dsp.NewGoertzel([]int{1200, 2200}, sampleRate*interp, blockSize*interp)
 
 	threshold := 50.0
 

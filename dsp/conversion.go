@@ -1,4 +1,4 @@
-package sdr
+package dsp
 
 // Ui8toi16 converts and scales unsigned 8-bit samples to 16-bit signed samples.
 func Ui8toi16(input []byte, output []int16)

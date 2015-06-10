@@ -1,7 +1,7 @@
 package dtmf
 
 import (
-	"github.com/samuel/go-sdr/sdr"
+	"github.com/samuel/go-dsp/dsp"
 )
 
 var (
@@ -16,8 +16,8 @@ var (
 )
 
 type DTMF struct {
-	lowFreq   *sdr.Goertzel32
-	highFreq  *sdr.Goertzel32
+	lowFreq   *dsp.Goertzel32
+	highFreq  *dsp.Goertzel32
 	nHigh     int
 	blockSize int
 	w         []float32
@@ -28,11 +28,11 @@ func New(lowFreq, highFreq []uint64, sampleRate, blockSize int, windowFunc func(
 	if windowFunc != nil {
 		windowFunc(w)
 	} else {
-		sdr.HammingWindowF32(w)
+		dsp.HammingWindowF32(w)
 	}
 	return &DTMF{
-		lowFreq:   sdr.NewGoertzel32(lowFreq, sampleRate, blockSize),
-		highFreq:  sdr.NewGoertzel32(highFreq, sampleRate, blockSize),
+		lowFreq:   dsp.NewGoertzel32(lowFreq, sampleRate, blockSize),
+		highFreq:  dsp.NewGoertzel32(highFreq, sampleRate, blockSize),
 		nHigh:     len(highFreq),
 		blockSize: blockSize,
 		w:         w,
@@ -40,7 +40,7 @@ func New(lowFreq, highFreq []uint64, sampleRate, blockSize int, windowFunc func(
 }
 
 func NewStandard(sampleRate, blockSize int) *DTMF {
-	return New(StdLowFreq, StdHighFreq, sampleRate, blockSize, sdr.HammingWindowF32)
+	return New(StdLowFreq, StdHighFreq, sampleRate, blockSize, dsp.HammingWindowF32)
 }
 
 // Return key number (lowFreqIndex * numHighFreq + highFreqIndex) and minimum magnitude

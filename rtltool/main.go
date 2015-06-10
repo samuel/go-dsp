@@ -8,8 +8,8 @@ import (
 	"os/signal"
 	"runtime/pprof"
 
-	"github.com/samuel/go-sdr/rtl"
-	"github.com/samuel/go-sdr/sdr"
+	"github.com/samuel/go-dsp/dsp"
+	"github.com/samuel/go-dsp/rtl"
 )
 
 const (
@@ -72,12 +72,12 @@ func main() {
 		log.Fatalf("Failed to reset buffers: %s", err.Error())
 	}
 
-	rotate90 := &sdr.Rotate90Filter{}
-	lowPass1 := &sdr.LowPassDownsampleComplexFilter{Downsample: downsample}
-	fmDemod := &sdr.FMDemodFilter{}
-	// lowPass2 := &sdr.LowPassDownsampleRationalFilter{Fast: postDownsample, Slow: 1}
-	// lowPass3 := &sdr.LowPassDownsampleRationalFilter{Fast: sampleRate / postDownsample, Slow: outputRate}
-	lowPass2 := &sdr.LowPassDownsampleRationalFilter{Fast: sampleRate, Slow: outputRate}
+	rotate90 := &dsp.Rotate90Filter{}
+	lowPass1 := &dsp.LowPassDownsampleComplexFilter{Downsample: downsample}
+	fmDemod := &dsp.FMDemodFilter{}
+	// lowPass2 := &dsp.LowPassDownsampleRationalFilter{Fast: postDownsample, Slow: 1}
+	// lowPass3 := &dsp.LowPassDownsampleRationalFilter{Fast: sampleRate / postDownsample, Slow: outputRate}
+	lowPass2 := &dsp.LowPassDownsampleRationalFilter{Fast: sampleRate, Slow: outputRate}
 
 	stopChan := make(chan bool)
 
@@ -94,7 +94,7 @@ func main() {
 
 		n := len(buf)
 		n /= 2
-		sdr.Ui8toc64(buf, samples[:n])
+		dsp.Ui8toc64(buf, samples[:n])
 
 		var samples2 []complex64
 		samples2 = rotate90.Filter(samples[:n])
@@ -105,7 +105,7 @@ func main() {
 		// if pcm2, err = lowPass3.Filter(pcm2); err != nil {
 		// 	log.Fatal(err)
 		// }
-		sdr.F32toi16ble(pcm2, bytes, 1<<14)
+		dsp.F32toi16ble(pcm2, bytes, 1<<14)
 		if _, err := os.Stdout.Write(bytes[:len(pcm2)*2]); err != nil {
 			log.Fatal(err)
 		}

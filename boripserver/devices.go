@@ -8,7 +8,7 @@ import (
 	"log"
 	"sync"
 
-	"github.com/samuel/go-sdr/rtl"
+	"github.com/samuel/go-dsp/rtl"
 )
 
 var (

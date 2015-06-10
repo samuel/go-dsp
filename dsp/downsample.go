@@ -1,4 +1,4 @@
-package sdr
+package dsp
 
 type LowPassDownsampleComplexFilter struct {
 	Downsample int

@@ -1,4 +1,4 @@
-package sdr
+package dsp
 
 type ComplexSource interface {
 	Source() ([]complex64, error)

@@ -7,7 +7,7 @@ import (
 	"os/signal"
 
 	"code.google.com/p/portaudio-go/portaudio"
-	"github.com/samuel/go-sdr/sdr/dtmf"
+	"github.com/samuel/go-dsp/dsp/dtmf"
 )
 
 func main() {
