@@ -21,10 +21,13 @@ allow real-time FM demodulation on the Raspberry Pi.
 * Goertzel
 * Sliding DFT
 
-### Hardware Interfaces
-
-* Wrapper for librtlsdr
-
 ### Clients & Servers
 
 * borip compatible client and server
+
+## SDR Hardware Interfaces
+
+Go packages to utilize SDR hardware:
+
+- [RTL-SDR](https://github.com/samuel/go-rtlsdr)
+- [HackRF](https://github.com/samuel/go-hackrf)
