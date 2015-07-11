@@ -104,6 +104,35 @@ func TestUi8tof32(t *testing.T) {
 	}
 }
 
+func TestI8tof32(t *testing.T) {
+	input := make([]byte, 300)
+	for i := 0; i < len(input); i++ {
+		input[i] = byte(int8(i - 128))
+	}
+	input = input[:256]
+	output := make([]float32, len(input)+4)
+	expected := make([]float32, len(input)+4)
+	i8tof32(input, expected) // Use Go implementation as reference
+	I8tof32(input, output)
+	for i := 0; i < len(output); i++ {
+		if output[i] != expected[i] {
+			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		}
+	}
+
+	// Unaligned
+	input = input[1:]
+	output = make([]float32, len(input)+4)[1:]
+	expected = make([]float32, len(input)+4)[1:]
+	i8tof32(input, expected) // Use Go implementation as reference
+	I8tof32(input, output)
+	for i := 0; i < len(output); i++ {
+		if output[i] != expected[i] {
+			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		}
+	}
+}
+
 func TestUi8toc64(t *testing.T) {
 	input := []byte{0, 1, 192, 200, 212, 1, 2, 3}[:5]
 	output := make([]complex64, len(input)/2+4)
@@ -262,6 +291,36 @@ func BenchmarkUi8tof32_Go(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ui8tof32(input, output)
+	}
+}
+
+func BenchmarkI8tof32(b *testing.B) {
+	input := make([]byte, benchSize)
+	output := make([]float32, len(input))
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		I8tof32(input, output)
+	}
+}
+
+func BenchmarkI8tof32_Unaligned(b *testing.B) {
+	input := make([]byte, benchSize+1)[1:]
+	output := make([]float32, len(input)+1)[1:]
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		I8tof32(input, output)
+	}
+}
+
+func BenchmarkI8tof32_Go(b *testing.B) {
+	input := make([]byte, benchSize)
+	output := make([]float32, len(input))
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		I8tof32(input, output)
 	}
 }
 

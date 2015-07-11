@@ -1,6 +1,6 @@
+#include "textflag.h"
 
-
-TEXT ·fmDemodulateAsm(SB),7,$0
+TEXT ·fmDemodulateAsm(SB),NOSPLIT,$0
 	MOVW	input+4(FP), R1
 	MOVW	input_len+8(FP), R2
 	MOVW	output+16(FP), R3

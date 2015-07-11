@@ -1,5 +1,6 @@
+#include "textflag.h"
 
-TEXT ·lowPassDownsampleComplexFilterAsm(SB),7,$0
+TEXT ·lowPassDownsampleComplexFilterAsm(SB),NOSPLIT,$0
 	MOVW	fi+0(FP), R3
 	MOVW	0(R3), R8	// fi.Downsample
 	MOVW	12(R3), R7	// fi.prevIndex
@@ -60,7 +61,7 @@ complexLoopEnd:
 	RET
 
 
-TEXT ·lowPassDownsampleRationalFilterAsm(SB),7,$0
+TEXT ·lowPassDownsampleRationalFilterAsm(SB),NOSPLIT,$0
 	MOVW	fi+0(FP), R4	// fi
 
 	MOVW	4(R4), R7	// fi.Slow

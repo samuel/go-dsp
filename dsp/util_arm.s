@@ -1,5 +1,6 @@
+#include "textflag.h"
 
-TEXT ·rotate90FilterAsm(SB),7,$0
+TEXT ·rotate90FilterAsm(SB),NOSPLIT,$0
 	MOVW	samples_len+8(FP), R7
 	MOVW	samples_ptr+4(FP), R8
 	AND	$(~3), R7	// round down to nearest multiple of 4
@@ -38,7 +39,7 @@ r90_end:
 	MOVW	R0, ret_cap+24(FP)
 	RET
 
-TEXT ·i32Rotate90FilterAsm(SB),7,$0
+TEXT ·i32Rotate90FilterAsm(SB),NOSPLIT,$0
 	MOVW	samples_len+8(FP), R7
 	MOVW	samples_ptr+4(FP), R8
 	AND	$(~3), R7	// round down to nearest multiple of 4

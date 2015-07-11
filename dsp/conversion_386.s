@@ -5,6 +5,9 @@ TEXT ·Ui8toi16b(SB),7,$0
 TEXT ·Ui8tof32(SB),7,$0
 	JMP ·ui8tof32(SB)
 
+TEXT ·I8tof32(SB),7,$0
+	JMP ·i8tof32(SB)
+
 TEXT ·Ui8toc64(SB),7,$0
 	JMP ·ui8toc64(SB)
 

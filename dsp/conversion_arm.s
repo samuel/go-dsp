@@ -1,5 +1,6 @@
+#include "textflag.h"
 
-TEXT ·Ui8toi16(SB),4,$0
+TEXT ·Ui8toi16(SB),NOSPLIT,$0
 	MOVW	input+0(FP), R1
 	MOVW	input_len+4(FP), R2
 	MOVW	output+12(FP), R3
@@ -23,7 +24,7 @@ ui8toi16_loop:
 ui8toi16_done:
 	RET
 
-TEXT ·Ui8toi16b(SB),4,$0
+TEXT ·Ui8toi16b(SB),NOSPLIT,$0
 	MOVW	output_len+16(FP), R4
 	MOVW	R4>>1, R4
 	MOVW	R4, output_len+16(FP)
@@ -31,7 +32,7 @@ TEXT ·Ui8toi16b(SB),4,$0
 
 
 
-TEXT ·Ui8tof32(SB),4,$0
+TEXT ·Ui8tof32(SB),NOSPLIT,$0
 	MOVW	input+0(FP), R1
 	MOVW	input_len+4(FP), R2
 	MOVW	output+12(FP), R3
@@ -147,8 +148,12 @@ ui8tof32_done:
 	RET
 
 
+// TODO
+TEXT ·I8tof32(SB),NOSPLIT,$0
+	B	·i8tof32(SB)
 
-TEXT ·Ui8toc64(SB),4,$0
+
+TEXT ·Ui8toc64(SB),NOSPLIT,$0
 	MOVW	input_len+4(FP), R2
 	AND	$(~1), R2
 	MOVW	R2, input_len+4(FP)
@@ -158,8 +163,7 @@ TEXT ·Ui8toc64(SB),4,$0
 	B	·Ui8tof32(SB)
 
 
-
-TEXT ·F32toi16(SB),4,$0
+TEXT ·F32toi16(SB),NOSPLIT,$0
 	MOVW	input+0(FP), R1
 	MOVW	input_len+4(FP), R2
 	MOVW	output+12(FP), R3
@@ -287,7 +291,7 @@ f32toi16_done:
 
 
 // TODO: detect endianess and use non-native order writes on big-endian
-TEXT ·F32toi16ble(SB),4,$0
+TEXT ·F32toi16ble(SB),NOSPLIT,$0
 	MOVW	output_len+16(FP), R0
 	MOVW	R0>>1, R0
 	MOVW	R0, output_len+16(FP)

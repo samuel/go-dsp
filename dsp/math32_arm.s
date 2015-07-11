@@ -1,6 +1,7 @@
+#include "textflag.h"
 
 // Uses F0, F1, F2, F3, F4, F6
-TEXT ·FastAtan2(SB),7,$-4
+TEXT ·FastAtan2(SB),NOSPLIT,$-4
 	MOVF	y+0(FP), F6
 	MOVF	x+4(FP), F4
 
@@ -56,7 +57,7 @@ fatan2_pos_y:
 
 
 // Uses F0, F1, F2, F3, F4, F6
-TEXT ·FastAtan2_2(SB),7,$-4
+TEXT ·FastAtan2_2(SB),NOSPLIT,$-4
 	MOVF	x+4(FP), F6
 	MOVF	y+0(FP), F3
 	WORD	$0xeeb56ac0 // vcmpe.f32 s12, #0x0
@@ -120,15 +121,15 @@ fatan22_pi2:
 	RET
 
 
-TEXT ·VScaleF32(SB),7,$0
+TEXT ·VScaleF32(SB),NOSPLIT,$0
 	B ·vscaleF32(SB)
 
 
-TEXT ·VMulC64xF32(SB),7,$0
+TEXT ·VMulC64xF32(SB),NOSPLIT,$0
 	B ·vMulC64xF32(SB)
 
 
-TEXT ·VAbsC64(SB),7,$0
+TEXT ·VAbsC64(SB),NOSPLIT,$0
 	MOVW	input+0(FP), R0
 	MOVW	output+12(FP), R1
 	MOVW	input_len+4(FP), R2
