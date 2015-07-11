@@ -320,7 +320,7 @@ func BenchmarkI8tof32_Go(b *testing.B) {
 	b.SetBytes(benchSize)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		I8tof32(input, output)
+		i8tof32(input, output)
 	}
 }
 
