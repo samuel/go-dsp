@@ -172,7 +172,7 @@ TEXT ·F32toi16(SB),NOSPLIT,$0
 	// Choose the shortest length
 	CMP	R2, R0
 	MOVW.LT	R0, R2
-	// If no input then we're done
+	// If no input then we are done
 	TEQ	$0, R2
 	BEQ	f32toi16_done
 

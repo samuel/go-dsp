@@ -221,7 +221,7 @@ ui8tof32_loop:
 
 	// Next 4 values (bytes 4-7)
 	PUNPCKHWL	X9, X10	// Zero extend high 16-bit to 32-bit
-	PSUBL	X8, X10		// Subtract 128 to conver to signed values
+	PSUBL	X8, X10		// Subtract 128 to convert to signed values
 	CVTPL2PS	X10, X10	// Convert 32-bit signed integers to 32-bit float
 	MOVAPS	X10, 16(DI)
 
@@ -331,7 +331,7 @@ i8tof32_loop:
 
 	// Next 4 values (bytes 4-7)
 	PUNPCKHWL	X9, X10	// Zero extend high 16-bit to 32-bit
-	PSUBL	X8, X10		// Subtract 128 to conver to signed values
+	PSUBL	X8, X10		// Subtract 128 to convert to signed values
 	CVTPL2PS	X10, X10	// Convert 32-bit signed integers to 32-bit float
 	MOVAPS	X10, 16(DI)
 

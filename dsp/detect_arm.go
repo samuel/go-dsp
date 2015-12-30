@@ -6,14 +6,22 @@ import (
 	"log"
 	"os"
 	"regexp"
+	"strconv"
 )
 
 var (
-	HaveNEON  bool
+	// HaveNEON is true if ARM NEON SIMD instructions are available
+	HaveNEON bool
+	// UseVector is true if VFP vector ops should be used
 	UseVector bool
 )
 
-var neonRE = regexp.MustCompile(`(?m)^Features.*neon.*$`)
+var (
+	// neonRE matches /proc/cpuinfo if the neon instruction set is available
+	neonRE = regexp.MustCompile(`(?m)^Features.*neon.*$`)
+	// rpi1RE matches /proc/cpuinfo for Raspberry Pi 1
+	rpi1RE = regexp.MustCompile(`(?m)^Hardware.*BCM2708.*$`)
+)
 
 func init() {
 	// ARM doesn't expose CPU info to userland so it's necessary to
@@ -34,8 +42,10 @@ func init() {
 
 	HaveNEON = neonRE.Match(b)
 	// Vector ops are considerably slower on more recent ARM (ARM8, ARM9).
-	// These generally have NEON so use that as a flag. Another (possibly
-	// better option) is to have a small benchmark to test the performance
-	// of vector ops.
-	UseVector = !HaveNEON
+	// These generally have NEON anyway. Only enable vfp vector use for
+	// Raspberry Pi 1 to be safe.
+	UseVector = !HaveNEON && rpi1RE.Match(b)
+	if b, err := strconv.ParseBool(os.Getenv("ARMVECTOR")); err == nil {
+		UseVector = b
+	}
 }

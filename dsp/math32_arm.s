@@ -68,7 +68,9 @@ TEXT ·FastAtan2_2(SB),NOSPLIT,$-4
 	DIVF	F6, F3, F1
 	MULF	F1, F1, F2
 	MOVF	$1.0, F0
-	CMPF	F0, F2
+	// CMPF F0, F2
+	WORD	$0xeeb42ac0 // vcmpe.f32 s4, s0
+	WORD	$0xeef1fa10 // vmrs APSR_nzcv, fpscr
 	BGT	fatan22_5
 	// z / (1.0 + 0.28*z*z)
 	MOVF	$0.28, F4
@@ -243,7 +245,9 @@ vmaxf32_batch_loop:
 vmaxf32_scalar_loop:
 	MOVF	0(R0), F1
 	ADD	$4, R0
-	CMPF	F4, F1
+	// CMPF    F4, F1
+	WORD	$0xeeb41ac4 // vcmpe.f32 s2, s8
+	WORD	$0xeef1fa10 // vmrs APSR_nzcv, fpscr
 	MOVF.GT	F1, F4
 	SUB	$1, R2
 	TEQ	$0, R2
