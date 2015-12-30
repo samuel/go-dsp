@@ -1,3 +1,2 @@
-
-TEXT ·fmDemodulateAsm(SB),7,$0
+TEXT ·fmDemodulateAsm(SB), 7, $0
 	JMP ·fmDemodulate(SB)
