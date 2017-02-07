@@ -1,3 +1,6 @@
+TEXT ·Ui8toi16(SB), 7, $0
+	JMP ·ui8toi16(SB)
+
 TEXT ·Ui8toi16b(SB), 7, $0
 	JMP ·ui8toi16b(SB)
 
@@ -15,3 +18,9 @@ TEXT ·F32toi16(SB), 7, $0
 
 TEXT ·F32toi16ble(SB), 7, $0
 	JMP ·f32toi16ble(SB)
+
+TEXT ·I16bleToF64(SB), 7, $0
+	JMP ·i16bleToF64(SB)
+
+TEXT ·I16bleToF32(SB), 7, $0
+	JMP ·i16bleToF32(SB)
