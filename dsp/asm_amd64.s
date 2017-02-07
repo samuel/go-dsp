@@ -2,7 +2,7 @@
 
 // func hasSSE4() bool
 // returns whether SSE4.1 is supported
-TEXT ·hasSSE4(SB),NOSPLIT,$0
+TEXT ·hasSSE4(SB), NOSPLIT, $0
 	XORQ AX, AX
 	INCL AX
 	CPUID
