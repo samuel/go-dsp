@@ -4,6 +4,8 @@
 #define halfPi $1.570796326794896557998981734272092580795288085938
 #define negativeHalfPi $-1.570796326794896557998981734272092580795288085938
 
+#define vmrs_APSR_nzcv_fpscr WORD $0xeef1fa10
+
 // Uses F0, F1, F2, F3, F4, F6
 TEXT ·FastAtan2(SB), NOSPLIT, $-4
 	MOVF y+0(FP), F6
@@ -15,7 +17,7 @@ TEXT ·FastAtan2(SB), NOSPLIT, $-4
 	ADDF F0, F2
 
 	WORD $0xeeb54ac0   // vcmpe.f32 s8, #0x0
-	WORD $0xeef1fa10   // vmrs APSR_nzcv, fpscr
+	vmrs_APSR_nzcv_fpscr
 	BGT  fatan2_pos_x
 	BEQ  fatan2_zero_x
 
@@ -41,14 +43,14 @@ fatan2_2:
 	ADDF F3, F1
 
 	WORD $0xeeb56ac0   // vcmpe.f32 s12, #0x0
-	WORD $0xeef1fa10   // vmrs APSR_nzcv, fpscr
+	vmrs_APSR_nzcv_fpscr
 	WORD $0xbeb11a41   // vneglt.f32 s2, s2
 	MOVF F1, ret+8(FP)
 	RET
 
 fatan2_zero_x:
 	WORD $0xeeb56ac0   // vcmpe.f32 s12, #0x0
-	WORD $0xeef1fa10   // vmrs APSR_nzcv, fpscr
+	vmrs_APSR_nzcv_fpscr
 	BGT  fatan2_pos_y
 	BLT  fatan2_neg_y
 	MOVF F6, res+8(FP)
@@ -69,7 +71,7 @@ TEXT ·FastAtan2_2(SB), NOSPLIT, $-4
 	MOVF x+4(FP), F6
 	MOVF y+0(FP), F3
 	WORD $0xeeb56ac0    // vcmpe.f32 s12, #0x0
-	WORD $0xeef1fa10    // vmrs APSR_nzcv, fpscr
+	vmrs_APSR_nzcv_fpscr
 	BEQ  fatan22_zero_x
 
 	// y / x
@@ -79,7 +81,7 @@ TEXT ·FastAtan2_2(SB), NOSPLIT, $-4
 
 	// CMPF F0, F2
 	WORD $0xeeb42ac0 // vcmpe.f32 s4, s0
-	WORD $0xeef1fa10 // vmrs APSR_nzcv, fpscr
+	vmrs_APSR_nzcv_fpscr
 	BGT  fatan22_5
 
 	// z / (1.0 + 0.28*z*z)
@@ -88,11 +90,11 @@ TEXT ·FastAtan2_2(SB), NOSPLIT, $-4
 	ADDF    F0, F2
 	DIVF    F2, F1, F2
 	WORD    $0xeeb56ac0 // vcmpe.f32 s12, #0x0
-	WORD    $0xeef1fa10 // vmrs APSR_nzcv, fpscr
+	vmrs_APSR_nzcv_fpscr
 	BGE     fatan22_6
 	MOVF    pi, F1
 	WORD    $0xeeb53ac0 // vcmpe.f32 s6, #0x0
-	WORD    $0xeef1fa10 // vmrs APSR_nzcv, fpscr
+	vmrs_APSR_nzcv_fpscr
 	SUBF.LT F1, F2
 	ADDF.GE F1, F2
 
@@ -109,14 +111,14 @@ fatan22_5:
 	SUBF    F2, F1, F2
 	MOVF    pi, F1
 	WORD    $0xeeb53ac0   // vcmpe.f32 s6, #0x0
-	WORD    $0xeef1fa10   // vmrs APSR_nzcv, fpscr
+	vmrs_APSR_nzcv_fpscr
 	SUBF.LT F1, F2
 	MOVF    F2, res+8(FP)
 	RET
 
 fatan22_zero_x:
 	WORD $0xeeb53ac0 // vcmpe.f32 s6, #0x0
-	WORD $0xeef1fa10 // vmrs APSR_nzcv, fpscr
+	vmrs_APSR_nzcv_fpscr
 
 	// MOVF.LT	negativeHalfPi, F6
 	// MOVF.GT	halfPi, F6
@@ -238,16 +240,16 @@ vmaxf32_batch_loop:
 	PLD  (3*64)(R0)
 	WORD $0xecb00a04        // vldmia r0!, {s0-s3}
 	WORD $0xeeb40ac4        // vcmpe.f32 s0, s8
-	WORD $0xeef1fa10        // vmrs APSR_nzcv, fpscr
+	vmrs_APSR_nzcv_fpscr
 	WORD $0xceb04a40        // vmovgt.f32 s8, s0
 	WORD $0xeef40ac4        // vcmpe.f32 s1, s8
-	WORD $0xeef1fa10        // vmrs APSR_nzcv, fpscr
+	vmrs_APSR_nzcv_fpscr
 	WORD $0xceb04a60        // vmovgt.f32 s8, s1
 	WORD $0xeeb41ac4        // vcmpe.f32 s2, s8
-	WORD $0xeef1fa10        // vmrs APSR_nzcv, fpscr
+	vmrs_APSR_nzcv_fpscr
 	WORD $0xceb04a41        // vmovgt.f32 s8, s2
 	WORD $0xeef41ac4        // vcmpe.f32 s3, s8
-	WORD $0xeef1fa10        // vmrs APSR_nzcv, fpscr
+	vmrs_APSR_nzcv_fpscr
 	WORD $0xceb04a61        // vmovgt.f32 s8, s3
 	SUB  $4, R2
 	CMP  $4, R2
@@ -262,7 +264,7 @@ vmaxf32_scalar_loop:
 
 	// CMPF    F4, F1
 	WORD    $0xeeb41ac4         // vcmpe.f32 s2, s8
-	WORD    $0xeef1fa10         // vmrs APSR_nzcv, fpscr
+	vmrs_APSR_nzcv_fpscr
 	MOVF.GT F1, F4
 	SUB     $1, R2
 	TEQ     $0, R2

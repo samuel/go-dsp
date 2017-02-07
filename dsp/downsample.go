@@ -16,8 +16,8 @@ func lowPassDownsampleComplexFilterAsm(fi *LowPassDownsampleComplexFilter, sampl
 func lowPassDownsampleComplexFilter(fi *LowPassDownsampleComplexFilter, samples []complex64) []complex64 {
 	i2 := 0
 	// outputScale := 1.0 / float32(fi.Downsample)
-	for i := 0; i < len(samples); i++ {
-		fi.now += samples[i]
+	for _, v := range samples {
+		fi.now += v
 		fi.prevIndex++
 		if fi.prevIndex < fi.Downsample {
 			continue
@@ -46,8 +46,8 @@ func lowPassDownsampleRationalFilterAsm(fi *LowPassDownsampleRationalFilter, sam
 func lowPassDownsampleRationalFilter(fi *LowPassDownsampleRationalFilter, samples []float32) []float32 {
 	i2 := 0
 	fastSlowRatio := float32(fi.Slow) / float32(fi.Fast)
-	for i := 0; i < len(samples); i++ {
-		fi.sum += samples[i]
+	for _, v := range samples {
+		fi.sum += v
 		fi.prevIndex += fi.Slow
 		if fi.prevIndex < fi.Fast {
 			continue

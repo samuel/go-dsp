@@ -16,13 +16,13 @@ var (
 )
 
 func TriangleWindow(output []float64) {
-	for n := 0; n < len(output); n++ {
+	for n := range output {
 		output[n] = 1 - math.Abs((float64(n)-float64(len(output)-1)/2.0)/(float64(len(output)+1)/2.0))
 	}
 }
 
 func TriangleWindowF32(output []float32) {
-	for n := 0; n < len(output); n++ {
+	for n := range output {
 		output[n] = float32(1 - math.Abs((float64(n)-float64(len(output)-1)/2.0)/(float64(len(output)+1)/2.0)))
 	}
 }
@@ -36,13 +36,13 @@ func HammingWindowF32(output []float32) {
 }
 
 func HanningWindow(output []float64) {
-	for n := 0; n < len(output); n++ {
+	for n := range output {
 		output[n] = 0.5 * (1 - math.Cos(2*math.Pi*float64(n)/float64(len(output)-1)))
 	}
 }
 
 func HanningWindowF32(output []float32) {
-	for n := 0; n < len(output); n++ {
+	for n := range output {
 		output[n] = float32(0.5 * (1 - math.Cos(2*math.Pi*float64(n)/float64(len(output)-1))))
 	}
 }
@@ -70,7 +70,7 @@ func window(output []float64, a []float64) {
 		panic("invalid window length " + strconv.Itoa(len(a)))
 	}
 	nn := float64(len(output) - 1)
-	for n := 0; n < len(output); n++ {
+	for n := range output {
 		fn := float64(n)
 		v := a[0]
 		if len(a) > 1 {
@@ -91,7 +91,7 @@ func windowF32(output []float32, a []float64) {
 		panic("invalid window length " + strconv.Itoa(len(a)))
 	}
 	nn := float64(len(output) - 1)
-	for n := 0; n < len(output); n++ {
+	for n := range output {
 		fn := float64(n)
 		v := a[0]
 		if len(a) > 1 {

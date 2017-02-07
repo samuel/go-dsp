@@ -72,9 +72,9 @@ func (rd *PacketReader) ReadSamples(samples []complex128) (int, error) {
 	}
 	idx := 0
 	for rd.bufI < rd.bufN {
-		i_real := int16(binary.LittleEndian.Uint16(rd.buf[rd.bufI : rd.bufI+2]))
-		q_imag := int16(binary.LittleEndian.Uint16(rd.buf[rd.bufI+2 : rd.bufI+4]))
-		samples[idx] = complex(float64(i_real), float64(q_imag))
+		iReal := int16(binary.LittleEndian.Uint16(rd.buf[rd.bufI : rd.bufI+2]))
+		qQmag := int16(binary.LittleEndian.Uint16(rd.buf[rd.bufI+2 : rd.bufI+4]))
+		samples[idx] = complex(float64(iReal), float64(qQmag))
 		idx++
 		rd.bufI += 4
 	}

@@ -63,7 +63,7 @@ const (
 )
 
 var (
-	flagCpuProfile = flag.Bool("profile.cpu", false, "Enable CPU profiling")
+	flagCPUProfile = flag.Bool("profile.cpu", false, "Enable CPU profiling")
 )
 
 var (
@@ -107,96 +107,89 @@ func (cli *client) handleCommand(cmd string, args []string) error {
 		if len(args) == 0 {
 			if curFreq, err := cli.dev.rtlDev.GetCenterFreq(); err != nil {
 				return cli.sendResponse(cmd, "-", "failed to get frequency")
-			} else {
-				return cli.sendResponse(cmd, strconv.FormatUint(uint64(curFreq), 10))
 			}
+			return cli.sendResponse(cmd, strconv.FormatUint(uint64(curFreq), 10))
 		}
-		if freq, err := strconv.ParseFloat(args[0], 64); err != nil {
+		freq, err := strconv.ParseFloat(args[0], 64)
+		if err != nil {
 			return cli.sendResponse(cmd, resFail, "invalid format for frequency -- expected float")
-		} else {
-			if err := cli.dev.rtlDev.SetCenterFreq(uint(freq)); err != nil {
-				return cli.sendResponse(cmd, resFail, "failed to set frequency")
-			} else {
-				if curFreq, err := cli.dev.rtlDev.GetCenterFreq(); err != nil {
-					return cli.sendResponse(cmd, resFail, "failed to get frequency")
-				} else {
-					return cli.sendResponse(cmd, resOK, fmt.Sprintf("%f %d %f %f", freq, curFreq, 0.0, 0.0))
-				}
-			}
 		}
+		if err := cli.dev.rtlDev.SetCenterFreq(uint(freq)); err != nil {
+			return cli.sendResponse(cmd, resFail, "failed to set frequency")
+		}
+		curFreq, err := cli.dev.rtlDev.GetCenterFreq()
+		if err != nil {
+			return cli.sendResponse(cmd, resFail, "failed to get frequency")
+		}
+		return cli.sendResponse(cmd, resOK, fmt.Sprintf("%f %d %f %f", freq, curFreq, 0.0, 0.0))
 	case cmdAntenna:
 		if cli.dev == nil {
 			return cli.sendResponse(cmd, resDevice, "no active device")
 		}
 		if len(args) > 0 {
 			return cli.sendResponse(cmd, resOK)
-		} else {
-			return cli.sendResponse(cmd, resOK, "default")
 		}
+		return cli.sendResponse(cmd, resOK, "default")
 	case cmdRate:
 		if cli.dev == nil {
 			return cli.sendResponse(cmd, resDevice, "no active device")
 		}
 		if len(args) == 0 {
-			if rate, err := cli.dev.rtlDev.GetSampleRate(); err != nil {
+			rate, err := cli.dev.rtlDev.GetSampleRate()
+			if err != nil {
 				return cli.sendResponse(cmd, "-", "failed to get sample rate")
-			} else {
-				return cli.sendResponse(cmd, strconv.Itoa(rate))
 			}
+			return cli.sendResponse(cmd, strconv.Itoa(rate))
 		}
-		if rate, err := strconv.ParseFloat(args[0], 64); err != nil {
+		rate, err := strconv.ParseFloat(args[0], 64)
+		if err != nil {
 			return cli.sendResponse(cmd, resFail, "invalid format for sample rate -- expected float")
-		} else {
-			if err := cli.dev.rtlDev.SetSampleRate(uint(rate)); err != nil {
-				return cli.sendResponse(cmd, resFail, "failed to set sample rate")
-			} else {
-				if curRate, err := cli.dev.rtlDev.GetSampleRate(); err != nil {
-					return cli.sendResponse(cmd, resFail, "failed to get sample rate")
-				} else {
-					return cli.sendResponse(cmd, resOK, strconv.FormatUint(uint64(curRate), 10))
-				}
-			}
 		}
+		if err := cli.dev.rtlDev.SetSampleRate(uint(rate)); err != nil {
+			return cli.sendResponse(cmd, resFail, "failed to set sample rate")
+		}
+		curRate, err := cli.dev.rtlDev.GetSampleRate()
+		if err != nil {
+			return cli.sendResponse(cmd, resFail, "failed to get sample rate")
+		}
+		return cli.sendResponse(cmd, resOK, strconv.FormatUint(uint64(curRate), 10))
 	case cmdGain:
 		if cli.dev == nil {
 			return cli.sendResponse(cmd, resDevice, "no active device")
 		}
 		if len(args) == 0 {
-			if gain, err := cli.dev.rtlDev.GetTunerGain(); err != nil {
+			gain, err := cli.dev.rtlDev.GetTunerGain()
+			if err != nil {
 				return cli.sendResponse(cmd, "-", "failed to get gain")
-			} else {
-				return cli.sendResponse(cmd, strconv.Itoa(gain))
 			}
+			return cli.sendResponse(cmd, strconv.Itoa(gain))
 		}
-		if gain, err := strconv.ParseFloat(args[0], 64); err != nil {
+		gain, err := strconv.ParseFloat(args[0], 64)
+		if err != nil {
 			return cli.sendResponse(cmd, resFail, "invalid format for gain -- expected float")
-		} else {
-			if err := cli.dev.rtlDev.SetTunerGain(int(gain)); err != nil {
-				return cli.sendResponse(cmd, resFail, "failed to set gain")
-			} else {
-				if curGain, err := cli.dev.rtlDev.GetTunerGain(); err != nil {
-					return cli.sendResponse(cmd, resFail, "failed to get gain")
-				} else {
-					return cli.sendResponse(cmd, resOK, strconv.FormatUint(uint64(curGain), 10))
-				}
-			}
 		}
+		if err := cli.dev.rtlDev.SetTunerGain(int(gain)); err != nil {
+			return cli.sendResponse(cmd, resFail, "failed to set gain")
+		}
+		curGain, err := cli.dev.rtlDev.GetTunerGain()
+		if err != nil {
+			return cli.sendResponse(cmd, resFail, "failed to get gain")
+		}
+		return cli.sendResponse(cmd, resOK, strconv.FormatUint(uint64(curGain), 10))
 	case cmdDest:
 		if len(args) == 0 {
 			if cli.dest == nil {
 				return cli.sendResponse(cmd, "-", "no DEST set")
-			} else {
-				return cli.sendResponse(cmd, cli.dest.String())
 			}
+			return cli.sendResponse(cmd, cli.dest.String())
 		}
 		addr, err := net.ResolveUDPAddr("udp", args[0])
 		if err != nil {
 			log.Printf("Failed to resolve UDP address %s: %s", args[0], err.Error())
 			return cli.sendResponse(cmd, resFail, "failed to resolve address")
-		} else {
-			cli.dest = addr
-			return cli.sendResponse(cmd, resOK)
 		}
+		cli.dest = addr
+		return cli.sendResponse(cmd, resOK)
 	case cmdGo:
 		if cli.dest == nil {
 			return cli.sendResponse(cmd, resFail, "no DEST set")
@@ -209,9 +202,8 @@ func (cli *client) handleCommand(cmd string, args []string) error {
 		}
 		if err := cli.startStreaming(); err != nil {
 			return cli.sendResponse(cmd, resFail, err.Error())
-		} else {
-			return cli.sendResponse(cmd, resOK)
 		}
+		return cli.sendResponse(cmd, resOK)
 	case cmdStop:
 		if !cli.isStreaming() {
 			return cli.sendResponse(cmd, "STOPPED")
@@ -433,7 +425,7 @@ func main() {
 
 	flag.Parse()
 
-	if *flagCpuProfile {
+	if *flagCPUProfile {
 		wr, err := os.Create("cpu.prof")
 		if err != nil {
 			log.Fatal(err)
@@ -466,7 +458,7 @@ func main() {
 	signal.Notify(signalChan, os.Interrupt, os.Kill)
 	_ = <-signalChan
 
-	if *flagCpuProfile {
+	if *flagCPUProfile {
 		pprof.StopCPUProfile()
 	}
 }

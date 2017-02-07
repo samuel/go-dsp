@@ -1,9 +1,8 @@
 package dsp
 
 import (
-	"unsafe"
-
 	"math"
+	"unsafe"
 )
 
 // VMulC64xF32 multiplies a vector of complex values with a vector with real values.
@@ -147,11 +146,10 @@ func fastAtan2_2(y, x float32) float32 {
 			return atan + math.Pi
 		}
 		return atan
-	} else {
-		atan := pi2 - z/(zz+0.28)
-		if y < 0.0 {
-			return atan - math.Pi
-		}
-		return atan
 	}
+	atan := pi2 - z/(zz+0.28)
+	if y < 0.0 {
+		return atan - math.Pi
+	}
+	return atan
 }
