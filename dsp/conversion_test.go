@@ -214,6 +214,50 @@ func TestF32toi16ble(t *testing.T) {
 	}
 }
 
+func TestI16bleToF64(t *testing.T) {
+	input := []byte{0x00, 0x00, 0xff, 0xff, 0xff, 0x7f, 0x00, 0x80}
+	output := make([]float64, len(input)/2)
+	expected := []float64{0.0, -1.0, 32767.0, -32768.0}
+	I16bleToF64(input, output, 1)
+	for i, v := range expected {
+		if output[i] != v {
+			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		}
+	}
+	expected = []float64{0.0, -1.0 / 32768.0, 32767.0 / 32768.0, -32768.0 / 32768.0}
+	I16bleToF64(input, output, 1.0/32768.0)
+	for i, v := range expected {
+		if output[i] != v {
+			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		}
+	}
+
+	// Unaligned
+	input = input[1 : len(input)-1]
+	copy(input, []byte{0xff, 0xff, 0xff, 0x7f, 0x00, 0x80})
+	output = make([]float64, len(input)-1)
+	expected = expected[1:]
+	I16bleToF64(input, output, 1.0/32768.0)
+	for i, v := range expected {
+		if output[i] != v {
+			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		}
+	}
+
+	// Make sure there's non-zero value after the expected length of the slice
+	// to detect out of bound access.
+	input = []byte{0x00, 0x00, 0xff, 0xff, 0xff, 0x7f, 0x00, 0x80, 0x64, 0x00, 0xff, 0x00}[:10]
+	output = make([]float64, len(input)/2+4)
+	expected = make([]float64, len(output))
+	i16bleToF64(input, expected, 1.0)
+	I16bleToF64(input, output, 1.0)
+	for i, v := range expected {
+		if output[i] != v {
+			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		}
+	}
+}
+
 func BenchmarkUi8toi16(b *testing.B) {
 	input := make([]byte, benchSize)
 	output := make([]int16, len(input))
@@ -391,5 +435,25 @@ func BenchmarkF32toi16ble_Go(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		f32toi16ble(input, output, 1<<7)
+	}
+}
+
+func BenchmarkI16bleToF64(b *testing.B) {
+	input := make([]byte, benchSize*2)
+	output := make([]float64, benchSize)
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		I16bleToF64(input, output, 1<<15)
+	}
+}
+
+func BenchmarkI16bleToF64_Go(b *testing.B) {
+	input := make([]byte, benchSize*2)
+	output := make([]float64, benchSize)
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		i16bleToF64(input, output, 1<<15)
 	}
 }

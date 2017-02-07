@@ -9,7 +9,6 @@ TEXT ·Ui8toi16(SB), NOSPLIT, $0-48
 	CMPQ CX, BX
 	JGE  ui8toi16_min_length
 	MOVQ CX, BX
-
 ui8toi16_min_length:
 	// BX = length
 
@@ -247,9 +246,9 @@ ui8tof32_loop:
 	CVTPL2PS  X10, X10    // Convert 32-bit signed integers to 32-bit float
 	MOVAPS    X10, 48(DI)
 
+	ADDQ $16, AX
 	ADDQ $16, SI
 	ADDQ $64, DI
-	ADDQ $16, AX
 	CMPQ AX, DX
 	JLT  ui8tof32_loop
 
@@ -362,9 +361,9 @@ i8tof32_loop:
 	CVTPL2PS  X10, X10    // Convert 32-bit signed integers to 32-bit float
 	MOVAPS    X10, 48(DI)
 
+	ADDQ $16, AX
 	ADDQ $16, SI
 	ADDQ $64, DI
-	ADDQ $16, AX
 	CMPQ AX, DX
 	JLT  i8tof32_loop
 
@@ -387,6 +386,7 @@ i8tof32_step:
 i8tof32_done:
 	RET
 
+// func Ui8toc64(input []byte, output []complex64)
 TEXT ·Ui8toc64(SB), NOSPLIT, $0-48
 	MOVQ input_len+8(FP), AX
 	ANDQ $-2, AX
@@ -463,3 +463,73 @@ TEXT ·F32toi16ble(SB), NOSPLIT, $0-52
 	SHRQ $1, AX
 	MOVQ AX, output_len+32(FP)
 	JMP  ·F32toi16(SB)
+
+TEXT ·I16bleToF64(SB), NOSPLIT, $0-56
+	MOVQ	input+0(FP), SI
+	MOVQ	input_len+8(FP), CX
+	MOVQ	output+24(FP), DI
+	MOVQ	output_len+32(FP), AX
+	// MOVDDUP scale+48(FP), X0 // SSE3
+	MOVQ    scale+48(FP), X0
+	MOVHPS  X0, X0
+
+	SARQ	$1, CX
+	CMPQ	CX, AX
+	JLT	i16bleToF64_min_len
+    MOVQ    AX, CX
+i16bleToF64_min_len:
+	// CX = min length in samples
+
+	MOVQ    $0, BX
+	MOVQ    CX, DX
+	ANDQ    $-4, DX
+
+    CMPB ·useSSE4(SB), $1
+    JNE i16bleToF64_sse2_loop
+
+i16bleToF64_sse4_loop:
+	CMPQ	BX, DX
+	JGE     i16bleToF64_scalar_loop
+	MOVQ      (SI)(BX*2), X1 // Load 4 16-bit integers (0..15, 16..31, 32..47, 48..63)
+	PMOVSXWD  X1, X2         // SSE4.1 Sign-extend 16-bit integers to 32-bit integers (0..31, 32..63, 64..95, 96..127)
+	CVTPL2PD  X2, X3         // Convert 32-bit signed integers to 64-bit float X2:0..63=X2:0..31, X2:64..127=X2:32..63
+	MOVHLPS   X2, X2         // Move 64..127 to 0..63
+	CVTPL2PD  X2, X2         // Convert 32-bit signed integers to 64-bit float X2:0..63=X2:0..31, X2:64..127=X2:32..63
+	MULPD	X0, X3
+	MULPD	X0, X2
+	MOVAPD	X3, (DI)(BX*8)
+	ADDQ	$2, BX
+	MOVAPD	X2, (DI)(BX*8)
+	ADDQ	$2, BX
+	JMP     i16bleToF64_sse4_loop
+
+i16bleToF64_sse2_loop:
+	CMPQ	BX, DX
+	JGE     i16bleToF64_scalar_loop
+	MOVQ      (SI)(BX*2), X1 // Load 4 16-bit integers (0..15, 16..31, 32..47, 48..63)
+	PUNPCKLWL	X1, X1
+	BYTE $0x66; BYTE $0x0F; BYTE $0x72; BYTE $0xE1; BYTE $0x10  // PSRAD $16, X1
+	CVTPL2PD  X1, X3         // Convert 32-bit signed integers to 64-bit float X2:0..63=X2:0..31, X2:64..127=X2:32..63
+	MOVHLPS   X1, X1         // Move 64..127 to 0..63
+	CVTPL2PD  X1, X1         // Convert 32-bit signed integers to 64-bit float X2:0..63=X2:0..31, X2:64..127=X2:32..63
+	MULPD	X0, X3
+	MULPD	X0, X1
+	MOVAPD	X3, (DI)(BX*8)
+	ADDQ	$2, BX
+	MOVAPD	X1, (DI)(BX*8)
+	ADDQ	$2, BX
+	JMP     i16bleToF64_sse2_loop
+
+i16bleToF64_scalar_loop:
+	CMPQ	BX, CX
+	JGE     i16bleToF64_done
+	MOVWLSX	(SI)(BX*2), DX
+	XORPS	X1, X1
+	CVTSL2SD	DX, X1
+	MULSD	X0, X1
+	MOVSD	X1, (DI)(BX*8)
+	INCQ	BX
+	JMP     i16bleToF64_scalar_loop
+
+i16bleToF64_done:
+	RET

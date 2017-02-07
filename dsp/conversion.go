@@ -96,3 +96,15 @@ func f32toi16ble(input []float32, output []byte, scale float32) {
 		output[i*2+1] = uint8(v >> 8)
 	}
 }
+
+// I16bleToF64 converts int16 stored in a byte slice as little endian to float64.
+func I16bleToF64(input []byte, output []float64, scale float64)
+func i16bleToF64(input []byte, output []float64, scale float64) {
+	n := len(input) / 2
+	if len(output) < n {
+		n = len(output)
+	}
+	for i := range output[:n] {
+		output[i] = float64(int16(uint16(input[i*2])|(uint16(input[i*2+1])<<8))) * scale
+	}
+}
