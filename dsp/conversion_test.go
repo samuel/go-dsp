@@ -235,7 +235,7 @@ func TestI16bleToF64(t *testing.T) {
 	// Unaligned
 	input = input[1 : len(input)-1]
 	copy(input, []byte{0xff, 0xff, 0xff, 0x7f, 0x00, 0x80})
-	output = make([]float64, len(input)-1)
+	output = make([]float64, len(input)/2)
 	expected = expected[1:]
 	I16bleToF64(input, output, 1.0/32768.0)
 	for i, v := range expected {
@@ -251,6 +251,50 @@ func TestI16bleToF64(t *testing.T) {
 	expected = make([]float64, len(output))
 	i16bleToF64(input, expected, 1.0)
 	I16bleToF64(input, output, 1.0)
+	for i, v := range expected {
+		if output[i] != v {
+			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		}
+	}
+}
+
+func TestI16bleToF32(t *testing.T) {
+	input := []byte{0x00, 0x00, 0xff, 0xff, 0xff, 0x7f, 0x00, 0x80}
+	output := make([]float32, len(input)/2)
+	expected := []float32{0.0, -1.0, 32767.0, -32768.0}
+	I16bleToF32(input, output, 1)
+	for i, v := range expected {
+		if output[i] != v {
+			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		}
+	}
+	expected = []float32{0.0, -1.0 / 32768.0, 32767.0 / 32768.0, -32768.0 / 32768.0}
+	I16bleToF32(input, output, 1.0/32768.0)
+	for i, v := range expected {
+		if output[i] != v {
+			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		}
+	}
+
+	// Unaligned
+	input = input[1 : len(input)-1]
+	copy(input, []byte{0xff, 0xff, 0xff, 0x7f, 0x00, 0x80})
+	output = make([]float32, len(input)/2)
+	expected = expected[1:]
+	I16bleToF32(input, output, 1.0/32768.0)
+	for i, v := range expected {
+		if output[i] != v {
+			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		}
+	}
+
+	// Make sure there's non-zero value after the expected length of the slice
+	// to detect out of bound access.
+	input = []byte{0x00, 0x00, 0xff, 0xff, 0xff, 0x7f, 0x00, 0x80, 0x64, 0x00, 0xff, 0x00}[:10]
+	output = make([]float32, len(input)/2+4)
+	expected = make([]float32, len(output))
+	i16bleToF32(input, expected, 1.0)
+	I16bleToF32(input, output, 1.0)
 	for i, v := range expected {
 		if output[i] != v {
 			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
@@ -455,5 +499,25 @@ func BenchmarkI16bleToF64_Go(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		i16bleToF64(input, output, 1<<15)
+	}
+}
+
+func BenchmarkI16bleToF32(b *testing.B) {
+	input := make([]byte, benchSize*2)
+	output := make([]float32, benchSize)
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		I16bleToF32(input, output, 1<<15)
+	}
+}
+
+func BenchmarkI16bleToF32_Go(b *testing.B) {
+	input := make([]byte, benchSize*2)
+	output := make([]float32, benchSize)
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		i16bleToF32(input, output, 1<<15)
 	}
 }

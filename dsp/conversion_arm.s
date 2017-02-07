@@ -300,3 +300,9 @@ TEXT ·F32toi16ble(SB), NOSPLIT, $0
 	MOVW R0>>1, R0
 	MOVW R0, output_len+16(FP)
 	B    ·F32toi16(SB)
+
+TEXT ·I16bleToF64(SB), NOSPLIT, $0
+	B ·i16bleToF64(SB)
+
+TEXT ·I16bleToF32(SB), NOSPLIT, $0
+	B ·i16bleToF32(SB)
