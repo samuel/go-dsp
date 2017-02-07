@@ -206,52 +206,94 @@ ui8tof32_aligned:
 	CMPQ AX, DX
 	JGE  ui8tof32_stepper
 
-	MOVQ      $0, BP
-	MOVQ      BP, X9
-	MOVL      $0x80808080, BX
-	MOVL      BX, X8
-	PUNPCKLBW X9, X8
-	PUNPCKLWL X9, X8
+	CMPB ·useSSE4(SB), $1
+	JNE  ui8tof32_nosse4
 
-ui8tof32_loop:
+	MOVQ   $0, BP
+	MOVQ   BP, X9
+	MOVL   $0x80808080, BX
+	MOVL   BX, X8
+	PSHUFL $0, X8, X8
+
+ui8tof32_sse4_loop:
 	MOVOU (SI), X0 // Load 16 unsigned 8-bit values
-	MOVO  X0, X1
-
-	// TODO: Optionally if SSE4.1 is available can use PMOVSXBD or just PMOVZXBD
+	PSUBB X8, X0   // Make the values signed
 
 	// Lowest 4 values (bytes 0-3)
-	PUNPCKLBW X9, X0   // Zero extend low 8-bit to 16-bit
-	MOVO      X0, X10
-	PUNPCKLWL X9, X0   // Zero extend low 16-bit to 32-bit
-	PSUBL     X8, X0   // Subtract 128 to convert to signed values
-	CVTPL2PS  X0, X0   // Convert 32-bit signed integers to 32-bit float
-	MOVAPS    X0, (DI)
+	PMOVSXBD X0, X2
+	CVTPL2PS X2, X2   // Convert 32-bit signed integers to 32-bit float
+	MOVAPS   X2, (DI)
 
 	// Next 4 values (bytes 4-7)
-	PUNPCKHWL X9, X10     // Zero extend high 16-bit to 32-bit
-	PSUBL     X8, X10     // Subtract 128 to convert to signed values
-	CVTPL2PS  X10, X10    // Convert 32-bit signed integers to 32-bit float
-	MOVAPS    X10, 16(DI)
+	PSHUFL   $1, X0, X2
+	PMOVSXBD X2, X2
+	CVTPL2PS X2, X2     // Convert 32-bit signed integers to 32-bit float
+	MOVAPS   X2, 16(DI)
 
 	// Next 4 values (bytes 8-11)
-	PUNPCKHBW X9, X1     // Zero extend high 8-bit to 16-bit
-	MOVO      X1, X10
-	PUNPCKLWL X9, X1     // Zero extend low 16-bit to 32-bit
-	PSUBL     X8, X1     // Subtract 128 to convert to signed values
-	CVTPL2PS  X1, X1     // Convert 32-bit signed integers to 32-bit float
-	MOVAPS    X1, 32(DI)
+	PSHUFL   $2, X0, X2
+	PMOVSXBD X2, X2
+	CVTPL2PS X2, X2     // Convert 32-bit signed integers to 32-bit float
+	MOVAPS   X2, 32(DI)
 
 	// Next 4 values (bytes 12-15)
-	PUNPCKHWL X9, X10     // Zero extend high 16-bit to 32-bit
-	PSUBL     X8, X10     // Subtract 128 to convert to signed values
-	CVTPL2PS  X10, X10    // Convert 32-bit signed integers to 32-bit float
-	MOVAPS    X10, 48(DI)
+	PSHUFL   $3, X0, X2
+	PMOVSXBD X2, X2
+	CVTPL2PS X2, X2     // Convert 32-bit signed integers to 32-bit float
+	MOVAPS   X2, 48(DI)
 
 	ADDQ $16, AX
 	ADDQ $16, SI
 	ADDQ $64, DI
 	CMPQ AX, DX
-	JLT  ui8tof32_loop
+	JLT  ui8tof32_sse4_loop
+	JMP  ui8tof32_stepper
+
+ui8tof32_nosse4:
+	MOVQ   $0, BP
+	MOVQ   BP, X9
+	MOVL   $0x80808080, BX
+	MOVL   BX, X8
+	PSHUFL $0, X8, X8
+
+ui8tof32_sse2_loop:
+	MOVOU (SI), X0 // Load 16 unsigned 8-bit values
+	PSUBB X8, X0   // Make the values signed
+	MOVO  X0, X1
+
+	// Lowest 4 values (bytes 0-3)
+	PUNPCKLBW X1, X1
+	MOVO      X1, X2
+	PUNPCKLWL X1, X1
+	PSRAL     $24, X1
+	CVTPL2PS  X1, X1
+	MOVAPS    X1, (DI)
+
+	// Next 4 values (bytes 4-7)
+	PUNPCKHWL X2, X2
+	PSRAL     $24, X2
+	CVTPL2PS  X2, X2
+	MOVAPS    X2, 16(DI)
+
+	// // Next 4 values (bytes 8-11)
+	PUNPCKHBW X0, X0
+	MOVO      X0, X2
+	PUNPCKLWL X0, X0
+	PSRAL     $24, X0
+	CVTPL2PS  X0, X0
+	MOVAPS    X0, 32(DI)
+
+	// Next 4 values (bytes 12-15)
+	PUNPCKHWL X2, X2
+	PSRAL     $24, X2
+	CVTPL2PS  X2, X2
+	MOVAPS    X2, 48(DI)
+
+	ADDQ $16, AX
+	ADDQ $16, SI
+	ADDQ $64, DI
+	CMPQ AX, DX
+	JLT  ui8tof32_sse2_loop
 
 	// TODO: work increasingly smaller blocks
 
@@ -317,56 +359,86 @@ i8tof32_aligned:
 	CMPQ AX, DX
 	JGE  i8tof32_stepper
 
-	MOVQ      $0, BP
-	MOVQ      BP, X9
-	MOVL      $0x80808080, BX
-	MOVL      BX, X8
-	MOVO      X8, X11
-	PUNPCKLBW X9, X8
-	PUNPCKLWL X9, X8
-	PUNPCKLBW X11, X11
-	PUNPCKLWL X11, X11
+	CMPB ·useSSE4(SB), $1
+	JNE  i8tof32_nosse4
 
-i8tof32_loop:
+	MOVQ $0, BP
+	MOVQ BP, X9
+
+i8tof32_sse4_loop:
 	MOVOU (SI), X0 // Load 16 unsigned 8-bit values
-	PADDB X11, X0  // Make values unsigned
-	MOVO  X0, X1
-
-	// TODO: Optionally if SSE4.1 is available can use PMOVSXBD or just PMOVZXBD
 
 	// Lowest 4 values (bytes 0-3)
-	PUNPCKLBW X9, X0   // Zero extend low 8-bit to 16-bit
-	MOVO      X0, X10
-	PUNPCKLWL X9, X0   // Zero extend low 16-bit to 32-bit
-	PSUBL     X8, X0   // Subtract 128 to convert to signed values
-	CVTPL2PS  X0, X0   // Convert 32-bit signed integers to 32-bit float
-	MOVAPS    X0, (DI)
+	PMOVSXBD X0, X2
+	CVTPL2PS X2, X2   // Convert 32-bit signed integers to 32-bit float
+	MOVAPS   X2, (DI)
 
 	// Next 4 values (bytes 4-7)
-	PUNPCKHWL X9, X10     // Zero extend high 16-bit to 32-bit
-	PSUBL     X8, X10     // Subtract 128 to convert to signed values
-	CVTPL2PS  X10, X10    // Convert 32-bit signed integers to 32-bit float
-	MOVAPS    X10, 16(DI)
+	PSHUFL   $1, X0, X2
+	PMOVSXBD X2, X2
+	CVTPL2PS X2, X2     // Convert 32-bit signed integers to 32-bit float
+	MOVAPS   X2, 16(DI)
 
 	// Next 4 values (bytes 8-11)
-	PUNPCKHBW X9, X1     // Zero extend high 8-bit to 16-bit
-	MOVO      X1, X10
-	PUNPCKLWL X9, X1     // Zero extend low 16-bit to 32-bit
-	PSUBL     X8, X1     // Subtract 128 to convert to signed values
-	CVTPL2PS  X1, X1     // Convert 32-bit signed integers to 32-bit float
-	MOVAPS    X1, 32(DI)
+	PSHUFL   $2, X0, X2
+	PMOVSXBD X2, X2
+	CVTPL2PS X2, X2     // Convert 32-bit signed integers to 32-bit float
+	MOVAPS   X2, 32(DI)
 
 	// Next 4 values (bytes 12-15)
-	PUNPCKHWL X9, X10     // Zero extend high 16-bit to 32-bit
-	PSUBL     X8, X10     // Subtract 128 to convert to signed values
-	CVTPL2PS  X10, X10    // Convert 32-bit signed integers to 32-bit float
-	MOVAPS    X10, 48(DI)
+	PSHUFL   $3, X0, X2
+	PMOVSXBD X2, X2
+	CVTPL2PS X2, X2     // Convert 32-bit signed integers to 32-bit float
+	MOVAPS   X2, 48(DI)
 
 	ADDQ $16, AX
 	ADDQ $16, SI
 	ADDQ $64, DI
 	CMPQ AX, DX
-	JLT  i8tof32_loop
+	JLT  i8tof32_sse4_loop
+	JMP  i8tof32_stepper
+
+i8tof32_nosse4:
+	MOVQ $0, BP
+	MOVQ BP, X9
+
+i8tof32_sse2_loop:
+	MOVOU (SI), X0 // Load 16 unsigned 8-bit values
+	MOVO  X0, X1
+
+	// Lowest 4 values (bytes 0-3)
+	PUNPCKLBW X1, X1
+	MOVO      X1, X2
+	PUNPCKLWL X1, X1
+	PSRAL     $24, X1
+	CVTPL2PS  X1, X1
+	MOVAPS    X1, (DI)
+
+	// Next 4 values (bytes 4-7)
+	PUNPCKHWL X2, X2
+	PSRAL     $24, X2
+	CVTPL2PS  X2, X2
+	MOVAPS    X2, 16(DI)
+
+	// // Next 4 values (bytes 8-11)
+	PUNPCKHBW X0, X0
+	MOVO      X0, X2
+	PUNPCKLWL X0, X0
+	PSRAL     $24, X0
+	CVTPL2PS  X0, X0
+	MOVAPS    X0, 32(DI)
+
+	// Next 4 values (bytes 12-15)
+	PUNPCKHWL X2, X2
+	PSRAL     $24, X2
+	CVTPL2PS  X2, X2
+	MOVAPS    X2, 48(DI)
+
+	ADDQ $16, AX
+	ADDQ $16, SI
+	ADDQ $64, DI
+	CMPQ AX, DX
+	JLT  i8tof32_sse2_loop
 
 	// TODO: work increasingly smaller blocks
 
@@ -485,52 +557,69 @@ i16bleToF64_min_len:
 
 	MOVQ $0, BX
 	MOVQ CX, DX
-	ANDQ $-4, DX
 
 	CMPB ·useSSE4(SB), $1
-	JNE  i16bleToF64_sse2_loop
+	JNE  i16bleToF64_nosse4
+
+	ANDQ $-8, DX
 
 i16bleToF64_sse4_loop:
 	CMPQ     BX, DX
 	JGE      i16bleToF64_scalar_loop
-	MOVQ     (SI)(BX*2), X1          // Load 4 16-bit integers (0..15, 16..31, 32..47, 48..63)
+	MOVOU    (SI), X1                // Load 8 16-bit integers (0..15, 16..31, 32..47, 48..63)
 	PMOVSXWD X1, X2                  // SSE4.1 Sign-extend 16-bit integers to 32-bit integers (0..31, 32..63, 64..95, 96..127)
 	CVTPL2PD X2, X3                  // Convert 32-bit signed integers to 64-bit float
 	MOVHLPS  X2, X2                  // Move 64..127 to 0..63
 	CVTPL2PD X2, X2                  // Convert 32-bit signed integers to 64-bit float
+	MOVHLPS  X1, X1                  // Move 64..127 to 0..63
+	PMOVSXWD X1, X4                  // SSE4.1 Sign-extend 16-bit integers to 32-bit integers (0..31, 32..63, 64..95, 96..127)
+	CVTPL2PD X4, X5                  // Convert 32-bit signed integers to 64-bit float
+	MOVHLPS  X4, X4                  // Move 64..127 to 0..63
+	CVTPL2PD X4, X4                  // Convert 32-bit signed integers to 64-bit float
 	MULPD    X0, X3
 	MULPD    X0, X2
-	MOVAPD   X3, (DI)(BX*8)
-	ADDQ     $2, BX
-	MOVAPD   X2, (DI)(BX*8)
-	ADDQ     $2, BX
+	MULPD    X0, X4
+	MULPD    X0, X5
+	MOVUPD   X3, (DI)
+	MOVUPD   X2, 16(DI)
+	MOVUPD   X5, 32(DI)
+	MOVUPD   X4, 48(DI)
+	ADDQ     $16, SI
+	ADDQ     $64, DI
+	ADDQ     $8, BX
 	JMP      i16bleToF64_sse4_loop
+
+i16bleToF64_nosse4:
+	ANDQ $-4, DX
 
 i16bleToF64_sse2_loop:
 	CMPQ      BX, DX
 	JGE       i16bleToF64_scalar_loop
-	MOVQ      (SI)(BX*2), X1                                        // Load 4 16-bit integers (0..15, 16..31, 32..47, 48..63)
+	MOVQ      (SI), X1                // Load 4 16-bit integers (0..15, 16..31, 32..47, 48..63)
 	PUNPCKLWL X1, X1
-	BYTE      $0x66; BYTE $0x0F; BYTE $0x72; BYTE $0xE1; BYTE $0x10 // PSRAD $16, X1
-	CVTPL2PD  X1, X3                                                // Convert 32-bit signed integers to 64-bit float
-	MOVHLPS   X1, X1                                                // Move 64..127 to 0..63
-	CVTPL2PD  X1, X1                                                // Convert 32-bit signed integers to 64-bit float
+	PSRAL     $16, X1
+	CVTPL2PD  X1, X3                  // Convert 32-bit signed integers to 64-bit float
+	MOVHLPS   X1, X1                  // Move 64..127 to 0..63
+	CVTPL2PD  X1, X1                  // Convert 32-bit signed integers to 64-bit float
 	MULPD     X0, X3
 	MULPD     X0, X1
-	MOVAPD    X3, (DI)(BX*8)
-	ADDQ      $2, BX
-	MOVAPD    X1, (DI)(BX*8)
-	ADDQ      $2, BX
+	MOVUPD    X3, (DI)
+	MOVUPD    X1, 16(DI)
+	ADDQ      $8, SI
+	ADDQ      $32, DI
+	ADDQ      $4, BX
 	JMP       i16bleToF64_sse2_loop
 
 i16bleToF64_scalar_loop:
 	CMPQ     BX, CX
 	JGE      i16bleToF64_done
-	MOVWLSX  (SI)(BX*2), DX
+	MOVWLSX  (SI), DX
 	XORPS    X1, X1
 	CVTSL2SD DX, X1
 	MULSD    X0, X1
-	MOVSD    X1, (DI)(BX*8)
+	MOVSD    X1, (DI)
+	ADDQ     $2, SI
+	ADDQ     $8, DI
 	INCQ     BX
 	JMP      i16bleToF64_scalar_loop
 
@@ -555,42 +644,64 @@ i16bleToF32_min_len:
 
 	MOVQ $0, BX
 	MOVQ CX, DX
-	ANDQ $-4, DX
 
 	CMPB ·useSSE4(SB), $1
-	JNE  i16bleToF32_sse2_loop
+	JNE  i16bleToF32_nosse4
+
+	ANDQ $-8, DX
 
 i16bleToF32_sse4_loop:
 	CMPQ     BX, DX
 	JGE      i16bleToF32_scalar_loop
-	MOVQ     (SI)(BX*2), X1          // Load 4 16-bit integers (0..15, 16..31, 32..47, 48..63)
+	MOVOU    (SI), X1                // Load 8 16-bit integers (0..15, 16..31, 32..47, 48..63)
 	PMOVSXWD X1, X2                  // SSE4.1 Sign-extend 16-bit integers to 32-bit integers (0..31, 32..63, 64..95, 96..127)
 	CVTPL2PS X2, X2                  // Convert 32-bit signed integers to 32-bit float X2:0..63=X2:0..31, X2:64..127=X2:32..63
+	MOVHLPS  X1, X1                  // Move 64..127 to 0..63
+	PMOVSXWD X1, X1                  // SSE4.1 Sign-extend 16-bit integers to 32-bit integers (0..31, 32..63, 64..95, 96..127)
+	CVTPL2PS X1, X1                  // Convert 32-bit signed integers to 32-bit float X2:0..63=X2:0..31, X2:64..127=X2:32..63
 	MULPS    X0, X2
-	MOVAPS   X2, (DI)(BX*4)
-	ADDQ     $4, BX
+	MULPS    X0, X1
+	MOVUPS   X2, (DI)
+	MOVUPS   X1, 16(DI)
+	ADDQ     $16, SI
+	ADDQ     $32, DI
+	ADDQ     $8, BX
 	JMP      i16bleToF32_sse4_loop
+
+i16bleToF32_nosse4:
+	ANDQ $-8, DX
 
 i16bleToF32_sse2_loop:
 	CMPQ      BX, DX
 	JGE       i16bleToF32_scalar_loop
-	MOVQ      (SI)(BX*2), X1                                        // Load 4 16-bit integers (0..15, 16..31, 32..47, 48..63)
+	MOVOU     (SI), X2                // Load 8 16-bit integers (0..15, 16..31, 32..47, 48..63)
+	MOVO      X2, X1
 	PUNPCKLWL X1, X1
-	BYTE      $0x66; BYTE $0x0F; BYTE $0x72; BYTE $0xE1; BYTE $0x10 // PSRAD $16, X1
-	CVTPL2PS  X1, X1                                                // Convert 32-bit signed integers to 32-bit float
+	PSRAL     $16, X1
+	CVTPL2PS  X1, X1                  // Convert 32-bit signed integers to 32-bit float
+	MOVHLPS   X2, X2                  // Move 64..127 to 0..63
+	PUNPCKLWL X2, X2
+	PSRAL     $16, X2
+	CVTPL2PS  X2, X2                  // Convert 32-bit signed integers to 32-bit float
 	MULPS     X0, X1
-	MOVAPS    X1, (DI)(BX*4)
-	ADDQ      $4, BX
+	MULPS     X0, X2
+	MOVUPS    X1, (DI)
+	MOVUPS    X2, 16(DI)
+	ADDQ      $16, SI
+	ADDQ      $32, DI
+	ADDQ      $8, BX
 	JMP       i16bleToF32_sse2_loop
 
 i16bleToF32_scalar_loop:
 	CMPQ     BX, CX
 	JGE      i16bleToF32_done
-	MOVWLSX  (SI)(BX*2), DX
+	MOVWLSX  (SI), DX
 	XORPS    X1, X1
 	CVTSL2SS DX, X1
 	MULSS    X0, X1
-	MOVSS    X1, (DI)(BX*4)
+	MOVSS    X1, (DI)
+	ADDQ     $2, SI
+	ADDQ     $4, DI
 	INCQ     BX
 	JMP      i16bleToF32_scalar_loop
 

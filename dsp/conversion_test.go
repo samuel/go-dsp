@@ -76,61 +76,65 @@ func TestUi8toi16b(t *testing.T) {
 }
 
 func TestUi8tof32(t *testing.T) {
-	input := make([]byte, 300)
-	for i := 0; i < len(input); i++ {
-		input[i] = byte(i)
-	}
-	input = input[:256]
-	output := make([]float32, len(input)+4)
-	expected := make([]float32, len(input)+4)
-	ui8tof32(input, expected) // Use Go implementation as reference
-	Ui8tof32(input, output)
-	for i := 0; i < len(output); i++ {
-		if output[i] != expected[i] {
-			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+	sse4Test(t, func(t *testing.T) {
+		input := make([]byte, 300)
+		for i := 0; i < len(input); i++ {
+			input[i] = byte(i)
 		}
-	}
+		input = input[:256]
+		output := make([]float32, len(input)+4)
+		expected := make([]float32, len(input)+4)
+		ui8tof32(input, expected) // Use Go implementation as reference
+		Ui8tof32(input, output)
+		for i := 0; i < len(output); i++ {
+			if output[i] != expected[i] {
+				t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+			}
+		}
 
-	// Unaligned
-	input = input[1:]
-	output = make([]float32, len(input)+4)[1:]
-	expected = make([]float32, len(input)+4)[1:]
-	ui8tof32(input, expected) // Use Go implementation as reference
-	Ui8tof32(input, output)
-	for i := 0; i < len(output); i++ {
-		if output[i] != expected[i] {
-			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		// Unaligned
+		input = input[1:]
+		output = make([]float32, len(input)+4)[1:]
+		expected = make([]float32, len(input)+4)[1:]
+		ui8tof32(input, expected) // Use Go implementation as reference
+		Ui8tof32(input, output)
+		for i := 0; i < len(output); i++ {
+			if output[i] != expected[i] {
+				t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+			}
 		}
-	}
+	})
 }
 
 func TestI8tof32(t *testing.T) {
-	input := make([]byte, 300)
-	for i := 0; i < len(input); i++ {
-		input[i] = byte(int8(i - 128))
-	}
-	input = input[:256]
-	output := make([]float32, len(input)+4)
-	expected := make([]float32, len(input)+4)
-	i8tof32(input, expected) // Use Go implementation as reference
-	I8tof32(input, output)
-	for i := 0; i < len(output); i++ {
-		if output[i] != expected[i] {
-			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+	sse4Test(t, func(t *testing.T) {
+		input := make([]byte, 300)
+		for i := 0; i < len(input); i++ {
+			input[i] = byte(int8(i - 128))
 		}
-	}
+		input = input[:256]
+		output := make([]float32, len(input)+4)
+		expected := make([]float32, len(input)+4)
+		i8tof32(input, expected) // Use Go implementation as reference
+		I8tof32(input, output)
+		for i := 0; i < len(output); i++ {
+			if output[i] != expected[i] {
+				t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+			}
+		}
 
-	// Unaligned
-	input = input[1:]
-	output = make([]float32, len(input)+4)[1:]
-	expected = make([]float32, len(input)+4)[1:]
-	i8tof32(input, expected) // Use Go implementation as reference
-	I8tof32(input, output)
-	for i := 0; i < len(output); i++ {
-		if output[i] != expected[i] {
-			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		// Unaligned
+		input = input[1:]
+		output = make([]float32, len(input)+4)[1:]
+		expected = make([]float32, len(input)+4)[1:]
+		i8tof32(input, expected) // Use Go implementation as reference
+		I8tof32(input, output)
+		for i := 0; i < len(output); i++ {
+			if output[i] != expected[i] {
+				t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+			}
 		}
-	}
+	})
 }
 
 func TestUi8toc64(t *testing.T) {
@@ -215,91 +219,105 @@ func TestF32toi16ble(t *testing.T) {
 }
 
 func TestI16bleToF64(t *testing.T) {
-	input := []byte{0x00, 0x00, 0xff, 0xff, 0xff, 0x7f, 0x00, 0x80}
-	output := make([]float64, len(input)/2)
-	expected := []float64{0.0, -1.0, 32767.0, -32768.0}
-	I16bleToF64(input, output, 1)
-	for i, v := range expected {
-		if output[i] != v {
-			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+	sse4Test(t, func(t *testing.T) {
+		input := []byte{
+			0x00, 0x00, 0xff, 0xff, 0xff, 0x7f, 0x00, 0x80,
+			0x00, 0x00, 0xff, 0xff, 0xff, 0x7f, 0x00, 0x80,
+			0x80, 0x00, 0x00, 0xff,
 		}
-	}
-	expected = []float64{0.0, -1.0 / 32768.0, 32767.0 / 32768.0, -32768.0 / 32768.0}
-	I16bleToF64(input, output, 1.0/32768.0)
-	for i, v := range expected {
-		if output[i] != v {
-			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		output := make([]float64, len(input)/2)
+		expected := make([]float64, len(output))
+		i16bleToF64(input, expected, 1)
+		I16bleToF64(input, output, 1)
+		for i, v := range expected {
+			if output[i] != v {
+				t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+			}
 		}
-	}
+		i16bleToF64(input, expected, 1.0/32768.0)
+		I16bleToF64(input, output, 1.0/32768.0)
+		for i, v := range expected {
+			if output[i] != v {
+				t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+			}
+		}
 
-	// Unaligned
-	input = input[1 : len(input)-1]
-	copy(input, []byte{0xff, 0xff, 0xff, 0x7f, 0x00, 0x80})
-	output = make([]float64, len(input)/2)
-	expected = expected[1:]
-	I16bleToF64(input, output, 1.0/32768.0)
-	for i, v := range expected {
-		if output[i] != v {
-			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		// Unaligned
+		input = input[1 : len(input)-1]
+		output = make([]float64, len(input)/2+1)[1:]
+		expected = make([]float64, len(output))
+		i16bleToF64(input, expected, 1.0/32768.0)
+		I16bleToF64(input, output, 1.0/32768.0)
+		for i, v := range expected {
+			if output[i] != v {
+				t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+			}
 		}
-	}
 
-	// Make sure there's non-zero value after the expected length of the slice
-	// to detect out of bound access.
-	input = []byte{0x00, 0x00, 0xff, 0xff, 0xff, 0x7f, 0x00, 0x80, 0x64, 0x00, 0xff, 0x00}[:10]
-	output = make([]float64, len(input)/2+4)
-	expected = make([]float64, len(output))
-	i16bleToF64(input, expected, 1.0)
-	I16bleToF64(input, output, 1.0)
-	for i, v := range expected {
-		if output[i] != v {
-			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		// Make sure there's non-zero value after the expected length of the slice
+		// to detect out of bound access.
+		input = []byte{0x00, 0x00, 0xff, 0xff, 0xff, 0x7f, 0x00, 0x80, 0x64, 0x00, 0xff, 0x00}[:10]
+		output = make([]float64, len(input)/2+4)
+		expected = make([]float64, len(output))
+		i16bleToF64(input, expected, 1.0)
+		I16bleToF64(input, output, 1.0)
+		for i, v := range expected {
+			if output[i] != v {
+				t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+			}
 		}
-	}
+	})
 }
 
 func TestI16bleToF32(t *testing.T) {
-	input := []byte{0x00, 0x00, 0xff, 0xff, 0xff, 0x7f, 0x00, 0x80}
-	output := make([]float32, len(input)/2)
-	expected := []float32{0.0, -1.0, 32767.0, -32768.0}
-	I16bleToF32(input, output, 1)
-	for i, v := range expected {
-		if output[i] != v {
-			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+	sse4Test(t, func(t *testing.T) {
+		input := []byte{
+			0x00, 0x00, 0xff, 0xff, 0xff, 0x7f, 0x00, 0x80,
+			0x00, 0x00, 0xff, 0xff, 0xff, 0x7f, 0x00, 0x80,
+			0x80, 0x00, 0x00, 0xff,
 		}
-	}
-	expected = []float32{0.0, -1.0 / 32768.0, 32767.0 / 32768.0, -32768.0 / 32768.0}
-	I16bleToF32(input, output, 1.0/32768.0)
-	for i, v := range expected {
-		if output[i] != v {
-			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		output := make([]float32, len(input)/2)
+		expected := make([]float32, len(output))
+		i16bleToF32(input, expected, 1)
+		I16bleToF32(input, output, 1)
+		for i, v := range expected {
+			if output[i] != v {
+				t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+			}
 		}
-	}
+		i16bleToF32(input, expected, 1.0/32768.0)
+		I16bleToF32(input, output, 1.0/32768.0)
+		for i, v := range expected {
+			if output[i] != v {
+				t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+			}
+		}
 
-	// Unaligned
-	input = input[1 : len(input)-1]
-	copy(input, []byte{0xff, 0xff, 0xff, 0x7f, 0x00, 0x80})
-	output = make([]float32, len(input)/2)
-	expected = expected[1:]
-	I16bleToF32(input, output, 1.0/32768.0)
-	for i, v := range expected {
-		if output[i] != v {
-			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		// Unaligned
+		input = input[1 : len(input)-1]
+		output = make([]float32, len(input)/2+1)[1:]
+		expected = make([]float32, len(output))
+		i16bleToF32(input, expected, 1.0/32768.0)
+		I16bleToF32(input, output, 1.0/32768.0)
+		for i, v := range expected {
+			if output[i] != v {
+				t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+			}
 		}
-	}
 
-	// Make sure there's non-zero value after the expected length of the slice
-	// to detect out of bound access.
-	input = []byte{0x00, 0x00, 0xff, 0xff, 0xff, 0x7f, 0x00, 0x80, 0x64, 0x00, 0xff, 0x00}[:10]
-	output = make([]float32, len(input)/2+4)
-	expected = make([]float32, len(output))
-	i16bleToF32(input, expected, 1.0)
-	I16bleToF32(input, output, 1.0)
-	for i, v := range expected {
-		if output[i] != v {
-			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		// Make sure there's non-zero value after the expected length of the slice
+		// to detect out of bound access.
+		input = []byte{0x00, 0x00, 0xff, 0xff, 0xff, 0x7f, 0x00, 0x80, 0x64, 0x00, 0xff, 0x00}[:10]
+		output = make([]float32, len(input)/2+4)
+		expected = make([]float32, len(output))
+		i16bleToF32(input, expected, 1.0)
+		I16bleToF32(input, output, 1.0)
+		for i, v := range expected {
+			if output[i] != v {
+				t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+			}
 		}
-	}
+	})
 }
 
 func BenchmarkUi8toi16(b *testing.B) {
