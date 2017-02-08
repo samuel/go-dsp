@@ -9,8 +9,53 @@ TEXT ·FastAtan2_2(SB), NOSPLIT, $0
 TEXT ·VAbsC64(SB), NOSPLIT, $0
 	JMP ·vAbsC64(SB)
 
-TEXT ·VMaxF32(SB), NOSPLIT, $0
-	JMP ·vMaxF32(SB)
+TEXT ·VMaxF32(SB), NOSPLIT, $0-28
+	MOVQ input+0(FP), SI
+	MOVQ input_len+8(FP), CX
+
+	MOVL $0xff800000, AX // -InF
+	MOVL AX, X0
+
+	MOVQ $0, DX
+	MOVQ CX, BX
+	ANDQ $-4, BX
+	CMPQ DX, BX
+	JGE  vmaxf32_scalar
+
+	PSHUFD $0, X0, X0
+
+vmaxf32_sse_loop:
+	MOVUPS (SI), X1
+	MAXPS  X1, X0
+	ADDQ   $16, SI
+	ADDQ   $4, DX
+	CMPQ   DX, BX
+	JLT    vmaxf32_scalar_loop
+
+	MOVHLPS X0, X1
+	MAXPS   X1, X0
+	PSHUFD  $0x55, X0, X1
+	MAXPS   X1, X0
+
+vmaxf32_scalar:
+	CMPQ DX, CX
+	JGE  vmaxf32_done
+
+vmaxf32_scalar_loop:
+	MOVSS   (SI), X1
+	UCOMISS X0, X1
+	JLS     vmaxf32_not_max
+	MOVO    X1, X0
+
+vmaxf32_not_max:
+	ADDQ $4, SI
+	INCQ DX
+	CMPQ DX, CX
+	JLT  vmaxf32_scalar_loop
+
+vmaxf32_done:
+	MOVSS X0, ret+24(FP)
+	RET
 
 TEXT ·VMulC64xF32(SB), NOSPLIT, $0
 	JMP ·vMulC64xF32(SB)

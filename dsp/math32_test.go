@@ -152,6 +152,24 @@ func TestVMaxF32(t *testing.T) {
 	if max != expected {
 		t.Fatalf("Expected %f got %f", expected, max)
 	}
+
+	// Ascending
+	input = []float32{-4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0}
+	if max := VMaxF32(input); max != 4.0 {
+		t.Fatalf("Expected 4.0 got %f", max)
+	}
+
+	// Descending
+	input = []float32{4.0, 3.0, 2.0, 1.0, 0.0, -1.0, -2.0, -3.0, -4.0}
+	if max := VMaxF32(input); max != 4.0 {
+		t.Fatalf("Expected 4.0 got %f", max)
+	}
+
+	// Unordered
+	input = []float32{1.5, -4.0, 8.0, 0.0, -1.0, 2.0, -3.0}
+	if max := VMaxF32(input); max != 8.0 {
+		t.Fatalf("Expected 8.0 got %f", max)
+	}
 }
 
 func BenchmarkConj32(b *testing.B) {
@@ -241,7 +259,7 @@ func BenchmarkVAbsC64_Go(b *testing.B) {
 	}
 }
 
-func BenchmarkVMaxF32(b *testing.B) {
+func BenchmarkVMaxF32_Random(b *testing.B) {
 	input := make([]float32, benchSize)
 	rand.Seed(0)
 	for i := 0; i < len(input); i++ {
@@ -254,11 +272,91 @@ func BenchmarkVMaxF32(b *testing.B) {
 	}
 }
 
-func BenchmarkVMaxF32_Go(b *testing.B) {
+func BenchmarkVMaxF32_Ascending(b *testing.B) {
+	input := make([]float32, benchSize)
+	for i := 0; i < len(input); i++ {
+		input[i] = float32(i)
+	}
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = VMaxF32(input)
+	}
+}
+
+func BenchmarkVMaxF32_Descending(b *testing.B) {
+	input := make([]float32, benchSize)
+	for i := 0; i < len(input); i++ {
+		input[i] = float32(-i)
+	}
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = VMaxF32(input)
+	}
+}
+
+func BenchmarkVMaxF32_Alternating(b *testing.B) {
+	input := make([]float32, benchSize)
+	for i := 0; i < len(input); i++ {
+		if i&1 == 0 {
+			input[i] = float32(i)
+		} else {
+			input[i] = float32(-i)
+		}
+	}
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = VMaxF32(input)
+	}
+}
+
+func BenchmarkVMaxF32_Go_Random(b *testing.B) {
 	input := make([]float32, benchSize)
 	rand.Seed(0)
 	for i := 0; i < len(input); i++ {
 		input[i] = rand.Float32()
+	}
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = vMaxF32(input)
+	}
+}
+
+func BenchmarkVMaxF32_Go_Ascending(b *testing.B) {
+	input := make([]float32, benchSize)
+	for i := 0; i < len(input); i++ {
+		input[i] = float32(i)
+	}
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = vMaxF32(input)
+	}
+}
+
+func BenchmarkVMaxF32_Go_Decending(b *testing.B) {
+	input := make([]float32, benchSize)
+	for i := 0; i < len(input); i++ {
+		input[i] = float32(-i)
+	}
+	b.SetBytes(benchSize)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = vMaxF32(input)
+	}
+}
+
+func BenchmarkVMaxF32_Go_Alternating(b *testing.B) {
+	input := make([]float32, benchSize)
+	for i := 0; i < len(input); i++ {
+		if i&1 == 0 {
+			input[i] = float32(i)
+		} else {
+			input[i] = float32(-i)
+		}
 	}
 	b.SetBytes(benchSize)
 	b.ResetTimer()

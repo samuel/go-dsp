@@ -76,7 +76,7 @@ func TestUi8toi16b(t *testing.T) {
 }
 
 func TestUi8tof32(t *testing.T) {
-	sse4Test(t, func(t *testing.T) {
+	simdTest(t, func(t *testing.T) {
 		input := make([]byte, 300)
 		for i := 0; i < len(input); i++ {
 			input[i] = byte(i)
@@ -107,7 +107,7 @@ func TestUi8tof32(t *testing.T) {
 }
 
 func TestI8tof32(t *testing.T) {
-	sse4Test(t, func(t *testing.T) {
+	simdTest(t, func(t *testing.T) {
 		input := make([]byte, 300)
 		for i := 0; i < len(input); i++ {
 			input[i] = byte(int8(i - 128))
@@ -219,7 +219,7 @@ func TestF32toi16ble(t *testing.T) {
 }
 
 func TestI16bleToF64(t *testing.T) {
-	sse4Test(t, func(t *testing.T) {
+	simdTest(t, func(t *testing.T) {
 		input := []byte{
 			0x00, 0x00, 0xff, 0xff, 0xff, 0x7f, 0x00, 0x80,
 			0x00, 0x00, 0xff, 0xff, 0xff, 0x7f, 0x00, 0x80,
@@ -270,7 +270,7 @@ func TestI16bleToF64(t *testing.T) {
 }
 
 func TestI16bleToF32(t *testing.T) {
-	sse4Test(t, func(t *testing.T) {
+	simdTest(t, func(t *testing.T) {
 		input := []byte{
 			0x00, 0x00, 0xff, 0xff, 0xff, 0x7f, 0x00, 0x80,
 			0x00, 0x00, 0xff, 0xff, 0xff, 0x7f, 0x00, 0x80,
