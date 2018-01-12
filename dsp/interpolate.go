@@ -49,7 +49,7 @@ func Hermite4p3o(samples []float64, x float64) float64 {
 		}
 	}
 
-	x = x - math.Floor(x)
+	x -= math.Floor(x)
 	c0 := s[1]
 	c1 := 1.0 / 2.0 * (s[2] - s[0])
 	c2 := s[0] - 5.0/2.0*s[1] + 2.0*s[2] - 1.0/2.0*s[3]
@@ -68,7 +68,7 @@ func Hermite4p3oF32(samples []float32, x float32) float32 {
 		}
 	}
 
-	x = x - float32(math.Floor(float64(x)))
+	x -= float32(math.Floor(float64(x)))
 	c0 := s[1]
 	c1 := 1.0 / 2.0 * (s[2] - s[0])
 	c2 := s[0] - 5.0/2.0*s[1] + 2.0*s[2] - 1.0/2.0*s[3]

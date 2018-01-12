@@ -40,6 +40,12 @@ func VMulC64(input, output, mul []complex64) {
 	}
 }
 
+func VAddF32(input, output []float32) {
+	for i, v := range input {
+		output[i] += v
+	}
+}
+
 func VAddC64(input, output []complex64) {
 	for i, v := range input {
 		output[i] += v
