@@ -41,12 +41,20 @@ func VMulC64(input, output, mul []complex64) {
 }
 
 func VAddF32(input, output []float32) {
+	n := len(input)
+	if len(output) < n {
+		n = len(output)
+	}
 	for i, v := range input {
 		output[i] += v
 	}
 }
 
 func VAddC64(input, output []complex64) {
+	n := len(input)
+	if len(output) < n {
+		n = len(output)
+	}
 	for i, v := range input {
 		output[i] += v
 	}
@@ -75,11 +83,13 @@ func vAbsC64(input []complex64, output []float32) {
 	if len(output) < n {
 		n = len(output)
 	}
+	_ = output[n-1] // eliminate bounds check
 	for i, v := range input[:n] {
 		output[i] = float32(math.Sqrt(float64(real(v)*real(v) + imag(v)*imag(v))))
 	}
 }
 
+// VMaxF32 returns the maximum value from an array of 32-bit floating point values.
 func VMaxF32(input []float32) float32
 func vMaxF32(input []float32) float32 {
 	max := float32(math.Inf(-1))
@@ -89,6 +99,18 @@ func vMaxF32(input []float32) float32 {
 		}
 	}
 	return max
+}
+
+// VMinF32 returns the minimum value from an array of 32-bit floating point values.
+func VMinF32(input []float32) float32
+func vMinF32(input []float32) float32 {
+	min := float32(math.Inf(1))
+	for _, v := range input {
+		if v < min {
+			min = v
+		}
+	}
+	return min
 }
 
 func Conj32(x complex64) complex64    { return complex(real(x), -imag(x)) }

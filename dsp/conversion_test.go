@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-const benchSize = 1 << 12
+const benchSize = 1 << 14
 
 func TestUi8toi16(t *testing.T) {
 	input := make([]byte, 300)

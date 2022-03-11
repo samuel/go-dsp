@@ -18,7 +18,7 @@ var (
 
 var (
 	// neonRE matches /proc/cpuinfo if the neon instruction set is available
-	neonRE = regexp.MustCompile(`(?m)^Features.*neon.*$`)
+	neonRE = regexp.MustCompile(`(?m)^Features.*(neon|asimd).*$`)
 	// rpi1RE matches /proc/cpuinfo for Raspberry Pi 1
 	rpi1RE = regexp.MustCompile(`(?m)^Hardware.*BCM2708.*$`)
 )

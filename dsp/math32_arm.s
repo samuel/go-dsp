@@ -140,7 +140,56 @@ fatan22_pi2:
 	RET
 
 TEXT ·VScaleF32(SB), NOSPLIT, $0
-	B ·vscaleF32(SB)
+	MOVW input+0(FP), R0
+	MOVW input_len+4(FP), R2
+	MOVW output+12(FP), R1
+	MOVW output_len+16(FP), R3
+	MOVF scale+24(FP), F0
+
+	// Choose the shortest length
+	CMP     R2, R3
+	MOVW.LT R3, R2
+
+	TEQ 	$0, R2
+	BEQ 	vscalef32_done
+
+	MOVBU 	·HaveNEON+0(SB), R3
+	CMP   	$0, R3
+	BEQ   	vscalef32_scalar_loop
+
+	CMP 	$16, R2
+	BLT 	vscalef32_scalar_loop
+
+	PLD 	(R0)
+vscalef32_neon_loop:
+	PLD		(4*16)(R0)
+	WORD	$0xecb02b10 // vldmia r0!, {q1, q2, q3, q4}
+	WORD	$0xf3a22940 // vmul.f32 q1, q1, d0[0]
+	WORD	$0xf3a44940 // vmul.f32 q2, q2, d0[0]
+	WORD	$0xf3a66940 // vmul.f32 q3, q3, d0[0]
+	WORD	$0xf3a88940 // vmul.f32 q4, q4, d0[0]
+	WORD	$0xeca12b10 // vstmia r1!, {q1, q2, q3, q4}
+	SUB		$16, R2
+	CMP  	$16, R2
+	BGE  	vscalef32_neon_loop
+
+vscalef32_scalar:
+	TEQ $0, R2
+	BEQ vscalef32_done
+
+vscalef32_scalar_loop:
+	MOVF 	(R0), F1
+	ADD  	$4, R0
+	MULF 	F0, F1, F1
+	MOVF 	F1, (R1)
+	ADD  	$4, R1
+	SUB     $1, R2
+	TEQ     $0, R2
+	BNE     vscalef32_scalar_loop
+
+vscalef32_done:
+	RET
+
 
 TEXT ·VMulC64xF32(SB), NOSPLIT, $0
 	B ·vMulC64xF32(SB)
@@ -229,6 +278,33 @@ TEXT ·VMaxF32(SB), 7, $0
 	CMP $0, R2
 	BEQ vmaxf32_done
 
+	MOVBU 	·HaveNEON+0(SB), R3
+	CMP   	$0, R3
+	BEQ   	vmaxf32_batch
+
+	CMP 	$16, R2
+	BLT 	vmaxf32_batch
+
+	WORD	$0xecb08b08 // vldmia r0!, {q4,q5}
+	SUB		$8, R2
+
+	//PLD 	(R0)
+vmaxf32_neon_loop:
+	//PLD		(12*16)(R0)
+	WORD	$0xecb02b08 // vldmia r0!, {q1, q2}
+	WORD	$0xf2088f42 // vmax.f32 q4, q4, q1
+	WORD	$0xf20aaf44 // vmax.f32 q5, q5, q2
+	SUB		$8, R2
+	CMP  	$8, R2
+	BGE  	vmaxf32_neon_loop
+
+	WORD	$0xf2080f4a // vmax.f32 q0, q4, q5
+	WORD	$0xf3004f01 // vpmax.f32 d4, d0, d1
+	WORD	$0xf3044f04 // vpmax.f32 d4, d4, d4
+
+	B       vmaxf32_scalar
+
+vmaxf32_batch:
 	CMP $4, R2
 	BLT vmaxf32_scalar_loop
 
@@ -255,6 +331,7 @@ vmaxf32_batch_loop:
 	CMP  $4, R2
 	BGE  vmaxf32_batch_loop
 
+vmaxf32_scalar:
 	TEQ $0, R2
 	BEQ vmaxf32_done
 

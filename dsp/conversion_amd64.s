@@ -1,3 +1,4 @@
+#include "go_asm.h"
 #include "textflag.h"
 
 TEXT ·Ui8toi16(SB), NOSPLIT, $0-48
@@ -161,159 +162,157 @@ ui8toi16l_tail_loop:
 ui8toi16b_done:
 	RET
 
-TEXT ·Ui8tof32(SB), NOSPLIT, $0-48
-	MOVQ input+0(FP), SI
-	MOVQ input_len+8(FP), AX
-	MOVQ output+24(FP), DI
-	MOVQ output_len+32(FP), CX
-
-	CMPQ AX, CX
-	JGE  ui8tof32_min_len
-	MOVQ AX, CX
-
-ui8tof32_min_len:
-
-	MOVQ $0, AX
-
-	// Too short to optimize
-	MOVQ $32, BX
-	CMPQ BX, CX
-	JGE  ui8tof32_stepper
-
-	// Align output to 16-byte boundary
-	MOVQ DI, BP
-	ANDQ $15, BP
-	SHRQ $2, BP
-	JZ   ui8tof32_aligned
-	MOVQ $16, DX
-	SUBQ BP, DX
-
-ui8tof32_align:
-	MOVBQZX  (SI), BX
-	INCQ     SI
-	SUBQ     $128, BX
-	CVTSQ2SS BX, X0
-	MOVSS    X0, (DI)
-	ADDQ     $4, DI
-	INCQ     AX
-	DECQ     DX
-	JNZ      ui8tof32_align
-
-ui8tof32_aligned:
-
-	MOVQ CX, DX
-	ANDQ $(~15), DX
-	CMPQ AX, DX
-	JGE  ui8tof32_stepper
-
-	CMPB ·useSSE4(SB), $1
-	JNE  ui8tof32_nosse4
-
-	MOVQ   $0, BP
-	MOVQ   BP, X9
-	MOVL   $0x80808080, BX
-	MOVL   BX, X8
-	PSHUFL $0, X8, X8
-
-ui8tof32_sse4_loop:
-	MOVOU (SI), X0 // Load 16 unsigned 8-bit values
-	PSUBB X8, X0   // Make the values signed
-
-	// Lowest 4 values (bytes 0-3)
-	PMOVSXBD X0, X2
-	CVTPL2PS X2, X2   // Convert 32-bit signed integers to 32-bit float
-	MOVAPS   X2, (DI)
-
-	// Next 4 values (bytes 4-7)
-	PSHUFL   $1, X0, X2
-	PMOVSXBD X2, X2
-	CVTPL2PS X2, X2     // Convert 32-bit signed integers to 32-bit float
-	MOVAPS   X2, 16(DI)
-
-	// Next 4 values (bytes 8-11)
-	PSHUFL   $2, X0, X2
-	PMOVSXBD X2, X2
-	CVTPL2PS X2, X2     // Convert 32-bit signed integers to 32-bit float
-	MOVAPS   X2, 32(DI)
-
-	// Next 4 values (bytes 12-15)
-	PSHUFL   $3, X0, X2
-	PMOVSXBD X2, X2
-	CVTPL2PS X2, X2     // Convert 32-bit signed integers to 32-bit float
-	MOVAPS   X2, 48(DI)
-
-	ADDQ $16, AX
-	ADDQ $16, SI
-	ADDQ $64, DI
-	CMPQ AX, DX
-	JLT  ui8tof32_sse4_loop
-	JMP  ui8tof32_stepper
-
-ui8tof32_nosse4:
-	MOVQ   $0, BP
-	MOVQ   BP, X9
-	MOVL   $0x80808080, BX
-	MOVL   BX, X8
-	PSHUFL $0, X8, X8
-
-ui8tof32_sse2_loop:
-	MOVOU (SI), X0 // Load 16 unsigned 8-bit values
-	PSUBB X8, X0   // Make the values signed
-	MOVO  X0, X1
-
-	// Lowest 4 values (bytes 0-3)
-	PUNPCKLBW X1, X1
-	MOVO      X1, X2
-	PUNPCKLWL X1, X1
-	PSRAL     $24, X1
-	CVTPL2PS  X1, X1
-	MOVAPS    X1, (DI)
-
-	// Next 4 values (bytes 4-7)
-	PUNPCKHWL X2, X2
-	PSRAL     $24, X2
-	CVTPL2PS  X2, X2
-	MOVAPS    X2, 16(DI)
-
-	// // Next 4 values (bytes 8-11)
-	PUNPCKHBW X0, X0
-	MOVO      X0, X2
-	PUNPCKLWL X0, X0
-	PSRAL     $24, X0
-	CVTPL2PS  X0, X0
-	MOVAPS    X0, 32(DI)
-
-	// Next 4 values (bytes 12-15)
-	PUNPCKHWL X2, X2
-	PSRAL     $24, X2
-	CVTPL2PS  X2, X2
-	MOVAPS    X2, 48(DI)
-
-	ADDQ $16, AX
-	ADDQ $16, SI
-	ADDQ $64, DI
-	CMPQ AX, DX
-	JLT  ui8tof32_sse2_loop
-
-	// TODO: work increasingly smaller blocks
-
-ui8tof32_stepper:
-	CMPQ AX, CX
-	JGE  ui8tof32_done
-
-ui8tof32_step:
-	MOVBQZX  (SI), BX
-	INCQ     SI
-	SUBQ     $128, BX
-	CVTSQ2SS BX, X0
-	MOVSS    X0, (DI)
-	ADDQ     $4, DI
-	INCQ     AX
-	CMPQ     AX, CX
-	JLT      ui8tof32_step
-
-ui8tof32_done:
-	RET
+//TEXT ·Ui8tof32(SB), NOSPLIT, $0-48
+//	MOVQ input+0(FP), SI
+//	MOVQ input_len+8(FP), AX
+//	MOVQ output+24(FP), DI
+//	MOVQ output_len+32(FP), CX
+//
+//	CMPQ AX, CX
+//	JGE  ui8tof32_min_len
+//	MOVQ AX, CX
+//
+//ui8tof32_min_len:
+//
+//	MOVQ $0, AX
+//
+//	// Too short to optimize
+//	MOVQ $32, BX
+//	CMPQ BX, CX
+//	JGE  ui8tof32_stepper
+//
+//	// Align output to 16-byte boundary
+//	MOVQ DI, BP
+//	ANDQ $15, BP
+//	SHRQ $2, BP
+//	JZ   ui8tof32_aligned
+//	MOVQ $4, DX
+//	SUBQ BP, DX
+//
+//ui8tof32_align:
+//	MOVBQZX  (SI), BX
+//	INCQ     SI
+//	SUBQ     $128, BX
+//	CVTSQ2SS BX, X0
+//	MOVSS    X0, (DI)
+//	ADDQ     $4, DI
+//	INCQ     AX
+//	DECQ     DX
+//	JNZ      ui8tof32_align
+//
+//ui8tof32_aligned:
+//
+//	MOVQ CX, DX
+//	ANDQ $(~15), DX
+//	CMPQ AX, DX
+//	JGE  ui8tof32_stepper
+//
+//	CMPB ·x86+const_offsetX86HasSSE41(SB), $1
+//	JNE  ui8tof32_nosse4
+//
+//	MOVQ   $0, BP
+//	MOVL   $0x80808080, BX
+//	VMOVD  BX, X8
+//	PSHUFL $0, X8, X8
+//
+//ui8tof32_sse4_loop:
+//	MOVOU (SI), X0 // Load 16 unsigned 8-bit values
+//	PSUBB X8, X0   // Make the values signed
+//
+//	// Lowest 4 values (bytes 0-3)
+//	PMOVSXBD X0, X2
+//	CVTPL2PS X2, X2   // Convert 32-bit signed integers to 32-bit float
+//	MOVAPS   X2, (DI)
+//
+//	// Next 4 values (bytes 4-7)
+//	PSHUFL   $1, X0, X2
+//	PMOVSXBD X2, X2
+//	CVTPL2PS X2, X2     // Convert 32-bit signed integers to 32-bit float
+//	MOVAPS   X2, 16(DI)
+//
+//	// Next 4 values (bytes 8-11)
+//	PSHUFL   $2, X0, X2
+//	PMOVSXBD X2, X2
+//	CVTPL2PS X2, X2     // Convert 32-bit signed integers to 32-bit float
+//	MOVAPS   X2, 32(DI)
+//
+//	// Next 4 values (bytes 12-15)
+//	PSHUFL   $3, X0, X2
+//	PMOVSXBD X2, X2
+//	CVTPL2PS X2, X2     // Convert 32-bit signed integers to 32-bit float
+//	MOVAPS   X2, 48(DI)
+//
+//	ADDQ $16, AX
+//	ADDQ $16, SI
+//	ADDQ $64, DI
+//	CMPQ AX, DX
+//	JLT  ui8tof32_sse4_loop
+//	JMP  ui8tof32_stepper
+//
+//ui8tof32_nosse4:
+//	MOVQ   $0, BP
+//	MOVL   $0x80808080, BX
+//	VMOVD  BX, X8
+//	PSHUFL $0, X8, X8
+//
+//ui8tof32_sse2_loop:
+//	MOVOU (SI), X0 // Load 16 unsigned 8-bit values
+//	PSUBB X8, X0   // Make the values signed
+//	MOVO  X0, X1
+//
+//	// Lowest 4 values (bytes 0-3)
+//	PUNPCKLBW X1, X1
+//	MOVO      X1, X2
+//	PUNPCKLWL X1, X1
+//	PSRAL     $24, X1
+//	CVTPL2PS  X1, X1
+//	MOVAPS    X1, (DI)
+//
+//	// Next 4 values (bytes 4-7)
+//	PUNPCKHWL X2, X2
+//	PSRAL     $24, X2
+//	CVTPL2PS  X2, X2
+//	MOVAPS    X2, 16(DI)
+//
+//	// Next 4 values (bytes 8-11)
+//	PUNPCKHBW X0, X0
+//	MOVO      X0, X2
+//	PUNPCKLWL X0, X0
+//	PSRAL     $24, X0
+//	CVTPL2PS  X0, X0
+//	MOVAPS    X0, 32(DI)
+//
+//	// Next 4 values (bytes 12-15)
+//	PUNPCKHWL X2, X2
+//	PSRAL     $24, X2
+//	CVTPL2PS  X2, X2
+//	MOVAPS    X2, 48(DI)
+//
+//	ADDQ $16, AX
+//	ADDQ $16, SI
+//	ADDQ $64, DI
+//	CMPQ AX, DX
+//	JLT  ui8tof32_sse2_loop
+//
+//	// TODO: work increasingly smaller blocks
+//
+//ui8tof32_stepper:
+//	CMPQ AX, CX
+//	JGE  ui8tof32_done
+//
+//ui8tof32_step:
+//	MOVBQZX  (SI), BX
+//	INCQ     SI
+//	SUBQ     $128, BX
+//	CVTSQ2SS BX, X0
+//	MOVSS    X0, (DI)
+//	ADDQ     $4, DI
+//	INCQ     AX
+//	CMPQ     AX, CX
+//	JLT      ui8tof32_step
+//
+//ui8tof32_done:
+//	RET
 
 TEXT ·I8tof32(SB), NOSPLIT, $0-48
 	MOVQ input+0(FP), SI
@@ -359,6 +358,7 @@ i8tof32_aligned:
 	CMPQ AX, DX
 	JGE  i8tof32_stepper
 
+	// CMPB ·x86+const_offsetX86HasSSE41(SB), $1
 	CMPB ·useSSE4(SB), $1
 	JNE  i8tof32_nosse4
 
@@ -558,6 +558,7 @@ i16bleToF64_min_len:
 	MOVQ $0, BX
 	MOVQ CX, DX
 
+	//CMPB ·x86+const_offsetX86HasSSE41(SB), $1
 	CMPB ·useSSE4(SB), $1
 	JNE  i16bleToF64_nosse4
 
@@ -645,6 +646,7 @@ i16bleToF32_min_len:
 	MOVQ $0, BX
 	MOVQ CX, DX
 
+	//CMPB ·x86+const_offsetX86HasSSE41(SB), $1
 	CMPB ·useSSE4(SB), $1
 	JNE  i16bleToF32_nosse4
 

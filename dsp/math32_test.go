@@ -93,31 +93,33 @@ func TestFastAtan2_2Error(t *testing.T) {
 }
 
 func TestVScaleF32(t *testing.T) {
-	input := make([]float32, 257)
-	for i := 0; i < len(input); i++ {
-		input[i] = float32(i)
-	}
-	expected := make([]float32, len(input))
-	output := make([]float32, len(input))
-	vscaleF32(input, expected, 1.0/256.0)
-	VScaleF32(input, output, 1.0/256.0)
-	for i, v := range expected {
-		if output[i] != v {
-			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+	simdTest(t, func(t *testing.T) {
+		input := make([]float32, 257)
+		for i := 0; i < len(input); i++ {
+			input[i] = float32(i)
 		}
-	}
+		expected := make([]float32, len(input))
+		output := make([]float32, len(input))
+		vscaleF32(input, expected, 1.0/256.0)
+		VScaleF32(input, output, 1.0/256.0)
+		for i, v := range expected {
+			if output[i] != v {
+				t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+			}
+		}
 
-	// Unaligned
-	input = input[1:]
-	expected = make([]float32, len(input)+1)[1:]
-	output = make([]float32, len(input)+1)[1:]
-	vscaleF32(input, expected, 1.0/256.0)
-	VScaleF32(input, output, 1.0/256.0)
-	for i, v := range expected {
-		if output[i] != v {
-			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		// Unaligned
+		input = input[1:]
+		expected = make([]float32, len(input)+1)[1:]
+		output = make([]float32, len(input)+1)[1:]
+		vscaleF32(input, expected, 1.0/256.0)
+		VScaleF32(input, output, 1.0/256.0)
+		for i, v := range expected {
+			if output[i] != v {
+				t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+			}
 		}
-	}
+	})
 }
 
 func TestVAbsC64(t *testing.T) {
@@ -143,33 +145,85 @@ func TestVAbsC64(t *testing.T) {
 }
 
 func TestVMaxF32(t *testing.T) {
-	input := make([]float32, 123)
-	for i := 0; i < len(input); i++ {
-		input[i] = rand.Float32() - 0.5
-	}
-	expected := vMaxF32(input)
-	max := VMaxF32(input)
-	if max != expected {
-		t.Fatalf("Expected %f got %f", expected, max)
-	}
+	simdTest(t, func(t *testing.T) {
+		input := make([]float32, 123)
+		for i := 0; i < len(input); i++ {
+			input[i] = rand.Float32() - 0.5
+		}
+		expected := vMaxF32(input)
+		max := VMaxF32(input)
+		if max != expected {
+			t.Fatalf("Expected %f got %f", expected, max)
+		}
 
-	// Ascending
-	input = []float32{-4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0}
-	if max := VMaxF32(input); max != 4.0 {
-		t.Fatalf("Expected 4.0 got %f", max)
-	}
+		// Test SIMD by having max in each specific lane
+		for i := 0; i < 1024; i++ {
+			input := make([]float32, 1024)
+			input[i] = 1.0
+			if max := VMaxF32(input); max != 1.0 {
+				t.Fatalf("Expected 1.0 got %f at position %d", max, i)
+			}
+		}
 
-	// Descending
-	input = []float32{4.0, 3.0, 2.0, 1.0, 0.0, -1.0, -2.0, -3.0, -4.0}
-	if max := VMaxF32(input); max != 4.0 {
-		t.Fatalf("Expected 4.0 got %f", max)
-	}
+		// Ascending
+		input = []float32{-4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0}
+		if max := VMaxF32(input); max != 4.0 {
+			t.Fatalf("Expected 4.0 got %f", max)
+		}
 
-	// Unordered
-	input = []float32{1.5, -4.0, 8.0, 0.0, -1.0, 2.0, -3.0}
-	if max := VMaxF32(input); max != 8.0 {
-		t.Fatalf("Expected 8.0 got %f", max)
-	}
+		// Descending
+		input = []float32{4.0, 3.0, 2.0, 1.0, 0.0, -1.0, -2.0, -3.0, -4.0}
+		if max := VMaxF32(input); max != 4.0 {
+			t.Fatalf("Expected 4.0 got %f", max)
+		}
+
+		// Unordered
+		input = []float32{1.5, -4.0, 8.0, 0.0, -1.0, 2.0, -3.0}
+		if max := VMaxF32(input); max != 8.0 {
+			t.Fatalf("Expected 8.0 got %f", max)
+		}
+	})
+}
+
+func TestVMinF32(t *testing.T) {
+	simdTest(t, func(t *testing.T) {
+		input := make([]float32, 123)
+		for i := 0; i < len(input); i++ {
+			input[i] = rand.Float32() - 0.5
+		}
+		expected := vMinF32(input)
+		min := VMinF32(input)
+		if min != expected {
+			t.Fatalf("Expected %f got %f", expected, min)
+		}
+
+		// Test SIMD by having min in each specific lane
+		for i := 0; i < 1024; i++ {
+			input := make([]float32, 1024)
+			input[i] = -1.0
+			if min := VMinF32(input); min != -1.0 {
+				t.Fatalf("Expected -1.0 got %f at position %d", min, i)
+			}
+		}
+
+		// Ascending
+		input = []float32{-4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0}
+		if min := VMinF32(input); min != -4.0 {
+			t.Fatalf("Expected -4.0 got %f", min)
+		}
+
+		// Descending
+		input = []float32{4.0, 3.0, 2.0, 1.0, 0.0, -1.0, -2.0, -3.0, -4.0}
+		if min := VMinF32(input); min != -4.0 {
+			t.Fatalf("Expected -4.0 got %f", min)
+		}
+
+		// Unordered
+		input = []float32{1.5, -4.0, 8.0, 0.0, -1.0, 2.0, -3.0}
+		if min := VMinF32(input); min != -4.0 {
+			t.Fatalf("Expected -4.0 got %f", min)
+		}
+	})
 }
 
 func BenchmarkConj32(b *testing.B) {

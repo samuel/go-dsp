@@ -88,7 +88,7 @@ ui8tof32_loop:
 	WORD $0xeeb81acf // vcvt.f32.s32 s2, s30
 	WORD $0xeef81aef // vcvt.f32.s32 s3, s31
 
-	WORD $0xeca30a04   // vstmia r3!, {s0, s1, s2, s3}
+	WORD $0xeca30a04 // vstmia r3!, {s0, s1, s2, s3}
 	CMP  R0, R1
 	BLT  ui8tof32_loop
 

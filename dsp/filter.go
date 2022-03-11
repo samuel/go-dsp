@@ -116,3 +116,59 @@ func (f *ComplexIIRFilter) Filter(input, output []complex128) {
 		output[i] = sum
 	}
 }
+
+type DCFilter struct {
+	a float64
+	w float64
+}
+
+func NewDCFilter(a float64) *DCFilter {
+	return &DCFilter{a: a}
+}
+
+func (f *DCFilter) Filter(input, output []float64) {
+	lw := f.w
+	for i, x := range input {
+		w := x + f.a*lw
+		output[i] = w - lw
+		lw = w
+	}
+	f.w = lw
+}
+
+func (f *DCFilter) FilterOne(x float64) float64 {
+	w := x + f.a*f.w
+	y := w - f.w
+	f.w = w
+	return y
+}
+
+type DCFilter32 struct {
+	a float32
+	w float32
+}
+
+func NewDCFilter32(a float32) *DCFilter32 {
+	return &DCFilter32{a: a}
+}
+
+func (f *DCFilter32) Filter(input, output []float32) {
+	lw := f.w
+	for i, x := range input {
+		w := x + f.a*lw
+		output[i] = w - lw
+		lw = w
+	}
+	f.w = lw
+}
+
+func (f *DCFilter32) FilterOne(x float32) float32 {
+	w := x + f.a*f.w
+	y := w - f.w
+	f.w = w
+	return y
+}
+
+// TODO: implement https://www.researchgate.net/publication/261775781_DC_Blocker_Algorithms -- https://www.dsprelated.com/showarticle/58.php
+// https://github.com/gnuradio/gnuradio/blob/master/gr-filter/include/gnuradio/filter/dc_blocker_ff.h
+// https://github.com/ghostop14/gr-correctiq

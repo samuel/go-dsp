@@ -1,8 +1,11 @@
-// +build amd64
+//go:build 386 || amd64
+// +build 386 amd64
 
 package dsp
 
-import "testing"
+import (
+	"testing"
+)
 
 func simdTest(t *testing.T, fn func(t *testing.T)) {
 	if useSSE4 {
