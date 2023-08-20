@@ -46,7 +46,7 @@ func TestUi8toi16b(t *testing.T) {
 	expected := make([]byte, len(input)*2+16)
 	ui8toi16b(input, expected) // Use Go implementation as reference
 	Ui8toi16b(input, output)
-	if bytes.Compare(output, expected) != 0 {
+	if !bytes.Equal(output, expected) {
 		t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
 	}
 
@@ -60,7 +60,7 @@ func TestUi8toi16b(t *testing.T) {
 	expected = make([]byte, len(input)*2+16)[2:]
 	ui8toi16b(input, expected) // Use Go implementation as reference
 	Ui8toi16b(input, output)
-	if bytes.Compare(output, expected) != 0 {
+	if !bytes.Equal(output, expected) {
 		t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
 	}
 
@@ -70,7 +70,7 @@ func TestUi8toi16b(t *testing.T) {
 	expected = make([]byte, len(input)*2+16)[1:]
 	ui8toi16b(input, expected) // Use Go implementation as reference
 	Ui8toi16b(input, output)
-	if bytes.Compare(output, expected) != 0 {
+	if !bytes.Equal(output, expected) {
 		t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
 	}
 }
@@ -213,7 +213,7 @@ func TestF32toi16ble(t *testing.T) {
 	expected := make([]byte, len(input)*2+4)
 	f32toi16ble(input, expected, 1<<13) // Use Go implementation as reference
 	F32toi16ble(input, output, 1<<13)
-	if bytes.Compare(output, expected) != 0 {
+	if !bytes.Equal(output, expected) {
 		t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
 	}
 }

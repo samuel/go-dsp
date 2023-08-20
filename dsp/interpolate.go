@@ -9,7 +9,7 @@ func Linear(samples []float64, x float64) float64 {
 	lowInt := int(low)
 	if lowInt < len(samples) {
 		lowValue := samples[lowInt]
-		highValue := lowValue
+		var highValue float64
 		if i := lowInt + 1; i >= len(samples) {
 			highValue = 0
 		} else {
@@ -22,12 +22,15 @@ func Linear(samples []float64, x float64) float64 {
 
 // LinearF32 interpolates using linear interpolation.
 func LinearF32(samples []float32, x float32) float32 {
+	if x < 0 || x > math.MaxFloat32 {
+		return 0
+	}
 	var samp float32
 	low := float32(math.Floor(float64(x)))
 	lowInt := int(low)
 	if lowInt < len(samples) {
 		lowValue := samples[lowInt]
-		highValue := lowValue
+		var highValue float32
 		if i := lowInt + 1; i >= len(samples) {
 			highValue = 0
 		} else {

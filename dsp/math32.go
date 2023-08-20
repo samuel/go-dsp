@@ -8,7 +8,7 @@ import (
 // VMulC64xF32 multiplies a vector of complex values with a vector with real values.
 // This is useful for applying a window to complex samples.
 //
-//     output[i] = complex(real(input[i])*mul[i], imag(input[i])*mul[i])
+//	output[i] = complex(real(input[i])*mul[i], imag(input[i])*mul[i])
 func VMulC64xF32(input, output []complex64, mul []float32)
 func vMulC64xF32(input, output []complex64, mul []float32) {
 	n := len(input)
@@ -26,7 +26,7 @@ func vMulC64xF32(input, output []complex64, mul []float32) {
 
 // VMulC64 multiplies eache value of the input by the matching value in the multiplier.
 //
-//     output[i] = input[i] * mul[i]
+//	output[i] = input[i] * mul[i]
 func VMulC64(input, output, mul []complex64) {
 	n := len(input)
 	if len(output) < n {
@@ -45,7 +45,7 @@ func VAddF32(input, output []float32) {
 	if len(output) < n {
 		n = len(output)
 	}
-	for i, v := range input {
+	for i, v := range input[:n] {
 		output[i] += v
 	}
 }
@@ -55,7 +55,7 @@ func VAddC64(input, output []complex64) {
 	if len(output) < n {
 		n = len(output)
 	}
-	for i, v := range input {
+	for i, v := range input[:n] {
 		output[i] += v
 	}
 }

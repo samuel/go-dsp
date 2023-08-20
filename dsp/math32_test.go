@@ -315,9 +315,9 @@ func BenchmarkVAbsC64_Go(b *testing.B) {
 
 func BenchmarkVMaxF32_Random(b *testing.B) {
 	input := make([]float32, benchSize)
-	rand.Seed(0)
+	r := rand.New(rand.NewSource(0))
 	for i := 0; i < len(input); i++ {
-		input[i] = rand.Float32()
+		input[i] = r.Float32()
 	}
 	b.SetBytes(benchSize)
 	b.ResetTimer()
@@ -368,9 +368,9 @@ func BenchmarkVMaxF32_Alternating(b *testing.B) {
 
 func BenchmarkVMaxF32_Go_Random(b *testing.B) {
 	input := make([]float32, benchSize)
-	rand.Seed(0)
+	r := rand.New(rand.NewSource(0))
 	for i := 0; i < len(input); i++ {
-		input[i] = rand.Float32()
+		input[i] = r.Float32()
 	}
 	b.SetBytes(benchSize)
 	b.ResetTimer()

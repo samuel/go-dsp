@@ -125,7 +125,7 @@ vmaxf32_loop:
     SUBS    $1, R1
 	BNE     vmaxf32_loop
 vmaxf32_done:
-	FMOVS	F31, res+24(FP)
+	FMOVS	F31, ret+24(FP)
 	RET
 
 TEXT ·VMinF32(SB), NOSPLIT, $0
@@ -172,5 +172,5 @@ vmaxf32_loop:
     SUBS    $1, R1
 	BNE     vmaxf32_loop
 vmaxf32_done:
-	FMOVS	F31, res+24(FP)
+	FMOVS	F31, ret+24(FP)
 	RET

@@ -537,6 +537,9 @@ TEXT ·F32toi16ble(SB), NOSPLIT, $0-52
 	MOVQ AX, output_len+32(FP)
 	JMP  ·F32toi16(SB)
 
+TEXT ·I16ToBLE(SB), NOSPLIT, $0-48
+	JMP ·i16ToBLE(SB)
+
 TEXT ·I16bleToF64(SB), NOSPLIT, $0-56
 	MOVQ input+0(FP), SI
 	MOVQ input_len+8(FP), CX

@@ -53,17 +53,17 @@ fatan2_zero_x:
 	vmrs_APSR_nzcv_fpscr
 	BGT  fatan2_pos_y
 	BLT  fatan2_neg_y
-	MOVF F6, res+8(FP)
+	MOVF F6, ret+8(FP)
 	RET
 
 fatan2_neg_y:
 	MOVF negativeHalfPi, F6
-	MOVF F6, res+8(FP)
+	MOVF F6, ret+8(FP)
 	RET
 
 fatan2_pos_y:
 	MOVF halfPi, F6
-	MOVF F6, res+8(FP)
+	MOVF F6, ret+8(FP)
 	RET
 
 // Uses F0, F1, F2, F3, F4, F6
@@ -99,7 +99,7 @@ TEXT ·FastAtan2_2(SB), NOSPLIT, $-4
 	ADDF.GE F1, F2
 
 fatan22_6:
-	MOVF F2, res+8(FP)
+	MOVF F2, ret+8(FP)
 	RET
 
 fatan22_5:
@@ -113,7 +113,7 @@ fatan22_5:
 	WORD    $0xeeb53ac0   // vcmpe.f32 s6, #0x0
 	vmrs_APSR_nzcv_fpscr
 	SUBF.LT F1, F2
-	MOVF    F2, res+8(FP)
+	MOVF    F2, ret+8(FP)
 	RET
 
 fatan22_zero_x:
@@ -122,21 +122,21 @@ fatan22_zero_x:
 
 	// MOVF.LT	negativeHalfPi, F6
 	// MOVF.GT	halfPi, F6
-	// MOVF	F6, res+8(FP)
+	// MOVF	F6, ret+8(FP)
 	// RET
 	BGT  fatan22_pi2
 	BLT  fatan22_neg_pi2
-	MOVF F6, res+8(FP)
+	MOVF F6, ret+8(FP)
 	RET
 
 fatan22_neg_pi2:
 	MOVF negativeHalfPi, F6
-	MOVF F6, res+8(FP)
+	MOVF F6, ret+8(FP)
 	RET
 
 fatan22_pi2:
 	MOVF halfPi, F6
-	MOVF F6, res+8(FP)
+	MOVF F6, ret+8(FP)
 	RET
 
 TEXT ·VScaleF32(SB), NOSPLIT, $0
@@ -348,5 +348,5 @@ vmaxf32_scalar_loop:
 	BNE     vmaxf32_scalar_loop
 
 vmaxf32_done:
-	MOVF F4, res+12(FP)
+	MOVF F4, ret+12(FP)
 	RET

@@ -135,6 +135,19 @@ func f32toi16ble(input []float32, output []byte, scale float32) {
 	}
 }
 
+// I16ToBLE converts int16 values to little endian bytes.
+func I16ToBLE(input []int16, output []byte)
+func i16ToBLE(input []int16, output []byte) {
+	n := len(input)
+	if len(output)/2 < n {
+		n = len(output) / 2
+	}
+	for i, v := range input[:n] {
+		output[i*2] = byte(v & 0xff)
+		output[i*2+1] = byte(v >> 8)
+	}
+}
+
 // I16bleToF64 converts int16 stored in a byte slice as little endian to float64.
 func I16bleToF64(input []byte, output []float64, scale float64)
 func i16bleToF64(input []byte, output []float64, scale float64) {

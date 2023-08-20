@@ -8,10 +8,10 @@ import (
 var demodBenchSamples []complex64
 
 func init() {
-	rand.Seed(0)
+	r := rand.New(rand.NewSource(0))
 	demodBenchSamples = make([]complex64, benchSize)
 	for i := 0; i < benchSize; i++ {
-		demodBenchSamples[i] = complex(rand.Float32(), rand.Float32())
+		demodBenchSamples[i] = complex(r.Float32(), r.Float32())
 	}
 }
 
