@@ -138,40 +138,57 @@ func TestI8tof32(t *testing.T) {
 }
 
 func TestUi8toc64(t *testing.T) {
-	input := []byte{0, 1, 192, 200, 212, 1, 2, 3}[:5]
-	output := make([]complex64, len(input)/2+4)
-	expected := make([]complex64, len(input)/2+4)
-	ui8toc64(input, expected) // Use Go implementation as reference
-	Ui8toc64(input, output)
-	for i := 0; i < len(output); i++ {
-		if output[i] != expected[i] {
-			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+	simdTest(t, func(t *testing.T) {
+		input := []byte{0, 1, 192, 200, 212, 1, 2, 3}[:5]
+		output := make([]complex64, len(input)/2+4)
+		expected := make([]complex64, len(input)/2+4)
+		ui8toc64(input, expected) // Use Go implementation as reference
+		Ui8toc64(input, output)
+		for i := 0; i < len(output); i++ {
+			if output[i] != expected[i] {
+				t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+			}
 		}
-	}
 
-	// longer input
-	input = []byte{0, 1, 192, 200, 1, 2, 3, 4, 5, 6, 7}
-	output = make([]complex64, 2)
-	expected = make([]complex64, 2)
-	ui8toc64(input, expected) // Use Go implementation as reference
-	Ui8toc64(input, output)
-	for i := 0; i < len(output); i++ {
-		if output[i] != expected[i] {
-			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		input = make([]byte, 512+4)
+		for i := range input {
+			input[i] = byte(int8(i - 128))
 		}
-	}
+		input = input[:512]
+		output = make([]complex64, len(input)/2+4)
+		expected = make([]complex64, len(input)/2+4)
+		ui8toc64(input, expected) // Use Go implementation as reference
+		Ui8toc64(input, output)
+		for i := 0; i < len(output); i++ {
+			if output[i] != expected[i] {
+				t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+			}
+		}
 
-	// longer output
-	input = []byte{0, 1, 192, 200}
-	output = make([]complex64, 4*10)
-	expected = make([]complex64, 4*10)
-	ui8toc64(input, expected) // Use Go implementation as reference
-	Ui8toc64(input, output)
-	for i := 0; i < len(output); i++ {
-		if output[i] != expected[i] {
-			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+		// longer input
+		input = []byte{0, 1, 192, 200, 1, 2, 3, 4, 5, 6, 7}
+		output = make([]complex64, 2)
+		expected = make([]complex64, 2)
+		ui8toc64(input, expected) // Use Go implementation as reference
+		Ui8toc64(input, output)
+		for i := 0; i < len(output); i++ {
+			if output[i] != expected[i] {
+				t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+			}
 		}
-	}
+
+		// longer output
+		input = []byte{0, 1, 192, 200}
+		output = make([]complex64, 4*10)
+		expected = make([]complex64, 4*10)
+		ui8toc64(input, expected) // Use Go implementation as reference
+		Ui8toc64(input, output)
+		for i := 0; i < len(output); i++ {
+			if output[i] != expected[i] {
+				t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
+			}
+		}
+	})
 }
 
 func TestF32toi16(t *testing.T) {
@@ -440,6 +457,16 @@ func BenchmarkUi8toc64(b *testing.B) {
 	}
 }
 
+func BenchmarkUi8toc64_Unaligned(b *testing.B) {
+	input := make([]byte, benchSize+1)[1:]
+	output := make([]complex64, len(input)/2+1)[1:]
+	b.SetBytes(benchSize / 2)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Ui8toc64(input, output)
+	}
+}
+
 func BenchmarkUi8toc64_Go(b *testing.B) {
 	input := make([]byte, benchSize)
 	output := make([]complex64, len(input)/2)
@@ -449,7 +476,6 @@ func BenchmarkUi8toc64_Go(b *testing.B) {
 		ui8toc64(input, output)
 	}
 }
-
 func BenchmarkF32toi16(b *testing.B) {
 	input := make([]float32, benchSize)
 	output := make([]int16, len(input))

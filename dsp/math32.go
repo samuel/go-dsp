@@ -11,13 +11,7 @@ import (
 //	output[i] = complex(real(input[i])*mul[i], imag(input[i])*mul[i])
 func VMulC64xF32(input, output []complex64, mul []float32)
 func vMulC64xF32(input, output []complex64, mul []float32) {
-	n := len(input)
-	if len(output) < n {
-		n = len(output)
-	}
-	if len(mul) < n {
-		n = len(mul)
-	}
+	n := min(len(mul), len(input), len(output))
 	for i, v := range input[:n] {
 		w := mul[i]
 		output[i] = complex(real(v)*w, imag(v)*w)
@@ -28,33 +22,21 @@ func vMulC64xF32(input, output []complex64, mul []float32) {
 //
 //	output[i] = input[i] * mul[i]
 func VMulC64(input, output, mul []complex64) {
-	n := len(input)
-	if len(output) < n {
-		n = len(output)
-	}
-	if len(mul) < n {
-		n = len(mul)
-	}
+	n := min(len(mul), len(input), len(output))
 	for i, v := range input[:n] {
 		output[i] = v * mul[i]
 	}
 }
 
 func VAddF32(input, output []float32) {
-	n := len(input)
-	if len(output) < n {
-		n = len(output)
-	}
+	n := min(len(input), len(output))
 	for i, v := range input[:n] {
 		output[i] += v
 	}
 }
 
 func VAddC64(input, output []complex64) {
-	n := len(input)
-	if len(output) < n {
-		n = len(output)
-	}
+	n := min(len(input), len(output))
 	for i, v := range input[:n] {
 		output[i] += v
 	}
@@ -68,10 +50,7 @@ func VScaleC64(input, output []complex64, scale float32) {
 
 func VScaleF32(input, output []float32, scale float32)
 func vscaleF32(input, output []float32, scale float32) {
-	n := len(input)
-	if len(output) < n {
-		n = len(output)
-	}
+	n := min(len(input), len(output))
 	for i, v := range input[:n] {
 		output[i] = v * scale
 	}
@@ -79,10 +58,7 @@ func vscaleF32(input, output []float32, scale float32) {
 
 func VAbsC64(input []complex64, output []float32)
 func vAbsC64(input []complex64, output []float32) {
-	n := len(input)
-	if len(output) < n {
-		n = len(output)
-	}
+	n := min(len(input), len(output))
 	_ = output[n-1] // eliminate bounds check
 	for i, v := range input[:n] {
 		output[i] = float32(math.Sqrt(float64(real(v)*real(v) + imag(v)*imag(v))))
@@ -90,27 +66,25 @@ func vAbsC64(input []complex64, output []float32) {
 }
 
 // VMaxF32 returns the maximum value from an array of 32-bit floating point values.
+// It returns -Inf for an empty slice.
 func VMaxF32(input []float32) float32
 func vMaxF32(input []float32) float32 {
-	max := float32(math.Inf(-1))
+	mx := float32(math.Inf(-1))
 	for _, v := range input {
-		if v > max {
-			max = v
-		}
+		mx = max(v, mx)
 	}
-	return max
+	return mx
 }
 
 // VMinF32 returns the minimum value from an array of 32-bit floating point values.
+// It returns +Inf for an empty slice.
 func VMinF32(input []float32) float32
 func vMinF32(input []float32) float32 {
-	min := float32(math.Inf(1))
+	mn := float32(math.Inf(1))
 	for _, v := range input {
-		if v < min {
-			min = v
-		}
+		mn = min(v, mn)
 	}
-	return min
+	return mn
 }
 
 func Conj32(x complex64) complex64    { return complex(real(x), -imag(x)) }
@@ -126,10 +100,7 @@ const (
 // max |error| < 0.01
 func FastAtan2(y, x float32) float32
 func fastAtan2(y, x float32) float32 {
-	absY := y
-	if absY < 0 {
-		absY = -absY
-	}
+	absY := max(y, -y)
 	absY += 1e-20 // kludge to prevent 0/0 condition
 	var angle float32
 	if x < 0.0 {
