@@ -11,7 +11,8 @@ var (
 )
 
 func init() {
+	cpu.Initialize("DSP")
 	useSSE4 = cpu.X86.HasSSE41
 	useAVX2 = cpu.X86.HasAVX
-	useSSE2 = cpu.X86.HasSSE2
+	useSSE2 = true // Always true on AMD64
 }

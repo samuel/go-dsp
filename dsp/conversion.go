@@ -68,7 +68,7 @@ func ui8toc64(input []byte, output []complex64) {
 // It does not scale the samples.
 func I8toc64(input []int8, output []complex64) {
 	n := min(len(input)/2, len(output))
-	for i := 0; i < n; i++ {
+	for i := range n {
 		output[i] = complex(
 			float32(input[i*2]),
 			float32(input[i*2+1]),

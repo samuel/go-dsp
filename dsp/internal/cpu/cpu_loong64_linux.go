@@ -1,7 +1,11 @@
-// Copyright 2018 The Go Authors. All rights reserved.
+// Copyright 2023 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build loong64 && linux
+
 package cpu
 
-const GOARCH = "386"
+func osInit() {
+	hwcapInit()
+}

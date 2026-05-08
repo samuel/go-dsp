@@ -31,7 +31,7 @@ func TestLowPassDownsampleComplexFilter(t *testing.T) {
 func TestLowPassDownsampleRationalFilter(t *testing.T) {
 	filter := &LowPassDownsampleRationalFilter{Fast: 3, Slow: 2}
 	input := make([]float32, 256)
-	for i := 0; i < len(input); i++ {
+	for i := range input {
 		input[i] = float32(i - 128)
 	}
 
@@ -60,7 +60,7 @@ func TestLowPassDownsampleRationalFilter(t *testing.T) {
 func BenchmarkLowPassDownsampleComplexFilter(b *testing.B) {
 	filter := &LowPassDownsampleComplexFilter{Downsample: 2}
 	input := make([]complex64, 256)
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		input[i] = complex(float32(i)-128.0, -(float32(i) - 128.0))
 	}
 	for i := 0; i < b.N; i++ {
@@ -71,7 +71,7 @@ func BenchmarkLowPassDownsampleComplexFilter(b *testing.B) {
 func BenchmarkLowPassDownsampleComplexFilter_Go(b *testing.B) {
 	filter := &LowPassDownsampleComplexFilter{Downsample: 2}
 	input := make([]complex64, 256)
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		input[i] = complex(float32(i)-128.0, -(float32(i) - 128.0))
 	}
 	for i := 0; i < b.N; i++ {
@@ -82,7 +82,7 @@ func BenchmarkLowPassDownsampleComplexFilter_Go(b *testing.B) {
 func BenchmarkLowPassDownsampleRationalFilter(b *testing.B) {
 	filter := &LowPassDownsampleRationalFilter{Fast: 3, Slow: 2}
 	input := make([]float32, 256)
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		input[i] = float32(i) - 128.0
 	}
 	for i := 0; i < b.N; i++ {
@@ -93,7 +93,7 @@ func BenchmarkLowPassDownsampleRationalFilter(b *testing.B) {
 func BenchmarkLowPassDownsampleRationalFilter_Go(b *testing.B) {
 	filter := &LowPassDownsampleRationalFilter{Fast: 3, Slow: 2}
 	input := make([]float32, 256)
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		input[i] = float32(i) - 128.0
 	}
 	for i := 0; i < b.N; i++ {

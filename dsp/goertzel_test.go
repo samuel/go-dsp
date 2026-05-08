@@ -12,7 +12,7 @@ func TestGoertzel(t *testing.T) {
 	freq := 128
 	samples := make([]float64, blocksize)
 	w := 2 * math.Pi / float64(samplerate)
-	for i := 0; i < blocksize; i++ {
+	for i := range blocksize {
 		samples[i] = math.Sin(float64(i) * float64(freq) * w)
 	}
 	g := NewGoertzel([]uint64{128, 129}, samplerate, blocksize)

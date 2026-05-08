@@ -2,7 +2,7 @@ package dsp
 
 import (
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"testing"
 )
 
@@ -157,7 +157,7 @@ func TestVMaxF32(t *testing.T) {
 		}
 
 		// Test SIMD by having max in each specific lane
-		for i := 0; i < 1024; i++ {
+		for i := range 1024 {
 			input := make([]float32, 1024)
 			input[i] = 1.0
 			if max := VMaxF32(input); max != 1.0 {
@@ -198,32 +198,87 @@ func TestVMinF32(t *testing.T) {
 		}
 
 		// Test SIMD by having min in each specific lane
-		for i := 0; i < 1024; i++ {
+		for i := range 1024 {
 			input := make([]float32, 1024)
 			input[i] = -1.0
-			if min := VMinF32(input); min != -1.0 {
-				t.Fatalf("Expected -1.0 got %f at position %d", min, i)
+			if v := VMinF32(input); v != -1.0 {
+				t.Fatalf("Expected -1.0 got %f at position %d", v, i)
 			}
+		}
+
+		// Empty slice
+		input = []float32{}
+		if v := VMinF32(input); v != float32(math.Inf(1)) {
+			t.Fatalf("Expected +Inf got %f", v)
+		}
+		if v := vMinF32(input); v != float32(math.Inf(1)) {
+			t.Fatalf("Expected +Inf got %f", v)
+		}
+
+		// All Greater than Zero
+		input = []float32{17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1}
+		if v := VMinF32(input); v != 1.0 {
+			t.Fatalf("Expected 1.0 got %f", v)
+		}
+		if v := vMinF32(input); v != 1.0 {
+			t.Fatalf("Expected 1.0 got %f", v)
 		}
 
 		// Ascending
 		input = []float32{-4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0}
-		if min := VMinF32(input); min != -4.0 {
-			t.Fatalf("Expected -4.0 got %f", min)
+		if v := VMinF32(input); v != -4.0 {
+			t.Fatalf("Expected -4.0 got %f", v)
+		}
+		if v := vMinF32(input); v != -4.0 {
+			t.Fatalf("Expected -4.0 got %f", v)
 		}
 
 		// Descending
 		input = []float32{4.0, 3.0, 2.0, 1.0, 0.0, -1.0, -2.0, -3.0, -4.0}
-		if min := VMinF32(input); min != -4.0 {
-			t.Fatalf("Expected -4.0 got %f", min)
+		if v := VMinF32(input); v != -4.0 {
+			t.Fatalf("Expected -4.0 got %f", v)
+		}
+		if v := vMinF32(input); v != -4.0 {
+			t.Fatalf("Expected -4.0 got %f", v)
 		}
 
 		// Unordered
 		input = []float32{1.5, -4.0, 8.0, 0.0, -1.0, 2.0, -3.0}
-		if min := VMinF32(input); min != -4.0 {
-			t.Fatalf("Expected -4.0 got %f", min)
+		if v := VMinF32(input); v != -4.0 {
+			t.Fatalf("Expected -4.0 got %f", v)
+		}
+		if v := vMinF32(input); v != -4.0 {
+			t.Fatalf("Expected -4.0 got %f", v)
 		}
 	})
+}
+
+func BenchmarkVMinF32(b *testing.B) {
+	input := make([]float32, benchSize)
+	b.SetBytes(benchSize)
+	b.ReportAllocs()
+	r := rand.New(rand.NewPCG(0, 0))
+	for i := range input {
+		input[i] = r.Float32()
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = VMinF32(input)
+	}
+}
+
+func BenchmarkVMinF32_Go(b *testing.B) {
+	input := make([]float32, benchSize)
+	b.SetBytes(benchSize)
+	b.ReportAllocs()
+	r := rand.New(rand.NewPCG(0, 0))
+	for i := range input {
+		input[i] = r.Float32()
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = vMinF32(input)
+	}
 }
 
 func BenchmarkConj32(b *testing.B) {
@@ -277,6 +332,7 @@ func BenchmarkVScaleF32(b *testing.B) {
 	input := make([]float32, benchSize)
 	output := make([]float32, len(input))
 	b.SetBytes(benchSize)
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		VScaleF32(input, output, 1.0/benchSize)
@@ -287,6 +343,7 @@ func BenchmarkVScaleF32_Go(b *testing.B) {
 	input := make([]float32, benchSize)
 	output := make([]float32, len(input))
 	b.SetBytes(benchSize)
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		vscaleF32(input, output, 1.0/benchSize)
@@ -315,8 +372,8 @@ func BenchmarkVAbsC64_Go(b *testing.B) {
 
 func BenchmarkVMaxF32_Random(b *testing.B) {
 	input := make([]float32, benchSize)
-	r := rand.New(rand.NewSource(0))
-	for i := 0; i < len(input); i++ {
+	r := rand.New(rand.NewPCG(0, 0))
+	for i := range input {
 		input[i] = r.Float32()
 	}
 	b.SetBytes(benchSize)
@@ -328,7 +385,7 @@ func BenchmarkVMaxF32_Random(b *testing.B) {
 
 func BenchmarkVMaxF32_Ascending(b *testing.B) {
 	input := make([]float32, benchSize)
-	for i := 0; i < len(input); i++ {
+	for i := range input {
 		input[i] = float32(i)
 	}
 	b.SetBytes(benchSize)
@@ -340,7 +397,7 @@ func BenchmarkVMaxF32_Ascending(b *testing.B) {
 
 func BenchmarkVMaxF32_Descending(b *testing.B) {
 	input := make([]float32, benchSize)
-	for i := 0; i < len(input); i++ {
+	for i := range input {
 		input[i] = float32(-i)
 	}
 	b.SetBytes(benchSize)
@@ -352,7 +409,7 @@ func BenchmarkVMaxF32_Descending(b *testing.B) {
 
 func BenchmarkVMaxF32_Alternating(b *testing.B) {
 	input := make([]float32, benchSize)
-	for i := 0; i < len(input); i++ {
+	for i := range input {
 		if i&1 == 0 {
 			input[i] = float32(i)
 		} else {
@@ -368,8 +425,8 @@ func BenchmarkVMaxF32_Alternating(b *testing.B) {
 
 func BenchmarkVMaxF32_Go_Random(b *testing.B) {
 	input := make([]float32, benchSize)
-	r := rand.New(rand.NewSource(0))
-	for i := 0; i < len(input); i++ {
+	r := rand.New(rand.NewPCG(0, 0))
+	for i := range input {
 		input[i] = r.Float32()
 	}
 	b.SetBytes(benchSize)
@@ -381,7 +438,7 @@ func BenchmarkVMaxF32_Go_Random(b *testing.B) {
 
 func BenchmarkVMaxF32_Go_Ascending(b *testing.B) {
 	input := make([]float32, benchSize)
-	for i := 0; i < len(input); i++ {
+	for i := range input {
 		input[i] = float32(i)
 	}
 	b.SetBytes(benchSize)
@@ -393,7 +450,7 @@ func BenchmarkVMaxF32_Go_Ascending(b *testing.B) {
 
 func BenchmarkVMaxF32_Go_Decending(b *testing.B) {
 	input := make([]float32, benchSize)
-	for i := 0; i < len(input); i++ {
+	for i := range input {
 		input[i] = float32(-i)
 	}
 	b.SetBytes(benchSize)
@@ -405,7 +462,7 @@ func BenchmarkVMaxF32_Go_Decending(b *testing.B) {
 
 func BenchmarkVMaxF32_Go_Alternating(b *testing.B) {
 	input := make([]float32, benchSize)
-	for i := 0; i < len(input); i++ {
+	for i := range input {
 		if i&1 == 0 {
 			input[i] = float32(i)
 		} else {

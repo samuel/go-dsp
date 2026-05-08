@@ -6,6 +6,8 @@
 // used by the Go standard library.
 package cpu
 
+import _ "unsafe" // for linkname
+
 // DebugOptions is set to true by the runtime if the OS supports reading
 // GODEBUG early in runtime startup.
 // This should not be changed after it is initialized.
@@ -29,14 +31,19 @@ var X86 struct {
 	HasADX       bool
 	HasAVX       bool
 	HasAVX2      bool
+	HasAVX512F   bool
+	HasAVX512BW  bool
+	HasAVX512VL  bool
 	HasBMI1      bool
 	HasBMI2      bool
 	HasERMS      bool
+	HasFSRM      bool
 	HasFMA       bool
 	HasOSXSAVE   bool
 	HasPCLMULQDQ bool
 	HasPOPCNT    bool
-	HasSSE2      bool
+	HasRDTSCP    bool
+	HasSHA       bool
 	HasSSE3      bool
 	HasSSSE3     bool
 	HasSSE41     bool
@@ -47,26 +54,41 @@ var X86 struct {
 // The booleans in ARM contain the correspondingly named cpu feature bit.
 // The struct is padded to avoid false sharing.
 var ARM struct {
-	_        CacheLinePad
-	HasVFPv4 bool
-	HasIDIVA bool
-	_        CacheLinePad
+	_            CacheLinePad
+	HasVFPv4     bool
+	HasIDIVA     bool
+	HasV7Atomics bool
+	_            CacheLinePad
 }
 
 // The booleans in ARM64 contain the correspondingly named cpu feature bit.
 // The struct is padded to avoid false sharing.
 var ARM64 struct {
-	_            CacheLinePad
-	HasAES       bool
-	HasPMULL     bool
-	HasSHA1      bool
-	HasSHA2      bool
-	HasCRC32     bool
-	HasATOMICS   bool
-	HasCPUID     bool
-	IsNeoverseN1 bool
-	IsZeus       bool
-	_            CacheLinePad
+	_          CacheLinePad
+	HasAES     bool
+	HasPMULL   bool
+	HasSHA1    bool
+	HasSHA2    bool
+	HasSHA512  bool
+	HasSHA3    bool
+	HasCRC32   bool
+	HasATOMICS bool
+	HasCPUID   bool
+	HasDIT     bool
+	IsNeoverse bool
+	_          CacheLinePad
+}
+
+// The booleans in Loong64 contain the correspondingly named cpu feature bit.
+// The struct is padded to avoid false sharing.
+var Loong64 struct {
+	_         CacheLinePad
+	HasLSX    bool // support 128-bit vector extension
+	HasLASX   bool // support 256-bit vector extension
+	HasCRC32  bool // support CRC instruction
+	HasLAMCAS bool // support AMCAS[_DB].{B/H/W/D}
+	HasLAM_BH bool // support AM{SWAP/ADD}[_DB].{B/H} instruction
+	_         CacheLinePad
 }
 
 var MIPS64X struct {
@@ -81,12 +103,13 @@ var MIPS64X struct {
 // those as well. The minimum processor requirement is POWER8 (ISA 2.07).
 // The struct is padded to avoid false sharing.
 var PPC64 struct {
-	_        CacheLinePad
-	HasDARN  bool // Hardware random number generator (requires kernel enablement)
-	HasSCV   bool // Syscall vectored (requires kernel enablement)
-	IsPOWER8 bool // ISA v2.07 (POWER8)
-	IsPOWER9 bool // ISA v3.00 (POWER9)
-	_        CacheLinePad
+	_         CacheLinePad
+	HasDARN   bool // Hardware random number generator (requires kernel enablement)
+	HasSCV    bool // Syscall vectored (requires kernel enablement)
+	IsPOWER8  bool // ISA v2.07 (POWER8)
+	IsPOWER9  bool // ISA v3.00 (POWER9)
+	IsPOWER10 bool // ISA v3.1  (POWER10)
+	_         CacheLinePad
 }
 
 var S390X struct {
@@ -115,6 +138,28 @@ var S390X struct {
 	_         CacheLinePad
 }
 
+// RISCV64 contains the supported CPU features and performance characteristics for riscv64
+// platforms. The booleans in RISCV64, with the exception of HasFastMisaligned, indicate
+// the presence of RISC-V extensions.
+// The struct is padded to avoid false sharing.
+var RISCV64 struct {
+	_                 CacheLinePad
+	HasFastMisaligned bool // Fast misaligned accesses
+	HasV              bool // Vector extension compatible with RVV 1.0
+	HasZbb            bool // Basic bit-manipulation extension
+	_                 CacheLinePad
+}
+
+// CPU feature variables are accessed by assembly code in various packages.
+//go:linkname X86
+//go:linkname ARM
+//go:linkname ARM64
+//go:linkname Loong64
+//go:linkname MIPS64X
+//go:linkname PPC64
+//go:linkname S390X
+//go:linkname RISCV64
+
 // Initialize examines the processor and sets the relevant variables above.
 // This is called by the runtime package early in program initialization,
 // before normal init functions are run. env is set by runtime if the OS supports
@@ -136,7 +181,6 @@ type option struct {
 	Feature   *bool
 	Specified bool // whether feature value was specified in GODEBUG
 	Enable    bool // whether feature should be enabled
-	Required  bool // whether feature is mandatory and can not be disabled
 }
 
 // processOptions enables or disables CPU feature values based on the parsed env string.
@@ -179,7 +223,7 @@ field:
 		if key == "all" {
 			for i := range options {
 				options[i].Specified = true
-				options[i].Enable = enable || options[i].Required
+				options[i].Enable = enable
 			}
 			continue field
 		}
@@ -205,17 +249,14 @@ field:
 			continue
 		}
 
-		if !o.Enable && o.Required {
-			print("GODEBUG: can not disable \"", o.Name, "\", required CPU feature\n")
-			continue
-		}
-
 		*o.Feature = o.Enable
 	}
 }
 
 // indexByte returns the index of the first instance of c in s,
 // or -1 if c is not present in s.
+// indexByte is semantically the same as [strings.IndexByte].
+// We copy this function because "internal/cpu" should not have external dependencies.
 func indexByte(s string, c byte) int {
 	for i := 0; i < len(s); i++ {
 		if s[i] == c {

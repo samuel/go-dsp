@@ -10,7 +10,7 @@ var demodBenchSamples []complex64
 func init() {
 	r := rand.New(rand.NewSource(0))
 	demodBenchSamples = make([]complex64, benchSize)
-	for i := 0; i < benchSize; i++ {
+	for i := range benchSize {
 		demodBenchSamples[i] = complex(r.Float32(), r.Float32())
 	}
 }
@@ -31,7 +31,7 @@ func TestFMDemodulation(t *testing.T) {
 	if len(output) != len(expected) {
 		t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
 	}
-	for i := 0; i < len(output); i++ {
+	for i := range output {
 		if output[i] != expected[i] {
 			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", output, expected)
 		}

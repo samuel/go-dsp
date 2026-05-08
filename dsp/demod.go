@@ -14,7 +14,7 @@ func PolarDiscriminator32(a, b complex64) float32 {
 	return FastAtan2(imag(a)*real(b)-real(a)*imag(b), real(a)*real(b)+imag(a)*imag(b))
 }
 
-// FMDemodFilter is an FM demodulator filter using a polar disciminator.
+// FMDemodFilter is an FM demodulator filter using a polar discriminator.
 //
 // 	x(n)─────▶○───────────────────▶(X)──────────────────▶arctan──▶
 // 	          │                     ▲  y(n)=x(n)x*(n-1)

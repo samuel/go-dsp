@@ -1,5 +1,8 @@
 #include "textflag.h"
 
+TEXT ·I16ToBLE(SB), NOSPLIT, $0
+    B ·i16ToBLE(SB)
+
 TEXT ·Ui8toi16(SB), NOSPLIT, $0
     B ·ui8toi16(SB)
 

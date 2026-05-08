@@ -16,7 +16,7 @@ func approxEqual32(a, b, e float32) bool {
 func TestRotate90Filter(t *testing.T) {
 	filter := &Rotate90Filter{}
 	input := make([]complex64, 256)
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		input[i] = complex(float32(i)-128.0, -(float32(i) - 128.0))
 	}
 	output := make([]complex64, 256)

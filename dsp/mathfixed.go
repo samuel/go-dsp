@@ -17,7 +17,7 @@ var atanLUT []int
 
 func init() {
 	atanLUT = make([]int, atanLUTSize)
-	for i := 0; i < atanLUTSize; i++ {
+	for i := range atanLUTSize {
 		atanLUT[i] = int(math.Atan(float64(i)/float64(1<<atanLUTCoef)) / math.Pi * (1 << 14))
 	}
 }
