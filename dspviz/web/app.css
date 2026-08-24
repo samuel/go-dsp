@@ -1,0 +1,61 @@
+:root {
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --muted: #666;
+  --line: #d8d8d8;
+  --panel: #f6f6f6;
+  --accent: #1f77b4;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181c;
+    --fg: #e8e8e8;
+    --muted: #9aa0a6;
+    --line: #33373d;
+    --panel: #1e2126;
+    --accent: #6cb6f0;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+header { padding: 14px 18px; border-bottom: 1px solid var(--line); }
+h1 { margin: 0; font-size: 17px; letter-spacing: .01em; }
+#summary { margin: 4px 0 0; color: var(--muted); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
+main { display: flex; align-items: flex-start; gap: 18px; padding: 16px 18px; }
+aside {
+  flex: 0 0 288px; position: sticky; top: 16px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px;
+}
+label { display: block; margin: 0 0 11px; font-size: 12px; color: var(--muted); }
+label.kind { margin-bottom: 14px; }
+select, input[type=number] {
+  width: 100%; margin-top: 3px; padding: 5px 6px;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 4px; font: inherit; font-size: 13px;
+}
+.row { display: flex; gap: 7px; align-items: center; margin-top: 3px; }
+.row input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+.row input[type=number] { flex: 0 0 88px; margin-top: 0; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+details { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 8px; }
+summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+#warnings { margin: 10px 0 0; font-size: 11.5px; color: var(--muted); }
+#warnings span { display: block; margin-top: 5px; padding-left: 9px; border-left: 2px solid var(--line); }
+#charts { flex: 1; min-width: 0; display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(430px, 1fr)); }
+figure {
+  margin: 0; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+}
+figcaption {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 7px 10px; border-bottom: 1px solid var(--line);
+  font-size: 12px; font-weight: 600;
+}
+figcaption a { color: var(--accent); font-weight: 400; font-size: 11px; text-decoration: none; }
+figcaption a:hover { text-decoration: underline; }
+canvas, figure img { display: block; width: 100%; height: auto; background: var(--bg); }
+body.busy #charts { opacity: .55; transition: opacity .12s ease .1s; }

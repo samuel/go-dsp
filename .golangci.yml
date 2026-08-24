@@ -1,0 +1,79 @@
+version: "2"
+
+run:
+  # Assembly-backed packages have a file set per GOARCH, and golangci-lint only
+  # ever sees the host's. Cross-check the others with a GOARCH-prefixed run.
+  build-tags:
+    - tools
+
+linters:
+  default: standard
+  enable:
+    - copyloopvar
+    - durationcheck
+    - errname
+    - errorlint
+    - gocritic
+    - intrange
+    - makezero
+    - misspell
+    - nilerr
+    - nolintlint
+    - perfsprint
+    - revive
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - wastedassign
+    - whitespace
+
+  settings:
+    misspell:
+      locale: US
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-unused: false
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-naming
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: var-declaration
+        - name: var-naming
+
+  exclusions:
+    rules:
+      # The CPU flag variables are read by assembly (·useSSE4(SB)) and by build
+      # -tag branches for other architectures, neither of which `unused` can
+      # see, so which ones look dead depends on GOARCH and GOEXPERIMENT. A
+      # nolint directive would itself be unused on the builds where the symbol
+      # is live, so the exemption lives here instead.
+      - path: (dsp/f32|dsp/encoding)/cpu\.go
+        linters:
+          - unused
+      - path: _test\.go
+        linters:
+          - unparam
+
+formatters:
+  enable:
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/samuel/go-dsp

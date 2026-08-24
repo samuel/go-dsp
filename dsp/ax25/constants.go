@@ -4,6 +4,8 @@ import (
 	"fmt"
 )
 
+// PID is the AX.25 protocol identifier, which says what layer 3 protocol an
+// information frame carries.
 type PID byte
 
 const (
@@ -11,10 +13,10 @@ const (
 	CompressedTCPIP        PID = 0x06 // Compressed TCP/IP. RFC 1144
 	UncompressedTCPIP      PID = 0x07 // Uncompressed TCP/IP
 	SegmentationFragment   PID = 0x08 // Segmentation fragment
-	TEXNETDatagramProtocol PID = 0xc3 // TEXNET database protocol
+	TEXNETDatagramProtocol PID = 0xc3 // TEXNET datagram protocol
 	LinkQualityProtocol    PID = 0xc4 // Link Quality Protocol
-	AppleTalk              PID = 0xca // Appletalk
-	AppletalkARP           PID = 0xcb // Appletalk ARP
+	AppleTalk              PID = 0xca // AppleTalk
+	AppleTalkARP           PID = 0xcb // AppleTalk ARP
 	ARPAInternetProtocol   PID = 0xcc // ARPA Internet Protocol
 	ARPAAddressResolution  PID = 0xcd // ARPA Address Resolution
 	FlexNet                PID = 0xce // FlexNet
@@ -22,29 +24,44 @@ const (
 	NoLayer3Protocol       PID = 0xf0 // No Layer 3 Protocol Implemented
 )
 
-var pidToString = map[PID]string{
-	ISO8208CCITTX25PLP:     "ISO 8208/CCITT X.25 PLP",
-	CompressedTCPIP:        "Compressed TCP/IP. RFC 1144",
-	UncompressedTCPIP:      "Uncompressed TCP/IP",
-	SegmentationFragment:   "Segmentation fragment",
-	TEXNETDatagramProtocol: "TEXNET database protocol",
-	LinkQualityProtocol:    "Link Quality Protocol",
-	AppleTalk:              "Appletalk",
-	AppletalkARP:           "Appletalk ARP",
-	ARPAInternetProtocol:   "ARPA Internet Protocol",
-	ARPAAddressResolution:  "ARPA Address Resolution",
-	FlexNet:                "FlexNet",
-	NETROM:                 "NET/ROM",
-	NoLayer3Protocol:       "No Layer 3 Protocol Implemented",
-}
-
+// String returns the protocol name, or the identifier in hex if it is unknown.
+//
+// A switch rather than a package-level map, as FrameType.String already is:
+// nothing an importer can reorder or rewrite for the whole process, and no
+// allocation at init.
 func (pid PID) String() string {
-	if s := pidToString[pid]; s != "" {
-		return s
+	switch pid {
+	case ISO8208CCITTX25PLP:
+		return "ISO 8208/CCITT X.25 PLP"
+	case CompressedTCPIP:
+		return "Compressed TCP/IP. RFC 1144"
+	case UncompressedTCPIP:
+		return "Uncompressed TCP/IP"
+	case SegmentationFragment:
+		return "Segmentation fragment"
+	case TEXNETDatagramProtocol:
+		return "TEXNET datagram protocol"
+	case LinkQualityProtocol:
+		return "Link Quality Protocol"
+	case AppleTalk:
+		return "AppleTalk"
+	case AppleTalkARP:
+		return "AppleTalk ARP"
+	case ARPAInternetProtocol:
+		return "ARPA Internet Protocol"
+	case ARPAAddressResolution:
+		return "ARPA Address Resolution"
+	case FlexNet:
+		return "FlexNet"
+	case NETROM:
+		return "NET/ROM"
+	case NoLayer3Protocol:
+		return "No Layer 3 Protocol Implemented"
 	}
 	return fmt.Sprintf("%02x", int(pid))
 }
 
+// FrameType is which of the three AX.25 frame formats a frame uses.
 type FrameType byte
 
 const (
@@ -53,6 +70,7 @@ const (
 	UFrame FrameType = 2 // Unnumbered frame
 )
 
+// String returns "I", "S" or "U".
 func (t FrameType) String() string {
 	switch t {
 	case IFrame:
@@ -65,10 +83,11 @@ func (t FrameType) String() string {
 	return fmt.Sprintf("%02x", int(t))
 }
 
+// UnnumberedType is the command or response an unnumbered frame carries.
 type UnnumberedType byte
 
 const (
-	SABME UnnumberedType = 0x6f // Set Async Balanced Mode
+	SABME UnnumberedType = 0x6f // Set Async Balanced Mode Extended, for modulo-128 sequence numbers
 	SABM  UnnumberedType = 0x2f // Set Async Balanced Mode
 	DISC  UnnumberedType = 0x43 // Disconnect
 	DM    UnnumberedType = 0x0f // Disconnect Mode
@@ -79,27 +98,33 @@ const (
 	TEST  UnnumberedType = 0xe3 // Test
 )
 
-var (
-	UnnumberedTypeName = map[UnnumberedType]string{
-		SABME: "SABME",
-		SABM:  "SABM",
-		DISC:  "DISC",
-		DM:    "DM",
-		UA:    "UA",
-		FRMR:  "FRMR",
-		UI:    "UI",
-		XID:   "XID",
-		TEST:  "TEST",
-	}
-)
-
+// String returns the abbreviation for the type, or its value in hex if it is
+// unknown. A switch, for the reason PID.String gives.
 func (t UnnumberedType) String() string {
-	if s := UnnumberedTypeName[t]; s != "" {
-		return s
+	switch t {
+	case SABME:
+		return "SABME"
+	case SABM:
+		return "SABM"
+	case DISC:
+		return "DISC"
+	case DM:
+		return "DM"
+	case UA:
+		return "UA"
+	case FRMR:
+		return "FRMR"
+	case UI:
+		return "UI"
+	case XID:
+		return "XID"
+	case TEST:
+		return "TEST"
 	}
 	return fmt.Sprintf("%02x", int(t))
 }
 
+// SupervisoryType is the flow control message a supervisory frame carries.
 type SupervisoryType byte
 
 const (
@@ -109,6 +134,8 @@ const (
 	SREJ SupervisoryType = 0xd // Selective Reject
 )
 
+// String returns the abbreviation for the type, or its value in hex if it is
+// unknown.
 func (t SupervisoryType) String() string {
 	switch t {
 	case RR:

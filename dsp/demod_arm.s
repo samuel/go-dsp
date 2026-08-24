@@ -1,10 +1,10 @@
 #include "textflag.h"
 
 TEXT ·fmDemodulateAsm(SB), NOSPLIT, $0
-	MOVW input+4(FP), R1
-	MOVW input_len+8(FP), R2
-	MOVW output+16(FP), R3
-	MOVW output_len+20(FP), R4
+	MOVW src_base+16(FP), R1
+	MOVW src_len+20(FP), R2
+	MOVW dst_base+4(FP), R3
+	MOVW dst_len+8(FP), R4
 
 	// Choose the shortest length
 	CMP     R2, R4
@@ -14,7 +14,7 @@ TEXT ·fmDemodulateAsm(SB), NOSPLIT, $0
 	TEQ $0, R2
 	BEQ fmDemod_done
 
-	MOVW fi+0(FP), R0
+	MOVW f+0(FP), R0
 	MOVF 0(R0), F5    // real(pre)
 	MOVF 4(R0), F1    // imag(pre)
 
@@ -42,6 +42,8 @@ fmDemod_loop:
 	WORD $0xeef1fa10            // vmrs APSR_nzcv, fpscr
 	BEQ  fmDemod_atan_zero_x
 	BGT  fmDemod_atan_pos_x
+	BVS  fmDemod_atan_zero_x    // x is NaN: unordered, and the Go reference
+	                            // falls through to the y tests for it too
 	ADDF F2, F4, F7             // x + abs(y)
 	SUBF F4, F2, F4             // abs(y) - x
 	MOVF $2.356194496154785, F3 // pi * 3/4
@@ -68,9 +70,14 @@ fmDemod_atan_1:
 	B    fmDemod_atan_done
 
 fmDemod_atan_zero_x:
-	WORD    $0xeeb56ac0                                              // vcmpe.f32 s12, #0x0
-	WORD    $0xeef1fa10                                              // vmrs APSR_nzcv, fpscr
-	MOVF.LT $-1.570796326794896557998981734272092580795288085938, F6
+	WORD $0xeeb56ac0 // vcmpe.f32 s12, #0x0
+	WORD $0xeef1fa10 // vmrs APSR_nzcv, fpscr
+
+	// LE covers equal, less-than and unordered, so a zero, a negative zero or
+	// a NaN y all start at +0 as the Go reference returns; MI then claims the
+	// strictly negative case, which LT would have shared with a NaN.
+	MOVF.LE $0.0, F6
+	MOVF.MI $-1.570796326794896557998981734272092580795288085938, F6
 	MOVF.GT $1.570796326794896557998981734272092580795288085938, F6
 	MOVF    F6, 0(R3)
 
@@ -88,6 +95,4 @@ fmDemod_atan_done:
 	MOVF F1, 4(R0) // imag(pre)
 
 fmDemod_done:
-	MOVW input_len+8(FP), R0
-	MOVW R0, output_len+28(FP)
 	RET

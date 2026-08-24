@@ -2,94 +2,11 @@ package dsp
 
 import (
 	"math"
-	"unsafe"
 )
 
-// VMulC64xF32 multiplies a vector of complex values with a vector with real values.
-// This is useful for applying a window to complex samples.
-//
-//	output[i] = complex(real(input[i])*mul[i], imag(input[i])*mul[i])
-func VMulC64xF32(input, output []complex64, mul []float32)
-func vMulC64xF32(input, output []complex64, mul []float32) {
-	n := min(len(mul), len(input), len(output))
-	for i, v := range input[:n] {
-		w := mul[i]
-		output[i] = complex(real(v)*w, imag(v)*w)
-	}
-}
-
-// VMulC64 multiplies each value of the input by the matching value in the multiplier.
-//
-//	output[i] = input[i] * mul[i]
-func VMulC64(input, output, mul []complex64) {
-	n := min(len(mul), len(input), len(output))
-	for i, v := range input[:n] {
-		output[i] = v * mul[i]
-	}
-}
-
-func VAddF32(input, output []float32) {
-	n := min(len(input), len(output))
-	for i, v := range input[:n] {
-		output[i] += v
-	}
-}
-
-func VAddC64(input, output []complex64) {
-	n := min(len(input), len(output))
-	for i, v := range input[:n] {
-		output[i] += v
-	}
-}
-
-func VScaleC64(input, output []complex64, scale float32) {
-	in := (*[2 << 25]float32)(unsafe.Pointer(&input[0]))[:len(input)*2]
-	out := (*[2 << 25]float32)(unsafe.Pointer(&output[0]))[:len(output)*2]
-	VScaleF32(in, out, scale)
-}
-
-func VScaleF32(input, output []float32, scale float32)
-func vscaleF32(input, output []float32, scale float32) {
-	n := min(len(input), len(output))
-	for i, v := range input[:n] {
-		output[i] = v * scale
-	}
-}
-
-func VAbsC64(input []complex64, output []float32)
-func vAbsC64(input []complex64, output []float32) {
-	n := min(len(input), len(output))
-	_ = output[n-1] // eliminate bounds check
-	for i, v := range input[:n] {
-		output[i] = float32(math.Sqrt(float64(real(v)*real(v) + imag(v)*imag(v))))
-	}
-}
-
-// VMaxF32 returns the maximum value from an array of 32-bit floating point values.
-// It returns -Inf for an empty slice.
-func VMaxF32(input []float32) float32
-func vMaxF32(input []float32) float32 {
-	mx := float32(math.Inf(-1))
-	for _, v := range input {
-		mx = max(v, mx)
-	}
-	return mx
-}
-
-// VMinF32 returns the minimum value from an array of 32-bit floating point values.
-// It returns +Inf for an empty slice.
-func VMinF32(input []float32) float32
-func vMinF32(input []float32) float32 {
-	mn := float32(math.Inf(1))
-	for _, v := range input {
-		mn = min(v, mn)
-	}
-	return mn
-}
-
-func Conj32(x complex64) complex64    { return complex(real(x), -imag(x)) }
-func FastPhase32(x complex64) float32 { return FastAtan2(imag(x), real(x)) }
-func Phase32(x complex64) float32     { return float32(math.Atan2(float64(imag(x)), float64(real(x)))) }
+// FastPhase returns an approximation of the phase angle of x, in the range
+// [-Pi, Pi]. It uses FastAtan2, so see that function for the error bound.
+func FastPhase(x complex64) float32 { return FastAtan2(imag(x), real(x)) }
 
 const (
 	pi2  = math.Pi / 2
@@ -97,23 +14,32 @@ const (
 	pi34 = math.Pi * 3 / 4
 )
 
-// max |error| < 0.01
-func FastAtan2(y, x float32) float32
+// FastAtan2 returns an approximation of Atan2(y, x), the angle of the vector
+// (x, y), in the range [-Pi, Pi]. The maximum absolute error is a little over
+// 0.01 radians. See FastAtan2Fine for a more accurate approximation.
+//
+// A zero x is tested before anything is divided, so a NaN x -- which is
+// neither negative nor positive -- takes the same branch and returns the angle
+// of the y axis: +Pi/2, -Pi/2, or +0 when y is zero or itself NaN. A NaN y with
+// a nonzero x returns NaN. The result is +0 rather than -0 for every input that
+// lands on zero, including a negative-zero y.
+func FastAtan2(y, x float32) float32 { return fastAtan2Asm(y, x) }
 func fastAtan2(y, x float32) float32 {
 	absY := max(y, -y)
 	absY += 1e-20 // kludge to prevent 0/0 condition
 	var angle float32
-	if x < 0.0 {
+	switch {
+	case x < 0.0:
 		r := (x + absY) / (absY - x)
-		angle = pi34 + (0.1963*r*r-0.9817)*r
-	} else if x > 0.0 {
+		angle = pi34 + float32(quadPoly(r)*r)
+	case x > 0.0:
 		r := (x - absY) / (x + absY)
-		angle = pi4 + (0.1963*r*r-0.9817)*r
-	} else if y < 0.0 {
+		angle = pi4 + float32(quadPoly(r)*r)
+	case y < 0.0:
 		return -pi2
-	} else if y > 0.0 {
+	case y > 0.0:
 		return pi2
-	} else {
+	default:
 		return 0.0
 	}
 	if y < 0.0 {
@@ -122,9 +48,28 @@ func fastAtan2(y, x float32) float32 {
 	return angle
 }
 
-// |error| < 0.005
-func FastAtan2_2(y, x float32) float32
-func fastAtan2_2(y, x float32) float32 {
+// quadPoly is 0.1963*r*r - 0.9817, the odd part of FastAtan2's quadrant
+// polynomial, with the product rounded before the subtraction.
+//
+// The explicit conversion is needed to ensure that arm64 does not change
+// the multiply and the subtraction into one FMSUB, which the unfused
+// MULF/SUBF pair in math32_arm.s cannot reproduce, and the two architectures
+// then disagree on the low bit of most inputs. Its caller rounds
+// the outer product for the same reason -- FMADD with pi34 or pi4.
+func quadPoly(r float32) float32 { return float32(0.1963*r*r) - 0.9817 }
+
+// FastAtan2Fine returns an approximation of Atan2(y, x), the angle of the
+// vector (x, y), in the range [-Pi, Pi]. The maximum absolute error is under
+// 0.005 radians, twice as accurate as FastAtan2 and, on most targets, no
+// slower: it divides once instead of folding the ratio into a quadrant, so
+// which of the two wins depends on the divider.
+//
+// Unlike FastAtan2 it propagates NaN: only a zero x is special-cased, so a NaN
+// in either argument reaches the division and comes back out. A zero x returns
+// +Pi/2, -Pi/2, or +0 when y is zero or NaN -- +0 rather than -0 even for a
+// negative-zero y.
+func FastAtan2Fine(y, x float32) float32 { return fastAtan2FineAsm(y, x) }
+func fastAtan2Fine(y, x float32) float32 {
 	if x == 0.0 {
 		switch {
 		case y > 0.0:
@@ -135,9 +80,11 @@ func fastAtan2_2(y, x float32) float32 {
 		return 0.0
 	}
 	z := y / x
-	zz := z * z
+	// Rounded explicitly, so that z*z cannot contract with the + 0.28 below
+	// into an FMADD that math32_arm.s's separate MULF and ADDF do not produce.
+	zz := float32(z * z)
 	if zz < 1.0 {
-		atan := z / (1.0 + 0.28*zz)
+		atan := z / (1.0 + float32(0.28*zz))
 		if x < 0.0 {
 			if y < 0.0 {
 				return atan - math.Pi

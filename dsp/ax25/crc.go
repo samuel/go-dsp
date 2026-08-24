@@ -1,6 +1,9 @@
 package ax25
 
-var crcCcittTable = []uint16{
+// crcX25Table drives the AX.25 frame check sequence, which is CRC-16/X-25:
+// polynomial 0x1021 reflected to 0x8408, initial value 0xffff, reflected in and
+// out, and complemented on the way out.
+var crcX25Table = [256]uint16{
 	0x0000, 0x1189, 0x2312, 0x329b, 0x4624, 0x57ad, 0x6536, 0x74bf,
 	0x8c48, 0x9dc1, 0xaf5a, 0xbed3, 0xca6c, 0xdbe5, 0xe97e, 0xf8f7,
 	0x1081, 0x0108, 0x3393, 0x221a, 0x56a5, 0x472c, 0x75b7, 0x643e,
@@ -35,11 +38,29 @@ var crcCcittTable = []uint16{
 	0x7bc7, 0x6a4e, 0x58d5, 0x495c, 0x3de3, 0x2c6a, 0x1ef1, 0x0f78,
 }
 
-func checkCrcCcitt(buf []byte) bool {
-	var crc uint16 = 0xffff
+// fcsResidue is what the running CRC settles on when a frame is fed through it
+// with its own FCS still attached, which is how a receiver checks one without
+// having to split the frame first.
+const fcsResidue = 0xf0b8
 
+// crcX25 accumulates the CRC-16/X-25 of buf into crc, which starts at 0xffff.
+func crcX25(crc uint16, buf []byte) uint16 {
 	for _, b := range buf {
-		crc = (crc >> 8) ^ crcCcittTable[(crc^uint16(b))&0xff]
+		crc = (crc >> 8) ^ crcX25Table[(crc^uint16(b))&0xff]
 	}
-	return (crc & 0xffff) == 0xf0b8
+	return crc
+}
+
+// FCS returns the frame check sequence for the frame in buf, in the order it
+// goes on the wire: low byte first. Appending it to buf makes a frame that
+// CheckFCS accepts, which is what a transmitter needs.
+func FCS(buf []byte) [2]byte {
+	crc := ^crcX25(0xffff, buf)
+	return [2]byte{byte(crc), byte(crc >> 8)}
+}
+
+// CheckFCS reports whether buf, a frame with its two FCS bytes still attached,
+// has a valid frame check sequence.
+func CheckFCS(buf []byte) bool {
+	return crcX25(0xffff, buf) == fcsResidue
 }

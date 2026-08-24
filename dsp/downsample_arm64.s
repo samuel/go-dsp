@@ -1,7 +1,7 @@
 #include "textflag.h"
 
-TEXT ·lowPassDownsampleComplexFilterAsm(SB), NOSPLIT, $0
-    B ·lowPassDownsampleComplexFilter(SB)
+TEXT ·boxcarDecimateAsm(SB), NOSPLIT, $0
+    B ·boxcarDecimate(SB)
 
-TEXT ·lowPassDownsampleRationalFilterAsm(SB), NOSPLIT, $0
-    B ·lowPassDownsampleRationalFilter(SB)
+TEXT ·rationalBoxcarDecimateAsm(SB), NOSPLIT, $0
+    B ·rationalBoxcarDecimate(SB)

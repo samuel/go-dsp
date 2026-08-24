@@ -1,56 +1,75 @@
 package dsp
 
 import (
+	"errors"
 	"math"
 	"math/cmplx"
 )
 
-// TODO: damping
-
-// SDFT is a sliding DFT.
-type SDFT struct {
+// SDFT is a sliding DFT: it tracks one bin of an n point transform over the n
+// most recent samples, updating it in constant time per sample rather than
+// recomputing the transform.
+//
+// The sample type cannot be inferred from the constructor's arguments and has
+// to be given, as in NewSDFT[complex128](k, n, nil).
+type SDFT[T Complex] struct {
 	i int
-	w []complex128
-	s []complex128
-	x []complex128
-	e []complex128
+	w []T
+	s []T
+	x []T
+	e []T
 }
 
-func NewSDFT(k, n int, window []float64) *SDFT {
-	var win []complex128
-	if len(window) == 0 {
-		win = []complex128{complex(1, 0)}
-	} else {
-		win = make([]complex128, len(window))
+// NewSDFT returns a sliding DFT of bin k of an n point transform. window holds
+// frequency-domain window coefficients, centered on k, which apply a window by
+// combining len(window) adjacent bins: see HannFreqCoeff and the others
+// alongside it. An empty window means no windowing.
+//
+// n must be positive and at least as wide as window. k may be any integer; bins
+// repeat every n, so it is reduced into [0, n).
+func NewSDFT[T Complex](k, n int, window []float64) (*SDFT[T], error) {
+	if n <= 0 {
+		return nil, errors.New("dsp: SDFT needs a positive number of points")
+	}
+	if len(window) > n {
+		return nil, errors.New("dsp: SDFT window is wider than the transform")
+	}
+	win := []T{1}
+	if len(window) > 0 {
+		win = make([]T, len(window))
 		for i, w := range window {
-			win[i] = complex(w, 0)
+			win[i] = T(complex(w, 0))
 		}
 	}
-	s := &SDFT{
+	sd := &SDFT[T]{
 		w: win,
-		x: make([]complex128, n),
-		e: make([]complex128, len(win)),
-		s: make([]complex128, len(win)),
+		x: make([]T, n),
+		e: make([]T, len(win)),
+		s: make([]T, len(win)),
 	}
-	for i := 0; i < len(win); i++ {
-		j := k - len(win)/2 + i
-		if j < 0 {
-			j += n
-		} else if j >= n {
-			j -= n
-		}
-		s.e[i] = cmplx.Exp(complex(0, 2*math.Pi*float64(j)/float64(n)))
+	for i := range win {
+		j := sdftBin(k-len(win)/2+i, n)
+		sd.e[i] = T(cmplx.Exp(complex(0, 2*math.Pi*float64(j)/float64(n))))
 	}
-	return s
+	return sd, nil
 }
 
-func (sd *SDFT) Filter(x complex128) complex128 {
+// sdftBin reduces a bin index into [0, n). Bin j and bin j+n are the same bin,
+// and the window straddles k, so the index can fall either side of the range.
+func sdftBin(j, n int) int {
+	return ((j % n) + n) % n
+}
+
+// FilterOne feeds one sample and returns bin k over the n most recent samples.
+// The recursion runs on the unit circle with no damping, so rounding error
+// accumulates over a long stream -- faster at complex64 than at complex128.
+func (sd *SDFT[T]) FilterOne(x T) T {
 	i := (sd.i + 1) % len(sd.x)
 	x0 := sd.x[i]
 	sd.x[i] = x
 	sd.i = i
 	xd := x - x0
-	var sum complex128
+	var sum T
 	for i, w := range sd.w {
 		s := (xd + sd.s[i]) * sd.e[i]
 		sd.s[i] = s
@@ -59,54 +78,10 @@ func (sd *SDFT) Filter(x complex128) complex128 {
 	return sum
 }
 
-// SDFT32 is a 32-bit float version of a sliding DFT.
-type SDFT32 struct {
-	i int
-	w []complex64
-	s []complex64
-	x []complex64
-	e []complex64
-}
-
-func NewSDFT32(k, n int, window []float32) *SDFT32 {
-	var win []complex64
-	if len(window) == 0 {
-		win = []complex64{complex(1, 0)}
-	} else {
-		win = make([]complex64, len(window))
-		for i, w := range window {
-			win[i] = complex(w, 0)
-		}
-	}
-	s := &SDFT32{
-		w: win,
-		x: make([]complex64, n),
-		e: make([]complex64, len(win)),
-		s: make([]complex64, len(win)),
-	}
-	for i := 0; i < len(win); i++ {
-		j := k - len(win)/2 + i
-		if j < 0 {
-			j += n
-		} else if j >= n {
-			j -= n
-		}
-		s.e[i] = complex64(cmplx.Exp(complex(0, 2*math.Pi*float64(j)/float64(n))))
-	}
-	return s
-}
-
-func (sd *SDFT32) Filter(x complex64) complex64 {
-	i := (sd.i + 1) % len(sd.x)
-	x0 := sd.x[i]
-	sd.x[i] = x
-	sd.i = i
-	xd := x - x0
-	var sum complex64
-	for i, w := range sd.w {
-		s := (xd + sd.s[i]) * sd.e[i]
-		sd.s[i] = s
-		sum += w * s
-	}
-	return sum
+// Reset clears the sample history and the accumulators, so the transform starts
+// a new stream from silence.
+func (sd *SDFT[T]) Reset() {
+	clear(sd.x)
+	clear(sd.s)
+	sd.i = 0
 }

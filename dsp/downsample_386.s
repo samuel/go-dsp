@@ -1,5 +1,5 @@
-TEXT ·lowPassDownsampleComplexFilterAsm(SB), 7, $0
-	JMP ·lowPassDownsampleComplexFilter(SB)
+TEXT ·boxcarDecimateAsm(SB), 7, $0
+	JMP ·boxcarDecimate(SB)
 
-TEXT ·lowPassDownsampleRationalFilterAsm(SB), 7, $0
-	JMP ·lowPassDownsampleRationalFilter(SB)
+TEXT ·rationalBoxcarDecimateAsm(SB), 7, $0
+	JMP ·rationalBoxcarDecimate(SB)
