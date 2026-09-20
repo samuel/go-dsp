@@ -89,25 +89,6 @@ func f32ToI16LE(dst []byte, src []float32) {
 	}
 }
 
-// clipToI16 converts v to an int16, saturating at the rails.
-//
-// Go's float-to-int conversion is implementation-defined out of range, so a
-// bare int16(v) neither clips nor wraps predictably — arm64 folds it to the
-// opposite rail, turning overdrive into full-amplitude noise. The comparisons
-// come first. NaN fails both and converts to zero, matching the ARM and NEON
-// saturating converts.
-func clipToI16(v float32) int16 {
-	switch {
-	case v > math.MaxInt16:
-		return math.MaxInt16
-	case v < math.MinInt16:
-		return math.MinInt16
-	case v != v:
-		return 0
-	}
-	return int16(v)
-}
-
 // I16ToI16LE writes int16 values as little-endian bytes.
 func I16ToI16LE(dst []byte, src []int16) { i16ToI16LEAsm(dst, src) }
 func i16ToI16LE(dst []byte, src []int16) {
@@ -124,6 +105,17 @@ func i16LEToF32(dst []float32, src []byte) {
 	n := min(len(src)/2, len(dst))
 	for i := range dst[:n] {
 		dst[i] = float32(int16(uint16(src[i*2]) | (uint16(src[i*2+1]) << 8)))
+	}
+}
+
+// I24LEToF32 converts little-endian packed 24-bit signed bytes to float32,
+// sign-extending each sample. It does not scale: the result runs over the
+// 24-bit full-scale range, and every value is exact in a float32.
+func I24LEToF32(dst []float32, src []byte) {
+	n := min(len(src)/3, len(dst))
+	for i := range dst[:n] {
+		b := src[i*3:]
+		dst[i] = float32(sext24(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16))
 	}
 }
 
@@ -146,4 +138,28 @@ func F32ToF32LE(dst []byte, src []float32) {
 	for i, s := range src[:n] {
 		binary.LittleEndian.PutUint32(dst[i*4:], math.Float32bits(s))
 	}
+}
+
+// clipToI16 converts v to an int16, saturating at the rails.
+//
+// Go's float-to-int conversion is implementation-defined out of range, so a
+// bare int16(v) neither clips nor wraps predictably — arm64 folds it to the
+// opposite rail, turning overdrive into full-amplitude noise. The comparisons
+// come first. NaN fails both and converts to zero, matching the ARM and NEON
+// saturating converts.
+func clipToI16(v float32) int16 {
+	switch {
+	case v > math.MaxInt16:
+		return math.MaxInt16
+	case v < math.MinInt16:
+		return math.MinInt16
+	case v != v: // NaN check
+		return 0
+	}
+	return int16(v)
+}
+
+// sext24 sign-extends a 24-bit two's complement value. The shift pair is branchless.
+func sext24(v uint32) int32 {
+	return int32(v<<8) >> 8
 }

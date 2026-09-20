@@ -725,6 +725,7 @@ func TestConversionsEmpty(t *testing.T) {
 		I16ToI16LE(nil, nil)
 		I16LEToF64(nil, nil)
 		I16LEToF32(nil, nil)
+		I24LEToF32(nil, nil)
 		I32LEToF32(nil, nil)
 		F32ToF32LE(nil, nil)
 
@@ -770,6 +771,40 @@ func TestC64ToI8(t *testing.T) {
 	C64ToI8(short, src)
 	if short[2] != 0 {
 		t.Fatalf("wrote a partial complex value: %v", short)
+	}
+}
+
+func TestI24LEToF32(t *testing.T) {
+	src := []byte{
+		0x00, 0x00, 0x00,
+		0x01, 0x00, 0x00,
+		0xff, 0xff, 0xff,
+		0xff, 0xff, 0x7f,
+		0x00, 0x00, 0x80,
+		0x56, 0x34, 0x12,
+	}
+	want := []float32{0, 1, -1, 1<<23 - 1, -1 << 23, 0x123456}
+	dst := make([]float32, len(want)+1)
+	I24LEToF32(dst, src)
+	for i, v := range want {
+		if dst[i] != v {
+			t.Fatalf("[%d] = %v, want %v", i, dst[i], v)
+		}
+	}
+	if dst[len(want)] != 0 {
+		t.Fatalf("wrote past the end: %v", dst)
+	}
+
+	// A trailing partial sample is ignored.
+	partial := make([]float32, len(want))
+	I24LEToF32(partial, src[:len(src)-2])
+	for i := range len(want) - 1 {
+		if partial[i] != want[i] {
+			t.Fatalf("[%d] = %v, want %v", i, partial[i], want[i])
+		}
+	}
+	if partial[len(want)-1] != 0 {
+		t.Fatalf("converted a partial sample: %v", partial)
 	}
 }
 

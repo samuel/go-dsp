@@ -81,11 +81,3 @@ func F64LEToF64(dst []float64, src []byte) {
 		dst[i] = math.Float64frombits(binary.LittleEndian.Uint64(src[i*8:]))
 	}
 }
-
-// sext24 sign-extends a 24-bit two's complement value.
-func sext24(v uint32) int32 {
-	if v&0x800000 != 0 {
-		v |= 0xff000000
-	}
-	return int32(v)
-}
