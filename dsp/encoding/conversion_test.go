@@ -727,6 +727,7 @@ func TestConversionsEmpty(t *testing.T) {
 		I16LEToF32(nil, nil)
 		I24LEToF32(nil, nil)
 		I32LEToF32(nil, nil)
+		F32LEToF32(nil, nil)
 		F32ToF32LE(nil, nil)
 
 		// A non-empty input with an empty output has to write nothing too.
@@ -839,6 +840,38 @@ func TestI32LEToF32(t *testing.T) {
 	}
 	if partial[len(want)-1] != 0 {
 		t.Fatalf("converted a partial int32: %v", partial)
+	}
+}
+
+// TestF32LEToF32RoundTrip checks the pair against each other over the values a
+// byte-exact conversion has to carry unchanged, including a NaN payload.
+func TestF32LEToF32RoundTrip(t *testing.T) {
+	src := []float32{
+		0, 1, -1, 3.14159,
+		float32(math.Inf(1)), float32(math.Inf(-1)),
+		math.Float32frombits(0x80000000), // negative zero
+		math.Float32frombits(0x7fc0dead), // a NaN with a payload
+		math.Float32frombits(0x00000001), // the smallest subnormal
+	}
+	le := make([]byte, len(src)*4)
+	F32ToF32LE(le, src)
+
+	dst := make([]float32, len(src)+1)
+	F32LEToF32(dst, le)
+	for i, v := range src {
+		if math.Float32bits(dst[i]) != math.Float32bits(v) {
+			t.Fatalf("[%d] = %08x, want %08x", i, math.Float32bits(dst[i]), math.Float32bits(v))
+		}
+	}
+	if dst[len(src)] != 0 {
+		t.Fatalf("wrote past the end: %v", dst)
+	}
+
+	// A trailing partial float32 is ignored.
+	partial := make([]float32, len(src))
+	F32LEToF32(partial, le[:len(le)-2])
+	if partial[len(src)-1] != 0 {
+		t.Fatalf("converted a partial float32: %v", partial)
 	}
 }
 

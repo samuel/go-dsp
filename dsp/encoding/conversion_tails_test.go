@@ -34,6 +34,7 @@ func TestConversionTails(t *testing.T) {
 		tails(t, "I16LEToF32", I16LEToF32, tailBytes, 1, 2)
 		tails(t, "I24LEToF32", I24LEToF32, tailBytes, 1, 3)
 		tails(t, "I32LEToF32", I32LEToF32, tailBytes, 1, 4)
+		tails(t, "F32LEToF32", F32LEToF32, tailBytes, 1, 4)
 		tails(t, "F32ToF32LE", F32ToF32LE, tailFloat32, 4, 1)
 	})
 }

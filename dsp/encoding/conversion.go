@@ -132,6 +132,16 @@ func I32LEToF32(dst []float32, src []byte) {
 	}
 }
 
+// F32LEToF32 reads little-endian float32 bytes: the inverse of F32ToF32LE. The
+// bytes need not be aligned, and the value passes through bit for bit, so a
+// NaN keeps its payload.
+func F32LEToF32(dst []float32, src []byte) {
+	n := min(len(src)/4, len(dst))
+	for i := range dst[:n] {
+		dst[i] = math.Float32frombits(binary.LittleEndian.Uint32(src[i*4:]))
+	}
+}
+
 // F32ToF32LE writes float32 values as little-endian float32 bytes.
 func F32ToF32LE(dst []byte, src []float32) {
 	n := min(len(src), len(dst)/4)
