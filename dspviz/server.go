@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"path"
 	"strconv"
 )
 
@@ -64,6 +65,16 @@ type Server struct {
 	mux *http.ServeMux
 }
 
+// staticTypes are the content types of the embedded assets. Left to itself,
+// the file server looks them up with mime.TypeByExtension, which reads the
+// Windows registry or the Unix mime.types files, so the same asset would be
+// served with a different type depending on the machine.
+var staticTypes = map[string]string{
+	".css":  "text/css; charset=utf-8",
+	".html": "text/html; charset=utf-8",
+	".js":   "text/javascript; charset=utf-8",
+}
+
 // NewServer returns a Server, which is an http.Handler.
 func NewServer(opt ServerOptions) (*Server, error) {
 	sub, err := fs.Sub(webFS, "web")
@@ -72,7 +83,13 @@ func NewServer(opt ServerOptions) (*Server, error) {
 	}
 	s := &Server{opt: opt.withDefaults(), mux: http.NewServeMux()}
 
-	s.mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(sub)))
+	static := http.StripPrefix("/static/", http.FileServerFS(sub))
+	s.mux.HandleFunc("GET /static/", func(w http.ResponseWriter, r *http.Request) {
+		if ct, ok := staticTypes[path.Ext(r.URL.Path)]; ok {
+			w.Header().Set("Content-Type", ct)
+		}
+		static.ServeHTTP(w, r)
+	})
 	s.mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		b, err := fs.ReadFile(sub, "index.html")
 		if err != nil {

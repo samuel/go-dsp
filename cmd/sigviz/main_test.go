@@ -7,6 +7,7 @@ import (
 	"errors"
 	"image/png"
 	"io"
+	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -210,12 +211,18 @@ func TestErrorPaths(t *testing.T) {
 		{"tones with no tones", "tones", views{tones: true},
 			[]string{"-format", "i16le", "-rate", "11025", raw}, "-mark and -space"},
 		{"missing file", "stats", views{stats: true},
-			[]string{"-format", "i16le", "-rate", "11025", filepath.Join(out, "nope.raw")}, "no such file"},
+			[]string{"-format", "i16le", "-rate", "11025", filepath.Join(out, "nope.raw")}, ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			err := draw(tt.cmd, tt.args, tt.v)
 			if err == nil {
 				t.Fatal("want an error")
+			}
+			if tt.want == "" {
+				if !errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("error %q is not fs.ErrNotExist", err)
+				}
+				return
 			}
 			if !strings.Contains(err.Error(), tt.want) {
 				t.Errorf("error %q does not mention %q", err, tt.want)
