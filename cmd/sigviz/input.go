@@ -147,6 +147,7 @@ func (f *inputFlags) open(path string) (*source, error) {
 		// A length is only believed once checked against the size on disk, so
 		// a pipe says -1 and the skip is checked at EOF instead.
 		if s.info.Frames >= 0 && s.skip >= s.info.Frames {
+			_ = r.Close() // the -start error is the one worth reporting
 			return nil, fmt.Errorf("-start %g is at or past the end of the file, which is %.6g seconds long",
 				f.start, s.info.Duration())
 		}
