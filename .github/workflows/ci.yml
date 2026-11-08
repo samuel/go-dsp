@@ -1,0 +1,213 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # The oldest Go release the module supports; keep in step with go.mod.
+  GO_MIN: "1.26.x"
+  GOLANGCI_LINT_VERSION: v2.15.0
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, go ${{ matrix.go }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go: [min, stable]
+    runs-on: ${{ matrix.os }}
+    steps:
+      # The SVG goldens are compared byte for byte, so keep LF endings.
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go == 'min' && env.GO_MIN || 'stable' }}
+      - run: go test ./...
+
+  amd64:
+    name: amd64 (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The runners have AVX, so the SSE4.1 and SSE2 leaves only run when
+          # the features are switched off.
+          - name: avx
+            env: ""
+          - name: sse4.1
+            env: GODEBUG=cpu.avx=off
+          - name: sse2
+            env: GODEBUG=cpu.avx=off,cpu.sse41=off
+          - name: race
+            env: ""
+            flags: -race
+          - name: 386
+            env: GOARCH=386
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - run: env ${{ matrix.env }} go test ${{ matrix.flags }} ./...
+
+  simd:
+    name: simd (${{ matrix.runner }}, X86VECTOR=${{ matrix.width }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Each width forces one archsimd path; a width the CPU lacks falls
+          # back to the next narrower one.
+          - { runner: ubuntu-latest, width: "512" }
+          - { runner: ubuntu-latest, width: "256" }
+          - { runner: ubuntu-latest, width: "128" }
+          - { runner: ubuntu-latest, width: "0" }
+          - { runner: ubuntu-24.04-arm, width: "" }
+    runs-on: ${{ matrix.runner }}
+    env:
+      GOEXPERIMENT: simd
+      X86VECTOR: ${{ matrix.width }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - run: go test ./...
+
+  arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - run: go test ./...
+
+  emulated:
+    name: emulated (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The Raspberry Pi 1 target, VFP without NEON.
+          - { name: armv6, goarch: arm, goarm: "6", qemu: arm }
+          - { name: armv7, goarch: arm, goarm: "7", qemu: arm }
+          - { name: armv7-vfp-vector, goarch: arm, goarm: "7", qemu: arm, env: ARMVECTOR=1 }
+          # Architectures with no assembly, which run asm_fallback.go.
+          - { name: riscv64, goarch: riscv64, qemu: riscv64 }
+          # Big-endian, which the little-endian conversions must not assume.
+          - { name: s390x, goarch: s390x, qemu: s390x }
+    env:
+      GOARCH: ${{ matrix.goarch }}
+      GOARM: ${{ matrix.goarm }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - run: sudo apt-get update && sudo apt-get install -y qemu-user-static
+      - run: env ${{ matrix.env }} go test -exec qemu-${{ matrix.qemu }}-static ./...
+
+  build:
+    name: build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: ppc64le }
+          - { goos: linux, goarch: mips64le }
+          - { goos: wasip1, goarch: wasm }
+          - { goos: js, goarch: wasm }
+    env:
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - run: go build ./...
+      - run: go vet ./...
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          install-only: true
+      - run: golangci-lint fmt --diff ./...
+      # A run only sees one architecture's files, so lint each one with
+      # assembly, and the archsimd files separately.
+      - run: |
+          for a in 386 amd64 arm arm64; do
+            echo "::group::$a"
+            GOOS=linux GOARCH=$a golangci-lint run ./...
+            echo "::endgroup::"
+          done
+      - run: GOEXPERIMENT=simd GOOS=linux GOARCH=amd64 golangci-lint run ./...
+      - run: GOEXPERIMENT=simd GOOS=linux GOARCH=arm64 golangci-lint run ./...
+
+  generated:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - run: go mod tidy -diff
+      # The avo output is committed, so regenerating it must change nothing.
+      - run: go generate ./dsp/encoding ./dsp/f32
+      - run: git diff --exit-code
+
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: golang/govulncheck-action@v1
+        with:
+          go-version-input: stable
+
+  fuzz:
+    name: fuzz (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { pkg: ./sampleio, target: FuzzReadWAVHeader }
+          - { pkg: ./firpm, target: FuzzDesign }
+          - { pkg: ./dsp/ax25, target: FuzzFeed }
+          - { pkg: ./dsp/encoding, target: FuzzI16LEToF32 }
+          - { pkg: ./dspviz, target: FuzzWriteSVG }
+          - { pkg: ./dspviz, target: FuzzHandleAnalyze }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - run: go test -run '^$' -fuzz '^${{ matrix.target }}$' -fuzztime 30s ${{ matrix.pkg }}

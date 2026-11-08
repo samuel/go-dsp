@@ -1,5 +1,8 @@
 # go-dsp
 
+[![CI](https://github.com/samuel/go-dsp/actions/workflows/ci.yml/badge.svg)](https://github.com/samuel/go-dsp/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/samuelks.com/dsp.svg)](https://pkg.go.dev/samuelks.com/dsp)
+
 Go packages and command-line tools for digital signal processing (DSP).
 It is useful for Software Defined Radio (SDR), audio, and general signal
 processing. It includes primitives, sample-format conversions, protocol
