@@ -1,6 +1,6 @@
 module samuelks.com/dsp
 
-go 1.26.0
+go 1.27.0
 
 require (
 	github.com/mmcloughlin/avo v0.6.0 // indirect

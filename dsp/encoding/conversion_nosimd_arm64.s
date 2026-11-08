@@ -26,47 +26,47 @@ TEXT ·U8ToF32(SB), NOSPLIT, $0
 #define UI8_TO_F32_BLOCK_SIZE 32
 
 	MOVW	$0x80, R3
-	WORD	$0x4e010c60 // dup v0.16b, w3
+	VDUP	R3, V0.B16
 
     CMP     $UI8_TO_F32_BLOCK_SIZE, R1
     BLT     u8tof32_scalar
 
 u8tof32_simd_loop:
-    WORD    $0xad400801 // ldp q1, q2, [x0]
+    FLDPQ	(R0), (F1, F2)
     ADD     $UI8_TO_F32_BLOCK_SIZE, R0
-	WORD	$0x6e208421 // sub v1.16b, v1.16b, v0.16b
-	WORD	$0x6e208442 // sub v2.16b, v2.16b, v0.16b
-	WORD    $0xf9804001 // prfm pldl1strm, [x0, 128]
-	WORD	$0x0f08a42a // sxtl v10.8h, v1.8b
-	WORD	$0x4f08a42b // sxtl2 v11.8h, v1.16b
-	WORD	$0x0f08a44c // sxtl v12.8h, v2.8b
-	WORD	$0x4f08a44d // sxtl2 v13.8h, v2.16b
-	WORD	$0x0f10a554 // sxtl v20.4s, v10.4h
-	WORD	$0x4f10a555 // sxtl2 v21.4s, v10.8h
-	WORD	$0x0f10a576 // sxtl v22.4s, v11.4h
-	WORD	$0x4f10a577 // sxtl2 v23.4s, v11.8h
-	WORD	$0x0f10a598 // sxtl v24.4s, v12.4h
-	WORD	$0x4f10a599 // sxtl2 v25.4s, v12.8h
-	WORD	$0x0f10a5ba // sxtl v26.4s, v13.4h
-	WORD	$0x4f10a5bb // sxtl2 v27.4s, v13.8h
-	//WORD	$0x4e21da81 // scvtf v1.4s, v20.4s
-	//WORD	$0x4e21daa2 // scvtf v2.4s, v21.4s
-	WORD	$0x4e21da89 // scvtf v9.4s, v20.4s
-	WORD	$0x4e21daaa // scvtf v10.4s, v21.4s
-	WORD	$0x4e21dac3 // scvtf v3.4s, v22.4s
-	WORD	$0x4e21dae4 // scvtf v4.4s, v23.4s
-    //WORD    $0xad000841 // stp q1, q2, [x2]
-	WORD    $0xad002849 // stp q9, q10, [x2]
-	WORD	$0x4e21db05 // scvtf v5.4s, v24.4s
-	WORD	$0x4e21db26 // scvtf v6.4s, v25.4s
-    WORD    $0xad011043 // stp q3, q4, [x2,32]
-	WORD	$0x4e21db47 // scvtf v7.4s, v26.4s
-	WORD	$0x4e21db68 // scvtf v8.4s, v27.4s
-	WORD    $0xad021845 // stp q5, q6, [x2,64]
-	//WORD    $0xad032047 // stp q7, q8, [x2,96]
+	VSUB	V0.B16, V1.B16, V1.B16
+	VSUB	V0.B16, V2.B16, V2.B16
+	PRFM	128(R0), PLDL1STRM
+	VSXTL	V1.B8, V10.H8
+	VSXTL2	V1.B16, V11.H8
+	VSXTL	V2.B8, V12.H8
+	VSXTL2	V2.B16, V13.H8
+	VSXTL	V10.H4, V20.S4
+	VSXTL2	V10.H8, V21.S4
+	VSXTL	V11.H4, V22.S4
+	VSXTL2	V11.H8, V23.S4
+	VSXTL	V12.H4, V24.S4
+	VSXTL2	V12.H8, V25.S4
+	VSXTL	V13.H4, V26.S4
+	VSXTL2	V13.H8, V27.S4
+	//VSCVTF	V20.S4, V1.S4
+	//VSCVTF	V21.S4, V2.S4
+	VSCVTF	V20.S4, V9.S4
+	VSCVTF	V21.S4, V10.S4
+	VSCVTF	V22.S4, V3.S4
+	VSCVTF	V23.S4, V4.S4
+    //FSTPQ	(F1, F2), (R2)
+	FSTPQ	(F9, F10), (R2)
+	VSCVTF	V24.S4, V5.S4
+	VSCVTF	V25.S4, V6.S4
+    FSTPQ	(F3, F4), 32(R2)
+	VSCVTF	V26.S4, V7.S4
+	VSCVTF	V27.S4, V8.S4
+	FSTPQ	(F5, F6), 64(R2)
+	//FSTPQ	(F7, F8), 96(R2)
     ADD     $(UI8_TO_F32_BLOCK_SIZE*4), R2
     SUB     $UI8_TO_F32_BLOCK_SIZE, R1
-	WORD    $0xad3f2047 // stp q7, q8, [x2,-32]
+	FSTPQ	(F7, F8), -32(R2)
     CMP     $UI8_TO_F32_BLOCK_SIZE, R1
     BGE     u8tof32_simd_loop
 

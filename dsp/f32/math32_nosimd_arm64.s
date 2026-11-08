@@ -214,8 +214,7 @@ vmaxf32_reduce:
 	VFMAX	V26.S4, V24.S4, V24.S4
 	VFMAX	V30.S4, V28.S4, V28.S4
 	VFMAX	V28.S4, V24.S4, V24.S4
-	// The assembler has no mnemonic for the across-lanes reduction.
-	WORD	$0x6e30fb18	// fmaxv s24, v24.4s
+	VFMAXV	V24.S4, V24
 	FMOVS	F24, ret+24(FP)
 	RET
 
@@ -336,8 +335,7 @@ vminf32_reduce:
 	VFMIN	V26.S4, V24.S4, V24.S4
 	VFMIN	V30.S4, V28.S4, V28.S4
 	VFMIN	V28.S4, V24.S4, V24.S4
-	// The assembler has no mnemonic for the across-lanes reduction.
-	WORD	$0x6eb0fb18	// fminv s24, v24.4s
+	VFMINV	V24.S4, V24
 	FMOVS	F24, ret+24(FP)
 	RET
 

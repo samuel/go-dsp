@@ -32,7 +32,7 @@ Raspberry Pi 1, an AVX desktop or a wasm module.
 go get samuelks.com/dsp
 ```
 
-The module targets Go 1.26+, and assembly is for the four architectures with
+The module targets Go 1.27+, and assembly is for the four architectures with
 vector hardware: 386, amd64, arm (NEON/VFP) and arm64 (NEON). On every other
 target (riscv64, ppc64le, s390x, wasm) the same packages build and run against
 the Go scalar implementations. On amd64 the leaves dispatch on SSE2, SSE4.1 and

@@ -20,7 +20,7 @@ defaults:
 
 env:
   # The oldest Go release the module supports; keep in step with go.mod.
-  GO_MIN: "1.26.x"
+  GO_MIN: "1.27.x"
   GOLANGCI_LINT_VERSION: v2.15.0
 
 jobs:
@@ -40,6 +40,25 @@ jobs:
         with:
           go-version: ${{ matrix.go == 'min' && env.GO_MIN || 'stable' }}
       - run: go test ./...
+
+  # The test jobs run the minimum Go on one architecture per OS. Assembler
+  # mnemonics and archsimd APIs arrive per release, so build every assembly
+  # architecture, with and without archsimd, on the minimum too.
+  min-go-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_MIN }}
+      - run: |
+          for a in 386 amd64 arm arm64; do
+            echo "::group::$a"
+            GOOS=linux GOARCH=$a go build ./...
+            echo "::endgroup::"
+          done
+      - run: GOEXPERIMENT=simd GOOS=linux GOARCH=amd64 go build ./...
+      - run: GOEXPERIMENT=simd GOOS=linux GOARCH=arm64 go build ./...
 
   amd64:
     name: amd64 (${{ matrix.name }})
