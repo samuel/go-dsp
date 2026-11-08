@@ -173,3 +173,271 @@ func TestInterpolateExactHalfway(t *testing.T) {
 		})
 	}
 }
+
+// The reference sinc tables below spell out the table-building definition
+// SincInterpolator has to reproduce bit for bit, with its parameters as
+// constants.
+const (
+	refSincTaps   = 16
+	refSincHalf   = 8
+	refSincPhases = 512
+	refSincBeta   = 6.0
+	refSincCutoff = 0.454
+)
+
+// refSincTables returns each phase's coefficients before rounding to the
+// sample width, and the window behind them: a sinc and a Kaiser window both
+// centered on the phase's position, the window reaching refSincHalf either
+// side of it.
+func refSincTables() (table, window [refSincPhases][refSincTaps]float64) {
+	for p := range refSincPhases {
+		alpha := float64(p) / float64(refSincPhases)
+		var sum float64
+		var taps [refSincTaps]float64
+		for k := range refSincTaps {
+			t := float64(k) - float64(refSincHalf-1) - alpha
+			window[p][k] = kaiserAt(t, refSincHalf, refSincBeta)
+			taps[k] = sinc(2*refSincCutoff*t) * window[p][k]
+			sum += taps[k]
+		}
+		for k, v := range taps {
+			table[p][k] = v / sum
+		}
+	}
+	return table, window
+}
+
+func refSincDownCoeffs(window *[refSincPhases][refSincTaps]float64, phase int, fc float64) (out [refSincTaps]float64) {
+	w := 2 * math.Pi * fc
+	t := -float64(refSincHalf-1) - float64(phase)/float64(refSincPhases)
+	sin, cos := math.Sincos(w * t)
+	stepSin, stepCos := math.Sincos(w)
+	var taps [refSincTaps]float64
+	var sum float64
+	for k := range refSincTaps {
+		v := 1.0
+		if wt := w * t; math.Abs(wt) > 1e-9 {
+			v = sin / wt
+		}
+		taps[k] = v * window[phase][k]
+		sum += taps[k]
+		sin, cos = sin*stepCos+cos*stepSin, cos*stepCos-sin*stepSin
+		t++
+	}
+	for k, v := range taps {
+		out[k] = v / sum
+	}
+	return out
+}
+
+func testSincInterpolatorMatchesReference[T Float](t *testing.T) {
+	s, err := NewSincInterpolator[T](refSincTaps, refSincPhases, refSincCutoff, refSincBeta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Len() != refSincTaps || s.Phases() != refSincPhases {
+		t.Fatalf("Len %d, Phases %d", s.Len(), s.Phases())
+	}
+	same := func(got T, want float64) bool {
+		return math.Float64bits(float64(got)) == math.Float64bits(float64(T(want)))
+	}
+	table, window := refSincTables()
+	for p := range refSincPhases {
+		got := s.PhaseCoeffs(p)
+		for k, want := range table[p] {
+			if !same(got[k], want) {
+				t.Fatalf("phase %d tap %d = %v, want %v", p, k, got[k], T(want))
+			}
+		}
+	}
+	got := make([]T, refSincTaps)
+	for _, fc := range []float64{refSincCutoff / 1.7, refSincCutoff / 3.3} {
+		for _, p := range []int{0, 1, 100, 255, 256, 511} {
+			want := refSincDownCoeffs(&window, p, fc)
+			s.DownsampleCoeffs(got, p, fc)
+			for k := range want {
+				if !same(got[k], want[k]) {
+					t.Fatalf("cutoff %v phase %d tap %d = %v, want %v", fc, p, k, got[k], T(want[k]))
+				}
+			}
+		}
+	}
+}
+
+func TestSincInterpolatorMatchesReference(t *testing.T) {
+	t.Run("float32", testSincInterpolatorMatchesReference[float32])
+	t.Run("float64", testSincInterpolatorMatchesReference[float64])
+}
+
+func TestNewSincInterpolatorErrors(t *testing.T) {
+	for _, c := range []struct {
+		taps, phases int
+		cutoff, beta float64
+	}{
+		{0, 8, 0.45, 6},
+		{15, 8, 0.45, 6},
+		{16, 0, 0.45, 6},
+		{16, 8, 0, 6},
+		{16, 8, 0.51, 6},
+		{16, 8, 0.45, -1},
+		{16, 8, 0.45, math.NaN()},
+		{16, 8, 0.45, math.Inf(1)},
+		{16, 8, 0.45, 1e4},
+	} {
+		if _, err := NewSincInterpolator[float32](c.taps, c.phases, c.cutoff, c.beta); err == nil {
+			t.Errorf("NewSincInterpolator[float32](%d, %d, %v, %v): no error", c.taps, c.phases, c.cutoff, c.beta)
+		}
+		if _, err := NewSincInterpolator[complex128](c.taps, c.phases, c.cutoff, c.beta); err == nil {
+			t.Errorf("NewSincInterpolator[complex128](%d, %d, %v, %v): no error", c.taps, c.phases, c.cutoff, c.beta)
+		}
+	}
+}
+
+func TestSincInterpolatorPhaseIndex(t *testing.T) {
+	s, err := NewSincInterpolator[float32](8, 64, 0.45, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		frac float64
+		want int
+	}{
+		{0, 0}, {0.5, 32}, {1.0 / 64, 1}, {0.999999, 63}, {1, 63}, {5, 63},
+		{-0.1, 0}, {math.NaN(), 0}, {math.Inf(1), 63},
+	} {
+		if got := s.PhaseIndex(c.frac); got != c.want {
+			t.Errorf("PhaseIndex(%v) = %d, want %d", c.frac, got, c.want)
+		}
+	}
+}
+
+func TestSincInterpolatorDownsampleCoeffsPanics(t *testing.T) {
+	s, err := NewSincInterpolator[float32](8, 4, 0.45, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		n      int
+		cutoff float64
+	}{{7, 0.2}, {8, 0}, {8, 0.6}, {8, math.NaN()}} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("len %d cutoff %v: no panic", c.n, c.cutoff)
+				}
+			}()
+			s.DownsampleCoeffs(make([]float32, c.n), 0, c.cutoff)
+		}()
+	}
+}
+
+func testSincInterpolatorBehavior[T Float](t *testing.T) {
+	s, err := NewSincInterpolator[T](refSincTaps, refSincPhases, refSincCutoff, refSincBeta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	down := make([]T, s.Len())
+	for p := range s.Phases() {
+		var sum float64
+		for _, c := range s.PhaseCoeffs(p) {
+			sum += float64(c)
+		}
+		if math.Abs(sum-1) > 1e-6 {
+			t.Fatalf("phase %d: DC gain %v", p, sum)
+		}
+		s.DownsampleCoeffs(down, p, refSincCutoff/2.5)
+		sum = 0
+		for _, c := range down {
+			sum += float64(c)
+		}
+		if math.Abs(sum-1) > 1e-6 {
+			t.Fatalf("phase %d: downsampling DC gain %v", p, sum)
+		}
+	}
+
+	// Phase zero is centered on the base sample, so it is symmetric about it,
+	// and its last tap sits on the window's edge rather than outside it.
+	c0 := s.PhaseCoeffs(0)
+	base := s.Len()/2 - 1
+	for k := 1; k <= base; k++ {
+		if c0[base-k] != c0[base+k] {
+			t.Errorf("phase 0 taps %d and %d differ: %v, %v", base-k, base+k, c0[base-k], c0[base+k])
+		}
+	}
+	if c0[s.Len()-1] == 0 {
+		t.Error("phase 0 last tap is zero")
+	}
+
+	// A slow sine is reproduced between its samples, to within the passband
+	// ripple of 16 windowed taps, and At agrees with Interpolate exactly away
+	// from the edges.
+	const f = 0.03
+	src := make([]T, 64)
+	for i := range src {
+		src[i] = T(math.Sin(2 * math.Pi * f * float64(i)))
+	}
+	for n := 20; n < 40; n++ {
+		for _, frac := range []float64{0, 0.125, 0.5, 0.8} {
+			got := s.Interpolate(src[n-base:n-base+s.Len()], frac)
+			want := math.Sin(2 * math.Pi * f * (float64(n) + frac))
+			if d := math.Abs(float64(got) - want); d > 1e-3 {
+				t.Fatalf("n=%d frac=%v: %v, want %v", n, frac, got, want)
+			}
+			if at := s.At(src, float64(n)+frac); at != got {
+				t.Fatalf("n=%d frac=%v: At %v, Interpolate %v", n, frac, at, got)
+			}
+		}
+	}
+
+	// At holds the edges, so a constant signal stays constant everywhere.
+	flat := []T{0.75, 0.75, 0.75}
+	for _, x := range []float64{-50, -1, -0.5, 0, 0.3, 1.7, 2, 2.5, 3, 100} {
+		if got := s.At(flat, x); math.Abs(float64(got)-0.75) > 1e-6 {
+			t.Errorf("At(flat, %v) = %v, want 0.75", x, got)
+		}
+	}
+	if got := s.At(nil, 1); got != 0 {
+		t.Errorf("At(nil) = %v, want 0", got)
+	}
+	if got := s.At(flat, math.NaN()); got != 0 {
+		t.Errorf("At(NaN) = %v, want 0", got)
+	}
+}
+
+func TestSincInterpolatorBehavior(t *testing.T) {
+	t.Run("float32", testSincInterpolatorBehavior[float32])
+	t.Run("float64", testSincInterpolatorBehavior[float64])
+}
+
+// testSincInterpolatorComplex checks that a complex interpolator reads the
+// real and imaginary parts as the real interpolator of the same width does.
+func testSincInterpolatorComplex[C Complex, F Float](t *testing.T) {
+	sc, err := NewSincInterpolator[C](8, 32, 0.45, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sf, err := NewSincInterpolator[F](8, 32, 0.45, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := make([]F, 40)
+	im := make([]F, 40)
+	src := make([]C, 40)
+	for i := range src {
+		re[i] = F(math.Sin(0.2 * float64(i)))
+		im[i] = F(math.Cos(0.7 * float64(i)))
+		src[i] = C(complex(float64(re[i]), float64(im[i])))
+	}
+	for _, x := range []float64{-2, 0, 3.25, 17.5, 30.9, 39, 45} {
+		got := complex128(sc.At(src, x))
+		wantRe, wantIm := float64(sf.At(re, x)), float64(sf.At(im, x))
+		if math.Abs(real(got)-wantRe) > 1e-6 || math.Abs(imag(got)-wantIm) > 1e-6 {
+			t.Errorf("x=%v: %v, want (%v%+vi)", x, got, wantRe, wantIm)
+		}
+	}
+}
+
+func TestSincInterpolatorComplex(t *testing.T) {
+	t.Run("complex64", testSincInterpolatorComplex[complex64, float32])
+	t.Run("complex128", testSincInterpolatorComplex[complex128, float64])
+}

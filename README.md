@@ -12,7 +12,7 @@ Raspberry Pi 1, an AVX desktop or a wasm module.
 
 | Path | Contents |
 | --- | --- |
-| `dsp` | The main API: generic vector operations (`VScale`, `VAdd`, ...), FM demodulation, IIR/biquad/FIR filters, boxcar and FIR decimators, Goertzel tone detection, sliding DFT, fixed-size FFT, transfer-function evaluation, window functions, interpolators, interleave/deinterleave, `FastAtan2`. |
+| `dsp` | The main API: generic vector operations (`VScale`, `VAdd`, ...), FM demodulation, IIR/biquad/FIR filters, boxcar and FIR decimators, Goertzel tone detection, sliding DFT, fixed-size FFT, transfer-function evaluation, window functions, Kaiser-windowed sinc low-pass design (`LowPassFIR`), FIR interpolation (`FIRInterpolator`, zero-phase `Upsample`), interpolators including a polyphase `SincInterpolator`, interleave/deinterleave, `FastAtan2`. |
 | `dsp/encoding` | The `<source>To<destination>` sample conversions (`U8ToF32`, `I16LEToF32`, `F32ToI16`, ...), never scaled. |
 | `dsp/ax25` | AX.25/HDLC frame decoding plus CRC-16/X-25 `FCS`/`CheckFCS`. |
 | `dsp/dtmf` | DTMF decoding built on Goertzel. |
@@ -142,6 +142,20 @@ encoding.F32ToI16(i16, f32) // clips
 
 ### FIR design
 
+A Kaiser-windowed sinc low-pass, normalized to a DC gain of 1, and a 2x
+interpolator built on it (the taps scaled to a gain of 2 for the stuffed
+zeros). `FIRInterpolator` streams like `FIRDecimator`; `Upsample` filters a
+whole buffer at zero phase.
+
+```go
+h, err := dsp.LowPassFIR[float32](143, 0.25, 9) // cutoff in cycles per sample
+dsp.NormalizeTaps(h, 2)
+it, err := dsp.NewFIRInterpolator(h, 2)
+n := it.Filter(dst, src) // n == it.OutputLen(len(src)) == 2*len(src)
+```
+
+Parks-McClellan equiripple design:
+
 ```go
 h, dev, err := firpm.Design(firpm.Spec{
     NumTaps: 31,
@@ -201,7 +215,8 @@ go run ./examples/ax25 -rate 11025 -baud 300 radio-paket300-11025.raw
 - **Conversions never scale**; a `LE` suffix means the byte slice holds
   little-endian values.
 - **1:1 operations process `min(dst, src)`** and return nothing; only
-  operations whose output count differs (the decimators) return one.
+  operations whose output count differs (the decimators and
+  `FIRInterpolator`) return one.
 - **Stateful types** have a validating constructor and a `Reset`; none are safe
   for concurrent use.
 

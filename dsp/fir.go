@@ -2,6 +2,7 @@ package dsp
 
 import (
 	"errors"
+	"math"
 	"slices"
 )
 
@@ -104,9 +105,13 @@ func (f *FIRFilter[T]) stage(src []T) []T {
 
 // dot evaluates the filter at w[at], which must have at least len(taps)-1
 // samples of history in front of it.
-func (f *FIRFilter[T]) dot(w []T, at int) T {
+func (f *FIRFilter[T]) dot(w []T, at int) T { return firDot(f.taps, w, at) }
+
+// firDot returns the sum of taps[j]*w[at-j], which needs len(taps)-1 samples
+// of w in front of at.
+func firDot[T Sample](taps, w []T, at int) T {
 	var sum T
-	for j, c := range f.taps {
+	for j, c := range taps {
 		sum += c * w[at-j]
 	}
 	return sum
@@ -210,4 +215,127 @@ func (d *FIRDecimator[T]) advance(n int) {
 	}
 	k := (n - d.phase + d.factor - 1) / d.factor
 	d.phase += k*d.factor - n
+}
+
+// FIRInterpolator raises the sample rate by a whole-number factor: it follows
+// each input sample with factor-1 zeros and filters the result with taps,
+// writing factor outputs per input. It is the zero-stuffing and the filter in
+// one pass: output n uses only the taps that land on input samples, one
+// polyphase branch of every factor-th tap, so the multiplies by the stuffed
+// zeros are never done. It keeps the inputs that straddle a block boundary
+// between calls, so a stream can be filtered in blocks.
+//
+// The taps are the filter at the output rate, normally a low-pass at
+// 0.5/factor cycles per output sample. Zero-stuffing divides the signal's
+// level by factor, so the taps need a DC gain of factor to keep it, as from
+// LowPassFIR followed by NormalizeTaps(taps, factor). As with FIRFilter, a
+// symmetric tap set delays the output by (len(taps)-1)/2 output samples.
+//
+// Like FIRDecimator it does not implement Coefficients; measure the FIRFilter
+// with the same taps at the output rate instead.
+type FIRInterpolator[T Sample] struct {
+	// f carries the input history and staging; its taps are unused, since
+	// each output takes one of branches instead.
+	f FIRFilter[T]
+	// branches[p] holds taps p, p+factor, p+2*factor, ..., zero-padded to a
+	// common length, which is what output phase p applies to the inputs.
+	branches [][]T
+}
+
+// NewFIRInterpolator returns an interpolator that raises the rate by factor
+// and filters with the given taps, which are copied. factor must be at least
+// 1; at 1 it is an ordinary FIR filter.
+func NewFIRInterpolator[T Sample](taps []T, factor int) (*FIRInterpolator[T], error) {
+	switch {
+	case factor < 1:
+		return nil, errors.New("dsp: FIR interpolator needs a factor of at least 1")
+	case len(taps) == 0:
+		return nil, errors.New("dsp: FIR interpolator needs at least one tap")
+	}
+	n := (len(taps) + factor - 1) / factor
+	coef := make([]T, n*factor)
+	branches := make([][]T, factor)
+	for p := range branches {
+		b := coef[p*n : (p+1)*n : (p+1)*n]
+		for k := range b {
+			if j := p + k*factor; j < len(taps) {
+				b[k] = taps[j]
+			}
+		}
+		branches[p] = b
+	}
+	return &FIRInterpolator[T]{
+		f:        FIRFilter[T]{hist: make([]T, n-1)},
+		branches: branches,
+	}, nil
+}
+
+// NewRealCoefFIRInterpolator is NewFIRInterpolator with real taps over complex
+// samples; see NewRealCoefFIRFilter.
+func NewRealCoefFIRInterpolator[C Complex, F Float](taps []F, factor int) (*FIRInterpolator[C], error) {
+	return NewFIRInterpolator(rtoc[C](taps), factor)
+}
+
+// Factor returns the interpolation factor, so a caller measuring the filter
+// can work out the output rate without being told it twice.
+func (it *FIRInterpolator[T]) Factor() int { return len(it.branches) }
+
+// OutputLen returns how many samples Filter will write for that many inputs,
+// which is inputs*Factor. It panics if that does not fit in an int, which a
+// 32-bit platform reaches at realistic sizes.
+func (it *FIRInterpolator[T]) OutputLen(inputs int) int {
+	if inputs > math.MaxInt/len(it.branches) {
+		panic("dsp: FIR interpolator output length overflows int")
+	}
+	return inputs * len(it.branches)
+}
+
+// Filter writes the interpolated output and returns how many samples it wrote,
+// which is OutputLen(len(src)). It panics if dst is shorter than that. dst may
+// share memory with src, since src is copied before any output is written.
+func (it *FIRInterpolator[T]) Filter(dst, src []T) int {
+	factor := len(it.branches)
+	if len(src) > len(dst)/factor { // len(src)*factor could overflow
+		panic("dsp: FIR interpolator dst is shorter than OutputLen")
+	}
+	if len(src) == 0 {
+		return 0
+	}
+	w := it.f.stage(src)
+	h := len(it.f.hist)
+	for i := range src {
+		out := dst[i*factor : (i+1)*factor]
+		for p, b := range it.branches {
+			out[p] = firDot(b, w, h+i)
+		}
+	}
+	it.f.save(w, len(src))
+	return len(src) * factor
+}
+
+// Reset clears the history, so the filter starts a new stream from silence.
+func (it *FIRInterpolator[T]) Reset() { it.f.Reset() }
+
+// Upsample is FIRInterpolator applied to a whole buffer at zero phase: the
+// filter is centered on tap len(taps)/2 rather than delaying the output, and
+// the signal is taken as zero outside src. It writes len(src)*factor samples
+// to dst, which must not overlap src. It allocates a working buffer; use
+// FIRInterpolator to filter a stream in blocks.
+func Upsample[T Sample](dst, src []T, factor int, taps []T) error {
+	if factor >= 1 && len(src) > len(dst)/factor { // len(src)*factor could overflow
+		return errors.New("dsp: upsample dst is shorter than len(src)*factor")
+	}
+	it, err := NewFIRInterpolator(taps, factor)
+	if err != nil {
+		return err
+	}
+	// Output i is the causal output i+center, so the inputs run on with
+	// enough zeros to produce the last of those.
+	center := len(taps) / 2
+	in := make([]T, len(src)+(center+factor-1)/factor)
+	copy(in, src)
+	out := make([]T, it.OutputLen(len(in)))
+	it.Filter(out, in)
+	copy(dst, out[center:center+len(src)*factor])
+	return nil
 }

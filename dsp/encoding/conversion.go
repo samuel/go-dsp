@@ -108,6 +108,15 @@ func i16LEToF32(dst []float32, src []byte) {
 	}
 }
 
+// U16LEToF32 converts little-endian uint16 bytes to float32, subtracting the
+// 32768 bias. It does not scale: the range is -32768 to 32767.
+func U16LEToF32(dst []float32, src []byte) {
+	n := min(len(src)/2, len(dst))
+	for i := range dst[:n] {
+		dst[i] = float32(int(binary.LittleEndian.Uint16(src[i*2:])) - 32768)
+	}
+}
+
 // I24LEToF32 converts little-endian packed 24-bit signed bytes to float32,
 // sign-extending each sample. It does not scale: the result runs over the
 // 24-bit full-scale range, and every value is exact in a float32.

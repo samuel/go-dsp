@@ -25,6 +25,19 @@ func TestF64ConversionsKnownValues(t *testing.T) {
 		checkF64(t, got, []float64{-128, 0, 127, 1, -1})
 	})
 
+	t.Run("U16LEToF64", func(t *testing.T) {
+		// The 32768 bias comes off, so the range is -32768 to 32767.
+		got := make([]float64, 5)
+		U16LEToF64(got, []byte{
+			0x00, 0x00, // -32768
+			0x00, 0x80, // 0
+			0xff, 0xff, // 32767
+			0x01, 0x80, // 1
+			0xff, 0x7f, // -1
+		})
+		checkF64(t, got, []float64{-32768, 0, 32767, 1, -1})
+	})
+
 	t.Run("I24LEToF64", func(t *testing.T) {
 		got := make([]float64, 6)
 		I24LEToF64(got, []byte{
@@ -130,6 +143,22 @@ func TestF64ConversionsAgreeWithF32(t *testing.T) {
 		}
 	})
 
+	t.Run("U16LE", func(t *testing.T) {
+		src := make([]byte, 2*1000)
+		for i := range src {
+			src[i] = byte(i * 31)
+		}
+		wide := make([]float64, 1000)
+		narrow := make([]float32, 1000)
+		U16LEToF64(wide, src)
+		U16LEToF32(narrow, src)
+		for i := range wide {
+			if float32(wide[i]) != narrow[i] {
+				t.Fatalf("sample %d: %v against %v", i, wide[i], narrow[i])
+			}
+		}
+	})
+
 	t.Run("I32LE", func(t *testing.T) {
 		// Here the two genuinely differ, and that is the point: a 32-bit integer
 		// does not fit float32's 24-bit mantissa, so the narrow conversion
@@ -205,6 +234,7 @@ func TestF64ConversionsMismatchedLengths(t *testing.T) {
 		{"U8ToF64", 1, U8ToF64},
 		{"I8ToF64", 1, I8ToF64},
 		{"I16LEToF64", 2, I16LEToF64},
+		{"U16LEToF64", 2, U16LEToF64},
 		{"I24LEToF64", 3, I24LEToF64},
 		{"I32LEToF64", 4, I32LEToF64},
 		{"F32LEToF64", 4, F32LEToF64},

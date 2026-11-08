@@ -2,9 +2,10 @@
 // formats an SDR or audio source delivers, float, and interleaved complex.
 //
 // The conversions are named <source>To<destination>: U8 and I8 for 8-bit
-// samples, I16, I24 and I32 for wider integers, F32 and F64 for floats, C64 for
-// interleaved complex64, and an LE suffix on whichever side is a byte slice
-// holding little-endian values.
+// samples, U16, I16, I24 and I32 for wider integers, F32 and F64 for floats,
+// C64 for interleaved complex64, and an LE suffix on whichever side is a byte
+// slice holding little-endian values. A U source is offset binary, and the
+// conversion removes its midpoint bias.
 //
 // None of them scale; each integer form keeps its own full-scale range, and the
 // normalizing factor belongs in the coefficients of the next linear stage,

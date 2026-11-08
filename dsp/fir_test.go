@@ -334,3 +334,174 @@ func TestRealCoefFIRDecimator(t *testing.T) {
 		}
 	}
 }
+
+// mkSample returns re+im*i as T, dropping im for a real T.
+func mkSample[T Sample](re, im float64) T {
+	var v T
+	switch p := any(&v).(type) {
+	case *float32:
+		*p = float32(re)
+	case *float64:
+		*p = re
+	case *complex64:
+		*p = complex64(complex(re, im))
+	case *complex128:
+		*p = complex(re, im)
+	}
+	return v
+}
+
+// sampleDiff returns |a-b| for any sample width.
+func sampleDiff[T Sample](a, b T) float64 {
+	switch d := any(a - b).(type) {
+	case float32:
+		return math.Abs(float64(d))
+	case float64:
+		return math.Abs(d)
+	case complex64:
+		return cmplx.Abs(complex128(d))
+	case complex128:
+		return cmplx.Abs(d)
+	}
+	panic("unreachable")
+}
+
+// testFIRInterpolatorMatchesStuffedFIR pins the interpolator against the
+// definition: zero-stuffing and then filtering with every tap. Exactly equal,
+// since the products that skip the stuffed zeros are only ever zero terms,
+// and across block boundaries, which is what the carried history is for.
+func testFIRInterpolatorMatchesStuffedFIR[T Sample](t *testing.T) {
+	src := make([]T, 203)
+	for i := range src {
+		src[i] = mkSample[T](math.Sin(float64(i)*0.37), math.Cos(float64(i)*1.9))
+	}
+	for _, factor := range []int{1, 2, 3, 5} {
+		for _, ntaps := range []int{1, 2, len(asymTaps), 12, 31} {
+			taps := make([]T, ntaps)
+			for k := range taps {
+				taps[k] = mkSample[T](asymTaps[k%len(asymTaps)]*float64(k+1), 0)
+			}
+			ref := must(NewFIRFilter(taps))
+			stuffed := make([]T, len(src)*factor)
+			for i, v := range src {
+				stuffed[i*factor] = v
+			}
+			want := make([]T, len(stuffed))
+			ref.Filter(want, stuffed)
+
+			it := must(NewFIRInterpolator(taps, factor))
+			if it.Factor() != factor || it.OutputLen(7) != 7*factor {
+				t.Fatalf("Factor %d, OutputLen(7) %d", it.Factor(), it.OutputLen(7))
+			}
+			for _, block := range []int{1, 2, 7, 64, len(src)} {
+				it.Reset()
+				got := make([]T, len(want))
+				for i := 0; i < len(src); i += block {
+					end := min(i+block, len(src))
+					if n := it.Filter(got[i*factor:], src[i:end]); n != (end-i)*factor {
+						t.Fatalf("wrote %d, want %d", n, (end-i)*factor)
+					}
+				}
+				for i := range want {
+					if got[i] != want[i] {
+						t.Fatalf("factor=%d taps=%d block=%d [%d] = %v, want %v",
+							factor, ntaps, block, i, got[i], want[i])
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestFIRInterpolatorMatchesStuffedFIR(t *testing.T) {
+	t.Run("float32", testFIRInterpolatorMatchesStuffedFIR[float32])
+	t.Run("float64", testFIRInterpolatorMatchesStuffedFIR[float64])
+	t.Run("complex64", testFIRInterpolatorMatchesStuffedFIR[complex64])
+	t.Run("complex128", testFIRInterpolatorMatchesStuffedFIR[complex128])
+}
+
+// TestFIRInterpolatorSharedBuffer writes the output over the input it came
+// from, which the doc comment allows because src is staged first.
+func TestFIRInterpolatorSharedBuffer(t *testing.T) {
+	src := []float64{1, 2, 3, 4, 5, 6, 7, 8}
+	it := must(NewFIRInterpolator(asymTaps, 3))
+	want := make([]float64, 3*len(src))
+	it.Filter(want, src)
+
+	it.Reset()
+	buf := make([]float64, 3*len(src))
+	copy(buf, src)
+	it.Filter(buf, buf[:len(src)])
+	for i := range want {
+		if buf[i] != want[i] {
+			t.Fatalf("[%d] = %v, want %v", i, buf[i], want[i])
+		}
+	}
+}
+
+func TestFIRInterpolatorShortDstPanics(t *testing.T) {
+	it := must(NewFIRInterpolator(asymTaps, 2))
+	defer func() {
+		if recover() == nil {
+			t.Error("no panic")
+		}
+	}()
+	it.Filter(make([]float64, 7), make([]float64, 4))
+}
+
+func TestFIRInterpolatorConstructorsValidate(t *testing.T) {
+	if _, err := NewFIRInterpolator(asymTaps, 0); err == nil {
+		t.Error("factor 0: want an error")
+	}
+	if _, err := NewFIRInterpolator([]float64{}, 2); err == nil {
+		t.Error("no taps: want an error")
+	}
+	if _, err := NewRealCoefFIRInterpolator[complex64]([]float32(nil), 2); err == nil {
+		t.Error("no taps, complex: want an error")
+	}
+	if _, err := NewRealCoefFIRInterpolator[complex64]([]float32{1}, 0); err == nil {
+		t.Error("factor 0, complex: want an error")
+	}
+	// The taps are copied.
+	taps := []float64{1, 2, 3}
+	it := must(NewFIRInterpolator(taps, 2))
+	taps[0] = 99
+	dst := make([]float64, 2)
+	it.Filter(dst, []float64{1})
+	if dst[0] != 1 {
+		t.Errorf("taps were not copied: first output %v", dst[0])
+	}
+}
+
+// TestRealCoefFIRInterpolator checks that real taps over complex samples give
+// the same output as the same taps written as complex.
+func TestRealCoefFIRInterpolator(t *testing.T) {
+	src := make([]complex128, 50)
+	for i := range src {
+		src[i] = complex(math.Sin(float64(i)*0.3), math.Cos(float64(i)*0.7))
+	}
+	rc := must(NewRealCoefFIRInterpolator[complex128](asymTaps, 3))
+	cplx := must(NewFIRInterpolator(rtoc[complex128](asymTaps), 3))
+	got := make([]complex128, 3*len(src))
+	want := make([]complex128, 3*len(src))
+	rc.Filter(got, src)
+	cplx.Filter(want, src)
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("[%d] = %v, want %v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestFIRInterpolatorOutputLenOverflowPanics(t *testing.T) {
+	it := must(NewFIRInterpolator(asymTaps, 3))
+	if got := it.OutputLen(math.MaxInt / 3); got != math.MaxInt/3*3 {
+		t.Errorf("OutputLen(MaxInt/3) = %d", got)
+	}
+	defer func() {
+		if recover() == nil {
+			t.Error("no panic")
+		}
+	}()
+	it.OutputLen(math.MaxInt/3 + 1)
+}

@@ -148,18 +148,9 @@ func KaiserWindow[T Float](dst []T, beta float64) {
 	if beta < 0 {
 		panic("dsp: Kaiser window beta must not be negative")
 	}
-	if len(dst) == 0 {
-		return
-	}
-	if len(dst) == 1 {
-		dst[0] = 1
-		return
-	}
-	nn := float64(len(dst) - 1)
-	norm := 1 / besselI0(beta)
+	halfLen := float64(len(dst)-1) / 2
 	for n := range dst {
-		r := 2*float64(n)/nn - 1
-		dst[n] = T(besselI0(beta*math.Sqrt(1-r*r)) * norm)
+		dst[n] = T(kaiserAt(float64(n)-halfLen, halfLen, beta))
 	}
 }
 
@@ -182,6 +173,22 @@ func KaiserBeta(attenuation float64) float64 {
 		return 0.5842*math.Pow(a, 0.4) + 0.07886*a
 	}
 	return 0
+}
+
+// kaiserAt returns the Kaiser window with shape parameter beta at offset t
+// from its center, for a window reaching from -halfLen to halfLen; KaiserWindow
+// of N points samples it at t = n-(N-1)/2 with halfLen (N-1)/2. It is zero
+// outside that span. Unlike KaiserWindow it can be evaluated between
+// points, as a fractionally delayed filter needs.
+func kaiserAt(t, halfLen, beta float64) float64 {
+	if !(math.Abs(t) <= halfLen) {
+		return 0
+	}
+	if halfLen == 0 {
+		return 1
+	}
+	r := t / halfLen
+	return besselI0(beta*math.Sqrt(1-r*r)) / besselI0(beta)
 }
 
 // besselI0 returns the modified Bessel function of the first kind of order zero,
