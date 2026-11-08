@@ -168,7 +168,7 @@ func (c *Chart) WriteSVG(w io.Writer) error {
 
 	// Grid and ticks.
 	for _, t := range xt {
-		px := left + x.pos(t.Value)*(right-left)
+		px := lerp(left, right, x.pos(t.Value))
 		if math.IsNaN(px) || px < left-0.01 || px > right+0.01 {
 			continue
 		}
@@ -191,7 +191,7 @@ func (c *Chart) WriteSVG(w io.Writer) error {
 		p.printf(`</text>`)
 	}
 	for _, t := range yt {
-		py := bottom - y.pos(t.Value)*(bottom-top)
+		py := lerp(bottom, top, y.pos(t.Value))
 		if math.IsNaN(py) || py < top-0.01 || py > bottom+0.01 {
 			continue
 		}
@@ -359,8 +359,8 @@ func (c *Chart) path(x, y *Axis, s Series, left, right, top, bottom float64) str
 			pen = false
 			continue
 		}
-		cx := left + px*(right-left)
-		cy := bottom - py*(bottom-top)
+		cx := lerp(left, right, px)
+		cy := lerp(bottom, top, py)
 		if pen {
 			buf = append(buf, 'L')
 		} else {
@@ -379,7 +379,7 @@ func (c *Chart) path(x, y *Axis, s Series, left, right, top, bottom float64) str
 func closeToAxis(y *Axis, left, right, bottom, top float64) string {
 	base := bottom
 	if p := y.pos(0); !math.IsNaN(p) && p >= 0 && p <= 1 {
-		base = bottom - p*(bottom-top)
+		base = lerp(bottom, top, p)
 	}
 	return "L" + num(right) + " " + num(base) + "L" + num(left) + " " + num(base) + "Z"
 }
@@ -404,6 +404,14 @@ func widestLabel(cb *ColorBar) int {
 		}
 	}
 	return w
+}
+
+// lerp returns from + p*(to-from), the pixel at fraction p of a span. The
+// conversion rounds the product on its own, which stops arm64 and others from
+// fusing it into a multiply-add: one bit of difference moves a coordinate
+// across a rounding boundary and makes the SVG differ by architecture.
+func lerp(from, to, p float64) float64 {
+	return from + float64(p*(to-from))
 }
 
 func num(v float64) string {
