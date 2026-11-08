@@ -144,8 +144,11 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: stable
-      - run: sudo apt-get update && sudo apt-get install -y qemu-user-static
-      - run: env ${{ matrix.env }} go test -exec qemu-${{ matrix.qemu }}-static ./...
+      # qemu-user, not qemu-user-static: the latter is only a virtual package
+      # from Ubuntu 26.04, and qemu-user ships the same qemu-<arch> binaries on
+      # every release.
+      - run: sudo apt-get update && sudo apt-get install -y qemu-user
+      - run: env ${{ matrix.env }} go test -exec qemu-${{ matrix.qemu }} ./...
 
   build:
     name: build (${{ matrix.goos }}/${{ matrix.goarch }})
