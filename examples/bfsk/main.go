@@ -1,3 +1,11 @@
+// Command bfsk demodulates binary FSK by comparing the power a Goertzel filter
+// measures at the mark tone with the power at the space tone, recovers the bit
+// clock from the transitions, and prints the bits as '#' for a mark and ' '
+// for a space. It is the bit slicer of the ax25 example on its own, for
+// looking at a signal before decoding it.
+//
+// The input is a WAV file, or a headerless file or standard input given with
+// -format and -rate.
 package main
 
 import (

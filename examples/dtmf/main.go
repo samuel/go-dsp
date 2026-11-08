@@ -1,3 +1,11 @@
+// Command dtmf prints the keypad digits in a recording of DTMF tones, using
+// dtmf.Decoder over a sliding window and requiring the same key on three
+// consecutive blocks before printing it.
+//
+// The input is a WAV file, or a headerless file or standard input given with
+// -format and -rate:
+//
+//	dtmf dsp/dtmf/testdata/1223445-50ms-8000.wav
 package main
 
 import (

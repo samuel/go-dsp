@@ -1,3 +1,14 @@
+// Command ax25 decodes AX.25 packet radio frames from a recording of 1200 baud
+// AFSK, the modulation APRS uses on VHF. A Goertzel filter at the mark and
+// space tones slices the signal into bits, a bit clock recovers their timing,
+// and ax25.Decoder assembles the HDLC frames, printing each one's addresses
+// and payload.
+//
+// The input is a WAV file, or a headerless file or standard input given with
+// -format and -rate. -baud, -mark and -space select other AFSK variants, such
+// as 300 baud HF packet:
+//
+//	ax25 -rate 11025 -baud 300 -mark 1600 -space 1800 capture.raw
 package main
 
 import (

@@ -31,12 +31,17 @@ Raspberry Pi 1, an AVX desktop or a wasm module.
 go get samuelks.com/dsp
 ```
 
-The module targets Go 1.27+, and assembly is for the four architectures with
-vector hardware: 386, amd64, arm (NEON/VFP) and arm64 (NEON). On every other
-target (riscv64, ppc64le, s390x, wasm) the same packages build and run against
-the Go scalar implementations. On amd64 the leaves dispatch on SSE2, SSE4.1 and
-AVX1 at runtime; optionally build with `GOEXPERIMENT=simd` to use the
-`archsimd` Go implementations.
+Supported Go versions are the minimum in `go.mod`, currently 1.27, through
+the latest release; CI builds and tests both ends. Assembly is for the four
+architectures with vector hardware: 386, amd64, arm (NEON/VFP) and arm64
+(NEON). On every other target (riscv64, ppc64le, s390x, wasm) the same
+packages build and run against the Go scalar implementations. On amd64 the
+leaves dispatch on SSE2, SSE4.1 and AVX1 at runtime.
+
+Optionally build with `GOEXPERIMENT=simd` to use the `archsimd` Go
+implementations instead. That path follows a Go experiment whose API can
+change between Go releases, so it is only supported on the Go versions CI
+tests it with, and a new Go release may need a new release of this module.
 
 ## Usage
 
