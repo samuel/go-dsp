@@ -13,15 +13,15 @@ import "unsafe"
 // A wrong offset makes the difference below non-zero, and -uint of a non-zero
 // constant does not fit a uint, so the package stops compiling for arm.
 const (
-	_ = -uint(unsafe.Offsetof(BoxcarDecimator{}.downsample))
-	_ = -uint(unsafe.Offsetof(BoxcarDecimator{}.now) - 4)
-	_ = -uint(unsafe.Offsetof(BoxcarDecimator{}.prevIndex) - 12)
+	_ = -uint(unsafe.Offsetof(BoxcarDecimator[complex64]{}.factor))
+	_ = -uint(unsafe.Offsetof(BoxcarDecimator[complex64]{}.now) - 4)
+	_ = -uint(unsafe.Offsetof(BoxcarDecimator[complex64]{}.prevIndex) - 12)
 
-	_ = -uint(unsafe.Offsetof(RationalBoxcarDecimator{}.fast))
-	_ = -uint(unsafe.Offsetof(RationalBoxcarDecimator{}.slow) - 4)
-	_ = -uint(unsafe.Offsetof(RationalBoxcarDecimator{}.sum) - 8)
-	_ = -uint(unsafe.Offsetof(RationalBoxcarDecimator{}.count) - 12)
-	_ = -uint(unsafe.Offsetof(RationalBoxcarDecimator{}.prevIndex) - 16)
+	_ = -uint(unsafe.Offsetof(RationalBoxcarDecimator[float32]{}.fast))
+	_ = -uint(unsafe.Offsetof(RationalBoxcarDecimator[float32]{}.slow) - 4)
+	_ = -uint(unsafe.Offsetof(RationalBoxcarDecimator[float32]{}.sum) - 8)
+	_ = -uint(unsafe.Offsetof(RationalBoxcarDecimator[float32]{}.count) - 12)
+	_ = -uint(unsafe.Offsetof(RationalBoxcarDecimator[float32]{}.prevIndex) - 16)
 
-	_ = -uint(unsafe.Offsetof(FMDemod{}.pre))
+	_ = -uint(unsafe.Offsetof(FMDemod[complex64, float32]{}.pre))
 )

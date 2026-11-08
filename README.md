@@ -19,7 +19,6 @@ Raspberry Pi 1, an AVX desktop or a wasm module.
 | `dsp/encoding` | The `<source>To<destination>` sample conversions (`U8ToF32`, `I16LEToF32`, `F32ToI16`, ...), never scaled. |
 | `dsp/ax25` | AX.25/HDLC frame decoding plus CRC-16/X-25 `FCS`/`CheckFCS`. |
 | `dsp/dtmf` | DTMF decoding built on Goertzel. |
-| `dsp/f32`, `dsp/f64` | The float32/complex64 and float64/complex128 kernels behind the generic functions; call directly only to skip the ~1ns generic dispatch. |
 | `sampleio` | Reading WAV/RF64 audio and headerless I/Q captures, handing over scale-normalized samples. |
 | `firpm` | Parks-McClellan (Remez exchange) linear-phase FIR design. |
 | `dspviz` | Measuring and drawing filters and recordings; stdlib-only SVG/PNG rendering. |
@@ -78,7 +77,7 @@ peak := dsp.VMax(src)
 ### FM demodulation
 
 ```go
-fmd := dsp.NewFMDemod()
+fmd := dsp.NewFMDemod[complex64, float32]() // complex64 runs the assembly
 out := make([]float32, len(iq))
 fmd.Demodulate(out, iq)
 ```
@@ -95,7 +94,7 @@ pows := g.Power()
 ```
 
 ```go
-d, err := dtmf.NewStandard(8000, 205)
+d, err := dtmf.NewStandardDecoder[float32](8000, 205)
 key, _ := d.Feed(block)
 if key != dtmf.NoKey {
     fmt.Printf("%c", dtmf.Key(key))
@@ -222,6 +221,11 @@ go run ./examples/ax25 -rate 11025 -baud 300 radio-paket300-11025.raw
   `FIRInterpolator`) return one.
 - **Stateful types** have a validating constructor and a `Reset`; none are safe
   for concurrent use.
+- **Normalized frequency is cycles per sample**, so 0.5 is the Nyquist
+  frequency: `Freqz`, `GroupDelay`, `LowPassFIR` and `SincInterpolator` take
+  it, as does `firpm` unless `Spec.SampleRate` says the band edges are in Hz.
+  Constructors that model analog prototypes (the biquads, `Goertzel`) take Hz
+  and a sample rate instead.
 
 ## Performance
 
@@ -235,7 +239,7 @@ target and, on amd64, by runtime CPU features:
 4. a pure-Go reference routing every assembly entry point to its fallback on
    architectures with no assembly at all
 
-Benchmarks live with the code: `go test ./dsp/f32 -bench .` and
+Benchmarks live with the code: `go test ./dsp/internal/f32 -bench .` and
 `go test ./dsp/encoding -bench .` sweep sizes from 64 to 64K floats so
 loop-overhead changes stay visible.
 

@@ -29,15 +29,17 @@ func readWAV(t *testing.T, path string) []float32 {
 
 // decode runs a sliding window over samples and returns the digits, requiring
 // the same key on three consecutive blocks before accepting it.
-func decode(t *testing.T, d *Decoder, samples []float32, blockSize int) string {
+func decode[T dsp.Float](t *testing.T, d *Decoder[T], samples []float32, blockSize int) string {
 	t.Helper()
 	hop := blockSize / 4
-	block := make([]float32, blockSize)
+	block := make([]T, blockSize)
 	var out []rune
 	last, count := NoKey, 0
 	for off := 0; off+hop <= len(samples); off += hop {
 		copy(block, block[hop:])
-		copy(block[blockSize-hop:], samples[off:off+hop])
+		for i, v := range samples[off : off+hop] {
+			block[blockSize-hop+i] = T(v)
+		}
 		k, power := d.Feed(block)
 		if k != NoKey && power <= 0 {
 			t.Fatalf("decoded key %d with power %v", k, power)
@@ -80,14 +82,23 @@ func TestDecodeCaptures(t *testing.T) {
 		// block size and Goertzel coefficients derived for a different one.
 		{"testdata/0123456789-50ms-44100.wav", 44100, "0123456789"},
 	} {
-		t.Run(tc.path, func(t *testing.T) {
-			blockSize := int(205 * tc.sampleRate / 8000)
-			d, err := NewStandard(tc.sampleRate, blockSize)
+		blockSize := int(205 * tc.sampleRate / 8000)
+		samples := readWAV(t, tc.path)
+		t.Run(tc.path+"/float32", func(t *testing.T) {
+			d, err := NewStandardDecoder[float32](tc.sampleRate, blockSize)
 			if err != nil {
 				t.Fatal(err)
 			}
-			got := decode(t, d, readWAV(t, tc.path), blockSize)
-			if got != tc.want {
+			if got := decode(t, d, samples, blockSize); got != tc.want {
+				t.Errorf("decoded %q, want %q", got, tc.want)
+			}
+		})
+		t.Run(tc.path+"/float64", func(t *testing.T) {
+			d, err := NewStandardDecoder[float64](tc.sampleRate, blockSize)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := decode(t, d, samples, blockSize); got != tc.want {
 				t.Errorf("decoded %q, want %q", got, tc.want)
 			}
 		})
@@ -108,7 +119,7 @@ func TestFeedDoesNotModifyInput(t *testing.T) {
 	before := make([]float32, blockSize)
 	copy(before, samples)
 
-	d, err := NewStandard(8000, blockSize)
+	d, err := NewStandardDecoder[float32](8000, blockSize)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +162,7 @@ func TestFeedRejects(t *testing.T) {
 		{"more off-grid tones", tone(311, 2749, 3001)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			d, err := NewStandard(sampleRate, blockSize)
+			d, err := NewStandardDecoder[float32](sampleRate, blockSize)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -186,7 +197,7 @@ func TestFeedThresholdIgnoresTheWindow(t *testing.T) {
 
 	critical := func(t *testing.T, windowFunc func([]float32)) float64 {
 		t.Helper()
-		d, err := New(stdLowFreq[:], stdHighFreq[:], sampleRate, blockSize, windowFunc)
+		d, err := NewDecoder(stdLowFreq[:], stdHighFreq[:], sampleRate, blockSize, windowFunc)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -244,7 +255,7 @@ func TestFeedAcceptsEveryDigit(t *testing.T) {
 				samples[i] = float32(math.Sin(2*math.Pi*lowFreq*t) +
 					0.7*math.Sin(2*math.Pi*highFreq*t))
 			}
-			d, err := NewStandard(sampleRate, blockSize)
+			d, err := NewStandardDecoder[float32](sampleRate, blockSize)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -286,7 +297,7 @@ func TestFeedRejectsExcessiveTwist(t *testing.T) {
 		{"low 20 dB hot", 10, 1, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			d, err := NewStandard(sampleRate, blockSize)
+			d, err := NewStandardDecoder[float32](sampleRate, blockSize)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -299,7 +310,7 @@ func TestFeedRejectsExcessiveTwist(t *testing.T) {
 }
 
 func TestFeedWrongBlockSizePanics(t *testing.T) {
-	d, err := NewStandard(8000, 205)
+	d, err := NewStandardDecoder[float32](8000, 205)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +361,7 @@ func TestNewCustomFrequencies(t *testing.T) {
 	// A two-by-two grid, with the default (nil) window function.
 	low := []float64{600, 900}
 	high := []float64{1400, 1700}
-	d, err := New(low, high, sampleRate, blockSize, nil)
+	d, err := NewDecoder[float32](low, high, sampleRate, blockSize, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +386,7 @@ func TestNewCustomFrequencies(t *testing.T) {
 		{"no high", low, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := New(tc.low, tc.high, sampleRate, blockSize, nil)
+			_, err := NewDecoder[float32](tc.low, tc.high, sampleRate, blockSize, nil)
 			if err == nil {
 				t.Fatal("expected an error")
 			}
@@ -405,10 +416,10 @@ func TestNewRejects(t *testing.T) {
 		{"zero window", 8000, 205, func(w []float32) { clear(w) }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := New(low, high, tc.rate, tc.block, tc.win); err == nil {
-				t.Error("New: expected an error")
+			if _, err := NewDecoder(low, high, tc.rate, tc.block, tc.win); err == nil {
+				t.Error("NewDecoder: expected an error")
 			}
-			if _, err := NewStandard(tc.rate, tc.block); err == nil && tc.win == nil {
+			if _, err := NewStandardDecoder[float32](tc.rate, tc.block); err == nil && tc.win == nil {
 				t.Error("NewStandard: expected an error")
 			}
 		})

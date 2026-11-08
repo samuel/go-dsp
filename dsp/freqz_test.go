@@ -12,11 +12,11 @@ import (
 // its cutoff, an all-pass is unity everywhere, and a notch is a true null.
 func TestBiQuadCutoff(t *testing.T) {
 	const rate, cutoff = 48000.0, 1000.0
-	w := 2 * math.Pi * cutoff / rate
+	f := cutoff / rate
 
 	lp := must(NewLowPassBiQuad[float64](rate, cutoff, math.Sqrt2/2))
 	b, a := lp.Coefficients()
-	h := Freqz(b, a, []float64{w})
+	h := Freqz(b, a, []float64{f})
 	db := 20 * math.Log10(cmplx.Abs(h[0]))
 	if math.Abs(db-(-3.0102999566398)) > 1e-9 {
 		t.Errorf("low-pass at cutoff: %.12f dB, want -3.0103", db)
@@ -24,23 +24,23 @@ func TestBiQuadCutoff(t *testing.T) {
 
 	hp := must(NewHighPassBiQuad[float64](rate, cutoff, math.Sqrt2/2))
 	b, a = hp.Coefficients()
-	h = Freqz(b, a, []float64{w})
+	h = Freqz(b, a, []float64{f})
 	if db = 20 * math.Log10(cmplx.Abs(h[0])); math.Abs(db-(-3.0102999566398)) > 1e-9 {
 		t.Errorf("high-pass at cutoff: %.12f dB, want -3.0103", db)
 	}
 
 	ap := must(NewAllPassBiQuad[float64](rate, cutoff, 0.5))
 	b, a = ap.Coefficients()
-	grid := LinearGridFor(t, 0, math.Pi, 257)
+	grid := LinearGridFor(t, 0, 0.5, 257)
 	for i, hv := range Freqz(b, a, grid) {
 		if math.Abs(cmplx.Abs(hv)-1) > 1e-14 {
-			t.Fatalf("all-pass at w=%v: |H| = %v, want 1 (point %d)", grid[i], cmplx.Abs(hv), i)
+			t.Fatalf("all-pass at f=%v: |H| = %v, want 1 (point %d)", grid[i], cmplx.Abs(hv), i)
 		}
 	}
 
 	nf := must(NewNotchBiQuad[float64](rate, cutoff, 2))
 	b, a = nf.Coefficients()
-	h = Freqz(b, a, []float64{w})
+	h = Freqz(b, a, []float64{f})
 	// A true null, to the depth the cancellation in the numerator allows: this
 	// is the one limit Freqz's doc comment admits to, and -250 dB is far below
 	// anything a filter under test would put here.
@@ -64,19 +64,19 @@ func LinearGridFor(t *testing.T, low, high float64, n int) []float64 {
 // a nil a is the same as {1}.
 func TestFreqzFIR(t *testing.T) {
 	b := []float64{0.1, -0.25, 0.4, -0.25, 0.1}
-	w := LinearGridFor(t, 0, math.Pi, 64)
-	got := Freqz(b, nil, w)
-	unit := Freqz(b, []float64{1}, w)
-	for i, wi := range w {
+	f := LinearGridFor(t, 0, 0.5, 64)
+	got := Freqz(b, nil, f)
+	unit := Freqz(b, []float64{1}, f)
+	for i, fi := range f {
 		var want complex128
 		for n, c := range b {
-			want += complex(c, 0) * cmplx.Exp(complex(0, -wi*float64(n)))
+			want += complex(c, 0) * cmplx.Exp(complex(0, -2*math.Pi*fi*float64(n)))
 		}
 		if cmplx.Abs(got[i]-want) > 1e-14 {
-			t.Fatalf("w=%v: got %v, want %v", wi, got[i], want)
+			t.Fatalf("f=%v: got %v, want %v", fi, got[i], want)
 		}
 		if got[i] != unit[i] {
-			t.Fatalf("w=%v: nil a gave %v, a={1} gave %v", wi, got[i], unit[i])
+			t.Fatalf("f=%v: nil a gave %v, a={1} gave %v", fi, got[i], unit[i])
 		}
 	}
 }
@@ -93,12 +93,12 @@ func TestFreqzAgreesWithImpulseFFT(t *testing.T) {
 	spec := make([]complex128, n)
 	ForwardReal(f, spec, taps)
 
-	w := make([]float64, n/2+1)
-	for k := range w {
-		w[k] = 2 * math.Pi * float64(k) / float64(n)
+	freq := make([]float64, n/2+1)
+	for k := range freq {
+		freq[k] = float64(k) / float64(n)
 	}
-	h := Freqz(taps, nil, w)
-	for k := range w {
+	h := Freqz(taps, nil, freq)
+	for k := range freq {
 		if cmplx.Abs(h[k]-spec[k]) > 1e-13 {
 			t.Fatalf("bin %d: Freqz %v, FFT %v", k, h[k], spec[k])
 		}
@@ -115,10 +115,10 @@ func TestGroupDelayLinearPhase(t *testing.T) {
 		{0.05, 0.15, 0.6, 0.15, 0.05},                      // odd length
 	} {
 		want := float64(len(taps)-1) / 2
-		w := LinearGridFor(t, 0.05, 1.2, 97) // away from the stopband nulls
-		for i, d := range GroupDelay(taps, nil, w) {
+		f := LinearGridFor(t, 0.008, 0.19, 97) // away from the stopband nulls
+		for i, d := range GroupDelay(taps, nil, f) {
 			if math.Abs(d-want) > 1e-9 {
-				t.Fatalf("%d taps at w=%v: delay %v, want %v", len(taps), w[i], d, want)
+				t.Fatalf("%d taps at f=%v: delay %v, want %v", len(taps), f[i], d, want)
 			}
 		}
 	}
@@ -132,19 +132,20 @@ func TestGroupDelayMatchesPhaseSlope(t *testing.T) {
 	b, a := lp.Coefficients()
 
 	const n = 20001
-	w := LinearGridFor(t, 0.01, 2.5, n)
-	h := Freqz(b, a, w)
+	f := LinearGridFor(t, 0.0016, 0.4, n)
+	h := Freqz(b, a, f)
 	phase := make([]float64, n)
 	for i, v := range h {
 		phase[i] = math.Atan2(imag(v), real(v))
 	}
 	Unwrap(phase)
 
-	want := GroupDelay(b, a, w)
+	// The phase is in radians, so the slope is taken against 2*pi*f.
+	want := GroupDelay(b, a, f)
 	for i := 1; i < n-1; i++ {
-		got := -(phase[i+1] - phase[i-1]) / (w[i+1] - w[i-1])
+		got := -(phase[i+1] - phase[i-1]) / (2 * math.Pi * (f[i+1] - f[i-1]))
 		if math.Abs(got-want[i]) > 1e-6 {
-			t.Fatalf("w=%v: slope %v, closed form %v", w[i], got, want[i])
+			t.Fatalf("f=%v: slope %v, closed form %v", f[i], got, want[i])
 		}
 	}
 }
@@ -186,8 +187,7 @@ func TestDCFilterCoefficients(t *testing.T) {
 	// read from, so the correlation below sees no leakage and the comparison is
 	// limited by the transient rather than by the measurement.
 	const frame, k = 2048, 127
-	w := 2 * math.Pi * k / frame
-	h := Freqz(b, a, []float64{w})[0]
+	h := Freqz(b, a, []float64{float64(k) / frame})[0]
 
 	const settle = 8 * frame
 	in := make([]float64, settle+frame)

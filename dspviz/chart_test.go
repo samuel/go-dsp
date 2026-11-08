@@ -113,7 +113,7 @@ func TestChartsGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, _ := NewFIRProcessor(taps, 48000)
+	p, _ := NewFIRProcessor(must(dsp.NewFIRFilter(taps)), 48000)
 	golden(t, "impulse", ImpulseChart(Impulse(p, 48), 48000, ChartOptions{}))
 	golden(t, "step", StepChart(Step(p, 48), 48000, ChartOptions{}))
 

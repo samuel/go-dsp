@@ -116,7 +116,7 @@ func TestGroupDelaySecondsMatchesSamples(t *testing.T) {
 	for i := range taps {
 		taps[i] = 1.0 / float64(len(taps))
 	}
-	p, err := NewFIRProcessor(taps, rate)
+	p, err := NewFIRProcessor(must(dsp.NewFIRFilter(taps)), rate)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestGridWarningFiresOnACoarseGrid(t *testing.T) {
 	for i := range taps {
 		taps[i] = 1.0 / float64(len(taps))
 	}
-	p, err := NewFIRProcessor(taps, rate)
+	p, err := NewFIRProcessor(must(dsp.NewFIRFilter(taps)), rate)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func TestGridWarningFiresOnACoarseGrid(t *testing.T) {
 func TestImpulseAtGuardsItsArguments(t *testing.T) {
 	const rate = 48000.0
 	taps := []float64{0.25, 0.5, 0.25}
-	p, err := NewFIRProcessor(taps, rate)
+	p, err := NewFIRProcessor(must(dsp.NewFIRFilter(taps)), rate)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +321,7 @@ func TestIIRProcessor(t *testing.T) {
 		t.Errorf("after Reset got %v, want %v", again, first)
 	}
 
-	if _, err := NewIIRProcessor(nil, rate); err == nil {
+	if _, err := NewIIRProcessor[float64](nil, rate); err == nil {
 		t.Error("a nil filter should be an error")
 	}
 	if _, err := NewIIRProcessor(f, 0); err == nil {

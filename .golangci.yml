@@ -63,7 +63,7 @@ linters:
       # see, so which ones look dead depends on GOARCH and GOEXPERIMENT. A
       # nolint directive would itself be unused on the builds where the symbol
       # is live, so the exemption lives here instead.
-      - path: (dsp/f32|dsp/encoding)/cpu\.go
+      - path: (dsp/internal/f32|dsp/encoding)/cpu\.go
         linters:
           - unused
       - path: _test\.go

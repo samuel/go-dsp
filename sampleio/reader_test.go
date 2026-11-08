@@ -184,6 +184,45 @@ func TestReadComplex128(t *testing.T) {
 	}
 }
 
+// TestReadComplex64 reads a stream longer than the staging block in one call,
+// so the block loop runs more than once, and checks it against ReadComplex128.
+func TestReadComplex64(t *testing.T) {
+	vals := make([]float64, 2*20000)
+	for i := range vals {
+		vals[i] = float64(i%200-100) / 128
+	}
+	raw := i16(vals...)
+	open := func() *Reader {
+		r, err := NewReader(bytes.NewReader(raw), Options{Format: I16LE, Rate: 8000, IQ: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	want := make([]complex128, len(vals)/2+5)
+	nw, err := open().ReadComplex128(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := open()
+	got := make([]complex64, len(want))
+	n, err := r.ReadComplex64(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != nw || n != len(vals)/2 {
+		t.Fatalf("read %d, ReadComplex128 read %d, want %d", n, nw, len(vals)/2)
+	}
+	for i := range n {
+		if got[i] != complex64(want[i]) {
+			t.Fatalf("sample %d = %v, want %v", i, got[i], want[i])
+		}
+	}
+	if _, err := r.ReadComplex64(got); !errors.Is(err, io.EOF) {
+		t.Errorf("read past the end: %v, want io.EOF", err)
+	}
+}
+
 // TestReadWrongShape validates that a complex stream does not hand back its
 // real part, nor a real stream pretend to be complex.
 func TestReadWrongShape(t *testing.T) {
@@ -201,6 +240,9 @@ func TestReadWrongShape(t *testing.T) {
 	}
 	if _, err := realRd.ReadComplex128(make([]complex128, 2)); err == nil {
 		t.Error("ReadComplex128 on a real stream succeeded")
+	}
+	if _, err := realRd.ReadComplex64(make([]complex64, 2)); err == nil {
+		t.Error("ReadComplex64 on a real stream succeeded")
 	}
 }
 

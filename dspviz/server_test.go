@@ -70,7 +70,7 @@ func TestServerAnalyzeMatchesFreqz(t *testing.T) {
 		if f < 900 || f > 1100 {
 			continue
 		}
-		want := 20 * math.Log10(cmplx.Abs(dsp.Freqz(b, a, []float64{2 * math.Pi * f / 48000})[0]))
+		want := 20 * math.Log10(cmplx.Abs(dsp.Freqz(b, a, []float64{f / 48000})[0]))
 		if got := ys[i].(float64); math.Abs(got-want) > 1e-9 {
 			t.Fatalf("%.1f Hz: server said %v dB, Freqz says %v", f, got, want)
 		}

@@ -121,7 +121,7 @@ func TestToneMatchesFreqz(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			p, _ := NewFIRProcessor(taps, rate)
+			p, _ := NewFIRProcessor(must(dsp.NewFIRFilter(taps)), rate)
 			return p
 		}},
 	} {
@@ -155,7 +155,7 @@ func TestToneMatchesFreqz(t *testing.T) {
 func TestImpulseMethodMatchesExactForFIR(t *testing.T) {
 	const rate = 48000.0
 	taps := []float64{0.02, -0.05, 0.11, 0.37, 0.37, 0.11, -0.05, 0.02}
-	mk := func() Processor { p, _ := NewFIRProcessor(taps, rate); return p }
+	mk := func() Processor { p, _ := NewFIRProcessor(must(dsp.NewFIRFilter(taps)), rate); return p }
 
 	freq := LogGrid(20, 20000, 64)
 	exact, err := FreqResponse(mk(), freq, ResponseOptions{Method: MethodExact})
@@ -221,7 +221,7 @@ func TestFIRPMRippleMatchesDeviation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			p, err := NewFIRProcessor(taps, rate)
+			p, err := NewFIRProcessor(must(dsp.NewFIRFilter(taps)), rate)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -271,7 +271,7 @@ func TestGroupDelayOfLinearPhaseFIR(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, _ := NewFIRProcessor(taps, rate)
+	p, _ := NewFIRProcessor(must(dsp.NewFIRFilter(taps)), rate)
 	r, err := FreqResponse(p, LinearGrid(100, 5500, 2001), ResponseOptions{})
 	if err != nil {
 		t.Fatal(err)

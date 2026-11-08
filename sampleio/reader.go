@@ -112,10 +112,12 @@ type Reader struct {
 	viewF64 [][]float64
 	viewF32 [][]float32
 
-	// narrow is ReadFloat32's staging, and deliberately not work: the decode
-	// owns work and reallocates it, so holding it out as a destination would
-	// hand the caller whatever the decode last put there.
-	narrow []float64
+	// narrow and narrowC are ReadFloat32's and ReadComplex64's staging, and
+	// deliberately not work: the decode owns work and reallocates it, so
+	// holding it out as a destination would hand the caller whatever the decode
+	// last put there.
+	narrow  []float64
+	narrowC []complex128
 
 	// overrange is set once a float sample outside full scale has been decoded;
 	// see noteOverrange.
@@ -396,6 +398,39 @@ func (r *Reader) ReadComplex128(dst []complex128) (int, error) {
 		r.decodeComplex(dst[total:total+frames], frames)
 		r.advance(frames)
 		total += frames
+	}
+	return total, nil
+}
+
+// ReadComplex64 is ReadComplex128 at single precision. It stages a block at a
+// time, as ReadFloat32 does.
+func (r *Reader) ReadComplex64(dst []complex64) (int, error) {
+	if !r.iq {
+		return 0, errors.New("sampleio: this stream is real; use ReadFloat32")
+	}
+	total := 0
+	for total < len(dst) {
+		n := min(len(dst)-total, len(r.buf)/r.stride)
+		if cap(r.narrowC) < n {
+			r.narrowC = make([]complex128, n)
+		}
+		buf := r.narrowC[:n]
+		n, err := r.ReadComplex128(buf)
+		for i, v := range buf[:n] {
+			dst[total+i] = complex64(v)
+		}
+		total += n
+		if err != nil {
+			if total > 0 {
+				return total, nil
+			}
+			return 0, err
+		}
+		if n < len(buf) {
+			// A shortfall is reported by coming back short; the call after this
+			// one is the one that says EOF.
+			return total, nil
+		}
 	}
 	return total, nil
 }

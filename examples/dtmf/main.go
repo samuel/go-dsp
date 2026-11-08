@@ -49,7 +49,7 @@ func run() error {
 	// groups and short enough for the shortest digit anyone sends.
 	blockSize := int(205 * sampleRate / 8000)
 	window := blockSize / 4
-	dt, err := dtmf.NewStandard(sampleRate, blockSize)
+	dt, err := dtmf.NewStandardDecoder[float32](sampleRate, blockSize)
 	if err != nil {
 		return err
 	}

@@ -71,7 +71,7 @@ func TestFMDemodulateMatchesReference(t *testing.T) {
 
 	got := make([]float32, len(src))
 	want := make([]float32, len(src))
-	var a, b FMDemod
+	var a, b FMDemod[complex64, float32]
 	fmDemodulateAsm(&a, got, src)
 	fmDemodulate(&b, want, src)
 	for i := range got {

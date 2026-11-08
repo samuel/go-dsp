@@ -147,11 +147,11 @@ func TestSweepSignalMatchesExactPhase(t *testing.T) {
 // energy where the sweep is not.
 func TestSweepShowsAliasing(t *testing.T) {
 	const rate = 48000.0
-	f, err := dsp.NewBoxcarDecimator(4)
+	f, err := dsp.NewBoxcarDecimator[complex64](4)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := NewComplexDownsampleProcessor(f, rate)
+	p, err := NewBoxcarDecimatorProcessor(f, rate)
 	if err != nil {
 		t.Fatal(err)
 	}

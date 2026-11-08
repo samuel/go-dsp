@@ -71,12 +71,13 @@ const (
 	maxLowOverHigh = 2.5
 )
 
-// Decoder detects one digit per block of samples. It is not safe for concurrent
+// Decoder detects one digit per block of samples. Each block is decoded on its
+// own, so nothing carries between calls to Feed. It is not safe for concurrent
 // use, and it holds scratch buffers sized for its block, so one Decoder follows
 // one stream.
-type Decoder struct {
-	lowFreq   *dsp.Goertzel[float32]
-	highFreq  *dsp.Goertzel[float32]
+type Decoder[T dsp.Float] struct {
+	lowFreq   *dsp.Goertzel[T]
+	highFreq  *dsp.Goertzel[T]
 	nHigh     int
 	blockSize int
 	// toneGain is the bin power a sinusoid at a bin center produces divided by
@@ -87,18 +88,18 @@ type Decoder struct {
 	// here, so a caller-supplied window would otherwise move the threshold
 	// without saying so.
 	toneGain float64
-	w        []float32
+	w        []T
 	// windowed holds the windowed block. Windowing the caller's slice in place
 	// would corrupt any sliding buffer it feeds from, re-windowing the samples
 	// each block retains.
-	windowed []float32
+	windowed []T
 }
 
-// New returns a Decoder for the given tone groups, in Hz. A key number is
-// lowFreqIndex*len(highFreq) + highFreqIndex, so for the standard groups it
+// NewDecoder returns a Decoder for the given tone groups, in Hz. A key number
+// is lowFreqIndex*len(highFreq) + highFreqIndex, so for the standard groups it
 // indexes the keypad Key returns from. windowFunc fills a window of blockSize
 // points; nil means a Hamming window.
-func New(lowFreq, highFreq []float64, sampleRate float64, blockSize int, windowFunc func([]float32)) (*Decoder, error) {
+func NewDecoder[T dsp.Float](lowFreq, highFreq []float64, sampleRate float64, blockSize int, windowFunc func([]T)) (*Decoder[T], error) {
 	if len(lowFreq) == 0 || len(highFreq) == 0 {
 		return nil, errors.New("dtmf: need at least one frequency in each group")
 	}
@@ -110,7 +111,7 @@ func New(lowFreq, highFreq []float64, sampleRate float64, blockSize int, windowF
 	if sampleRate <= 0 {
 		return nil, errors.New("dtmf: sample rate must be positive")
 	}
-	w := make([]float32, blockSize)
+	w := make([]T, blockSize)
 	if windowFunc != nil {
 		windowFunc(w)
 	} else {
@@ -124,29 +125,31 @@ func New(lowFreq, highFreq []float64, sampleRate float64, blockSize int, windowF
 	if sumSq <= 0 {
 		return nil, errors.New("dtmf: the window is all zeros")
 	}
-	lowG, err := dsp.NewGoertzel[float32](lowFreq, sampleRate, blockSize)
+	lowG, err := dsp.NewGoertzel[T](lowFreq, sampleRate, blockSize)
 	if err != nil {
 		return nil, err
 	}
-	highG, err := dsp.NewGoertzel[float32](highFreq, sampleRate, blockSize)
+	highG, err := dsp.NewGoertzel[T](highFreq, sampleRate, blockSize)
 	if err != nil {
 		return nil, err
 	}
-	return &Decoder{
+	return &Decoder[T]{
 		lowFreq:   lowG,
 		highFreq:  highG,
 		nHigh:     len(highFreq),
 		blockSize: blockSize,
 		toneGain:  sum * sum / (2 * sumSq),
 		w:         w,
-		windowed:  make([]float32, blockSize),
+		windowed:  make([]T, blockSize),
 	}, nil
 }
 
-// NewStandard returns a Decoder for the standard keypad frequencies.
-func NewStandard(sampleRate float64, blockSize int) (*Decoder, error) {
+// NewStandardDecoder returns a Decoder for the standard keypad frequencies. The
+// sample type cannot be inferred and has to be given, as in
+// NewStandardDecoder[float32](8000, 205).
+func NewStandardDecoder[T dsp.Float](sampleRate float64, blockSize int) (*Decoder[T], error) {
 	low, high := StandardFreqs()
-	return New(low, high, sampleRate, blockSize, dsp.HammingWindow)
+	return NewDecoder[T](low, high, sampleRate, blockSize, nil)
 }
 
 // Feed decodes one block of exactly blockSize samples, which it does not
@@ -156,7 +159,7 @@ func NewStandard(sampleRate float64, blockSize int) (*Decoder, error) {
 //
 // It panics on a block of the wrong length: a short one would be tapered by
 // the wrong part of the window, and a long one silently ignores its tail.
-func (d *Decoder) Feed(src []float32) (int, float32) {
+func (d *Decoder[T]) Feed(src []T) (key int, power float64) {
 	if len(src) != d.blockSize {
 		panic("dtmf: Feed needs exactly " + strconv.Itoa(d.blockSize) + " src, got " + strconv.Itoa(len(src)))
 	}
@@ -188,7 +191,7 @@ func (d *Decoder) Feed(src []float32) (int, float32) {
 	case rowRunnerUp*relativePeak > rowPower || colRunnerUp*relativePeak > colPower:
 	case colPower > rowPower*maxHighOverLow || rowPower > colPower*maxLowOverHigh:
 	default:
-		return row*d.nHigh + col, float32(min(rowPower, colPower))
+		return row*d.nHigh + col, min(rowPower, colPower)
 	}
 	return NoKey, 0
 }

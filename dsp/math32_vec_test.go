@@ -186,13 +186,13 @@ func TestPolarDiscriminator(t *testing.T) {
 func TestFMDemodMethod(t *testing.T) {
 	src := []complex64{complex(0, 2), complex(1, 2), complex(-3, 7), complex(4, -9)}
 	dst := make([]float32, len(src)+1)
-	var f FMDemod
+	var f FMDemod[complex64, float32]
 	f.Demodulate(dst, src)
 	if dst[len(src)] != 0 {
 		t.Errorf("wrote past the shorter slice: %v", dst[len(src)])
 	}
 	want := make([]float32, len(src))
-	fmDemodulate(&FMDemod{}, want, src)
+	fmDemodulate(&FMDemod[complex64, float32]{}, want, src)
 	for i := range want {
 		if dst[i] != want[i] {
 			t.Errorf("[%d] = %v, want %v", i, dst[i], want[i])
@@ -213,7 +213,7 @@ func TestExportedWrappers(t *testing.T) {
 	if !slices.Equal(cplx, want) {
 		t.Errorf("Rotator90.Rotate gave %v, want %v", cplx, want)
 	}
-	f, err := NewBoxcarDecimator(2)
+	f, err := NewBoxcarDecimator[complex64](2)
 	if err != nil {
 		t.Fatal(err)
 	}

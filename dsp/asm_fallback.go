@@ -13,14 +13,14 @@ func fastAtan2FineAsm(y, x float32) float32 { return fastAtan2Fine(y, x) }
 
 func rotate90Asm(samples []complex64) { rotate90(samples) }
 
-func fmDemodulateAsm(f *FMDemod, dst []float32, src []complex64) {
+func fmDemodulateAsm(f *FMDemod[complex64, float32], dst []float32, src []complex64) {
 	fmDemodulate(f, dst, src)
 }
 
-func boxcarDecimateAsm(f *BoxcarDecimator, dst, src []complex64) int {
+func boxcarDecimateAsm(f *BoxcarDecimator[complex64], dst, src []complex64) int {
 	return boxcarDecimate(f, dst, src)
 }
 
-func rationalBoxcarDecimateAsm(f *RationalBoxcarDecimator, dst, src []float32) int {
+func rationalBoxcarDecimateAsm(f *RationalBoxcarDecimator[float32], dst, src []float32) int {
 	return rationalBoxcarDecimate(f, dst, src)
 }

@@ -9,7 +9,7 @@ import (
 
 func TestImpulseAndStep(t *testing.T) {
 	taps := []float64{0.5, -0.25, 0.125}
-	p, err := NewFIRProcessor(taps, 8000)
+	p, err := NewFIRProcessor(must(dsp.NewFIRFilter(taps)), 8000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,11 +71,11 @@ func TestDCFilterStepDecay(t *testing.T) {
 // pulse-train construction in the published test suites recovers the hard way.
 func TestPolyphaseImpulse(t *testing.T) {
 	const factor = 4
-	f, err := dsp.NewBoxcarDecimator(factor)
+	f, err := dsp.NewBoxcarDecimator[complex64](factor)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := NewComplexDownsampleProcessor(f, 48000)
+	p, err := NewBoxcarDecimatorProcessor(f, 48000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,11 +119,11 @@ func TestPolyphaseImpulse(t *testing.T) {
 // no coefficients here for the exact path to fall back on.
 func TestBoxcarDecimatorResponse(t *testing.T) {
 	const factor, rate = 4, 48000.0
-	f, err := dsp.NewBoxcarDecimator(factor)
+	f, err := dsp.NewBoxcarDecimator[complex64](factor)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := NewComplexDownsampleProcessor(f, rate)
+	p, err := NewBoxcarDecimatorProcessor(f, rate)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,11 +158,11 @@ func TestBoxcarDecimatorResponse(t *testing.T) {
 // actually went into it, rather than by the nominal ratio, is what keeps a
 // non-integer ratio from beating against the input.
 func TestRationalDecimatorDC(t *testing.T) {
-	f, err := dsp.NewRationalBoxcarDecimator(48000, 44100)
+	f, err := dsp.NewRationalBoxcarDecimator[float32](48000, 44100)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := NewRationalDownsampleProcessor(f)
+	p, err := NewRationalBoxcarDecimatorProcessor(f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,13 +178,13 @@ func TestRationalDecimatorDC(t *testing.T) {
 }
 
 func TestProcessorValidation(t *testing.T) {
-	if _, err := NewFIRProcessor(nil, 8000); err == nil {
+	if _, err := NewFIRProcessor[float64](nil, 8000); err == nil {
 		t.Error("an FIR filter with no taps should be an error")
 	}
-	if _, err := NewFIRProcessor([]float64{1}, 0); err == nil {
+	if _, err := NewFIRProcessor(must(dsp.NewFIRFilter([]float64{1})), 0); err == nil {
 		t.Error("a zero sample rate should be an error")
 	}
-	if _, err := NewIIRProcessor(nil, 8000); err == nil {
+	if _, err := NewIIRProcessor[float64](nil, 8000); err == nil {
 		t.Error("a nil filter should be an error")
 	}
 	if _, err := NewFuncProcessor(nil, nil, 1, 1); err == nil {
@@ -247,5 +247,35 @@ func TestCoherentFreqIsOdd(t *testing.T) {
 		if math.Abs(hz-f) > 2*rate/n {
 			t.Errorf("%v Hz snapped all the way to %v", f, hz)
 		}
+	}
+}
+
+// TestFIRInterpolatorResponse measures a 2x interpolator by its tones: the
+// passband comes through at unity, since the taps carry the gain of 2 the
+// stuffed zeros dilute, and the output rate is twice the input.
+func TestFIRInterpolatorResponse(t *testing.T) {
+	const rate = 8000.0
+	taps := must(dsp.LowPassFIR[float64](63, 0.2, dsp.KaiserBeta(80)))
+	if err := dsp.NormalizeTaps(taps, 2); err != nil {
+		t.Fatal(err)
+	}
+	p, err := NewFIRInterpolatorProcessor(must(dsp.NewFIRInterpolator(taps, 2)), rate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in, out := p.Rates(); in != rate || out != 2*rate {
+		t.Fatalf("rates %v, %v", in, out)
+	}
+	r, err := FreqResponse(p, LinearGrid(100, 2500, 25), ResponseOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, m := range r.Magnitude() {
+		if math.Abs(m-1) > 1e-3 {
+			t.Errorf("%.0f Hz: gain %v, want 1", r.Freq[i], m)
+		}
+	}
+	if _, ok := p.(Coefficients); ok {
+		t.Error("a rate changer has no single transfer function, so it must not offer Coefficients")
 	}
 }

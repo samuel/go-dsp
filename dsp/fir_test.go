@@ -46,8 +46,7 @@ func TestFIRMatchesFreqz(t *testing.T) {
 	}
 	for _, k := range []int{0, 1, 7, 64, 200, 255} {
 		f.Reset()
-		w := 2 * math.Pi * float64(k) / n
-		want := Freqz(asymTaps, nil, []float64{w})[0]
+		want := Freqz(asymTaps, nil, []float64{float64(k) / n})[0]
 
 		src := make([]complex128, n)
 		for i := range src {
@@ -253,14 +252,14 @@ func TestFIRLinearPhase(t *testing.T) {
 		f, _ := NewFIRFilter(taps)
 		return f.Coefficients()
 	}()
-	w := make([]float64, 64)
-	for i := range w {
-		w[i] = math.Pi * float64(i) / float64(len(w))
+	f := make([]float64, 64)
+	for i := range f {
+		f[i] = 0.5 * float64(i) / float64(len(f))
 	}
 	want := float64(len(taps)-1) / 2
-	for i, d := range GroupDelay(b, nil, w) {
+	for i, d := range GroupDelay(b, nil, f) {
 		if math.Abs(d-want) > 1e-9 {
-			t.Errorf("w=%v: group delay %v, want %v", w[i], d, want)
+			t.Errorf("f=%v: group delay %v, want %v", f[i], d, want)
 		}
 	}
 }

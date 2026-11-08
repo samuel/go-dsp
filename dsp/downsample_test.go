@@ -1,6 +1,9 @@
 package dsp
 
-import "testing"
+import (
+	"math/cmplx"
+	"testing"
+)
 
 func TestBoxcarDecimator(t *testing.T) {
 	src := []complex64{complex(0.0, 2.0), complex(1.0, 2.0), complex(-3.0, 7.0), complex(4.0, -9.0)}
@@ -9,7 +12,7 @@ func TestBoxcarDecimator(t *testing.T) {
 	// to rewind one.
 	dst := make([]complex64, 256)
 	copy(dst, src)
-	f, err := NewBoxcarDecimator(2)
+	f, err := NewBoxcarDecimator[complex64](2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -17,7 +20,7 @@ func TestBoxcarDecimator(t *testing.T) {
 
 	expected := make([]complex64, 256)
 	copy(expected, src)
-	f, err = NewBoxcarDecimator(2)
+	f, err = NewBoxcarDecimator[complex64](2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +44,7 @@ func TestRationalBoxcarDecimator(t *testing.T) {
 
 	dst := make([]float32, 256)
 	copy(dst, src)
-	f, err := NewRationalBoxcarDecimator(3, 2)
+	f, err := NewRationalBoxcarDecimator[float32](3, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +52,7 @@ func TestRationalBoxcarDecimator(t *testing.T) {
 
 	expected := make([]float32, 256)
 	copy(expected, src)
-	f, err = NewRationalBoxcarDecimator(3, 2)
+	f, err = NewRationalBoxcarDecimator[float32](3, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +78,7 @@ func TestRationalBoxcarDecimatorRipple(t *testing.T) {
 	for i := range src {
 		src[i] = float32(i)
 	}
-	f, err := NewRationalBoxcarDecimator(3, 2)
+	f, err := NewRationalBoxcarDecimator[float32](3, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +95,7 @@ func TestRationalBoxcarDecimatorRipple(t *testing.T) {
 }
 
 func BenchmarkBoxcarDecimator(b *testing.B) {
-	filter, err := NewBoxcarDecimator(2)
+	filter, err := NewBoxcarDecimator[complex64](2)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -106,7 +109,7 @@ func BenchmarkBoxcarDecimator(b *testing.B) {
 }
 
 func BenchmarkBoxcarDecimator_Go(b *testing.B) {
-	filter, err := NewBoxcarDecimator(2)
+	filter, err := NewBoxcarDecimator[complex64](2)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -120,7 +123,7 @@ func BenchmarkBoxcarDecimator_Go(b *testing.B) {
 }
 
 func BenchmarkRationalBoxcarDecimator(b *testing.B) {
-	filter, err := NewRationalBoxcarDecimator(3, 2)
+	filter, err := NewRationalBoxcarDecimator[float32](3, 2)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -134,7 +137,7 @@ func BenchmarkRationalBoxcarDecimator(b *testing.B) {
 }
 
 func BenchmarkRationalBoxcarDecimator_Go(b *testing.B) {
-	filter, err := NewRationalBoxcarDecimator(3, 2)
+	filter, err := NewRationalBoxcarDecimator[float32](3, 2)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -155,7 +158,7 @@ func TestDownsampleReset(t *testing.T) {
 		src[i] = float32(i)
 	}
 
-	f, err := NewRationalBoxcarDecimator(3, 2)
+	f, err := NewRationalBoxcarDecimator[float32](3, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +176,7 @@ func TestDownsampleReset(t *testing.T) {
 		}
 	}
 
-	c, err := NewBoxcarDecimator(3)
+	c, err := NewBoxcarDecimator[complex64](3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,12 +203,12 @@ func TestNewDownsampleRejects(t *testing.T) {
 		name string
 		run  func() error
 	}{
-		{"complex zero", func() error { _, err := NewBoxcarDecimator(0); return err }},
-		{"complex negative", func() error { _, err := NewBoxcarDecimator(-2); return err }},
-		{"rational zero fast", func() error { _, err := NewRationalBoxcarDecimator(0, 8); return err }},
-		{"rational zero", func() error { _, err := NewRationalBoxcarDecimator(8, 0); return err }},
-		{"rational negative", func() error { _, err := NewRationalBoxcarDecimator(-8, -2); return err }},
-		{"rational upsample", func() error { _, err := NewRationalBoxcarDecimator(2, 3); return err }},
+		{"complex zero", func() error { _, err := NewBoxcarDecimator[complex64](0); return err }},
+		{"complex negative", func() error { _, err := NewBoxcarDecimator[complex64](-2); return err }},
+		{"rational zero fast", func() error { _, err := NewRationalBoxcarDecimator[float32](0, 8); return err }},
+		{"rational zero", func() error { _, err := NewRationalBoxcarDecimator[float32](8, 0); return err }},
+		{"rational negative", func() error { _, err := NewRationalBoxcarDecimator[float32](-8, -2); return err }},
+		{"rational upsample", func() error { _, err := NewRationalBoxcarDecimator[float32](2, 3); return err }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := tc.run(); err == nil {
@@ -226,8 +229,8 @@ func TestDecimatorFilterMatchesInPlace(t *testing.T) {
 	}
 	for _, factor := range []int{1, 2, 3, 7, 16} {
 		for _, block := range []int{len(src), 1, 3, factor, factor + 1, 64} {
-			a, _ := NewBoxcarDecimator(factor)
-			b, _ := NewBoxcarDecimator(factor)
+			a, _ := NewBoxcarDecimator[complex64](factor)
+			b, _ := NewBoxcarDecimator[complex64](factor)
 			var want, got []complex64
 			for i := 0; i < len(src); i += block {
 				in := src[i:min(i+block, len(src))]
@@ -262,8 +265,8 @@ func TestRationalDecimatorFilterMatchesInPlace(t *testing.T) {
 	}
 	for _, r := range [][2]int{{48000, 48000}, {48000, 44100}, {48000, 16000}, {3, 2}} {
 		for _, block := range []int{len(src), 1, 5, 64} {
-			a, _ := NewRationalBoxcarDecimator(r[0], r[1])
-			b, _ := NewRationalBoxcarDecimator(r[0], r[1])
+			a, _ := NewRationalBoxcarDecimator[float32](r[0], r[1])
+			b, _ := NewRationalBoxcarDecimator[float32](r[0], r[1])
 			var want, got []float32
 			for i := 0; i < len(src); i += block {
 				in := src[i:min(i+block, len(src))]
@@ -294,9 +297,9 @@ func TestDecimatorFilterInPlaceAliasing(t *testing.T) {
 	for i := range src {
 		src[i] = complex(float32(i), 0)
 	}
-	a, _ := NewBoxcarDecimator(4)
+	a, _ := NewBoxcarDecimator[complex64](4)
 	want := a.FilterInPlace(append([]complex64(nil), src...))
-	b, _ := NewBoxcarDecimator(4)
+	b, _ := NewBoxcarDecimator[complex64](4)
 	got := append([]complex64(nil), src...)
 	n := b.Filter(got, got)
 	if n != len(want) {
@@ -317,7 +320,7 @@ func TestDecimatorFilterInPlaceAliasing(t *testing.T) {
 // answer, and a caller sizing dst from it watched Filter run off the end. Run
 // it with qemu-test -arch arm ./dsp.
 func TestRationalOutputLenDoesNotOverflow(t *testing.T) {
-	f, err := NewRationalBoxcarDecimator(44100, 8000)
+	f, err := NewRationalBoxcarDecimator[float32](44100, 8000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +347,7 @@ func TestRationalOutputLenDoesNotOverflow(t *testing.T) {
 // reads to label a frequency axis. Nothing else reads them, so a wrong one
 // would show up only as a plot with the wrong numbers on it.
 func TestDecimatorRatesAreWhatWasAsked(t *testing.T) {
-	d, err := NewBoxcarDecimator(5)
+	d, err := NewBoxcarDecimator[complex64](5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,7 +360,7 @@ func TestDecimatorRatesAreWhatWasAsked(t *testing.T) {
 		t.Errorf("Factor after Filter = %d, want 5", got)
 	}
 
-	r, err := NewRationalBoxcarDecimator(48, 11)
+	r, err := NewRationalBoxcarDecimator[float32](48, 11)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,4 +371,93 @@ func TestDecimatorRatesAreWhatWasAsked(t *testing.T) {
 	if fast, slow := r.Rates(); fast != 48 || slow != 11 {
 		t.Errorf("Rates after Filter = (%d, %d), want (48, 11)", fast, slow)
 	}
+}
+
+// toWidth returns re+im*i as T, dropping im for a real T.
+func toWidth[T Sample](re, im float64) T {
+	var v T
+	switch p := any(&v).(type) {
+	case *float32:
+		*p = float32(re)
+	case *float64:
+		*p = re
+	case *complex64:
+		*p = complex64(complex(re, im))
+	case *complex128:
+		*p = complex(re, im)
+	}
+	return v
+}
+
+// decimateBlocks runs filter over src in blocks of uneven size, so the carried
+// group and phase are exercised, and returns the output widened to complex128.
+func decimateBlocks[T Sample](filter func(dst, src []T) int, src []T) []complex128 {
+	buf := make([]T, len(src))
+	n := 0
+	for i, block := 0, 1; i < len(src); i, block = i+block, block%7+1 {
+		end := min(i+block, len(src))
+		n += filter(buf[n:], src[i:end])
+	}
+	out := make([]complex128, n)
+	for i, v := range buf[:n] {
+		switch x := any(v).(type) {
+		case float32:
+			out[i] = complex(float64(x), 0)
+		case float64:
+			out[i] = complex(x, 0)
+		case complex64:
+			out[i] = complex128(x)
+		case complex128:
+			out[i] = x
+		}
+	}
+	return out
+}
+
+// testBoxcarWidth checks that every sample width decimates like complex128.
+// The inputs are small integers, so the boxcar sums are exact at every width
+// and only the rational divisions round.
+func testBoxcarWidth[T Sample](t *testing.T, want, wantRational []complex128, src []complex128, tol float64) {
+	t.Helper()
+	in := make([]T, len(src))
+	var isReal bool
+	switch any(in).(type) {
+	case []float32, []float64:
+		isReal = true
+	}
+	for i, v := range src {
+		in[i] = toWidth[T](real(v), imag(v))
+	}
+	check := func(name string, got, want []complex128) {
+		t.Helper()
+		if len(got) != len(want) {
+			t.Fatalf("%s: %d outputs, want %d", name, len(got), len(want))
+		}
+		for i := range want {
+			w := want[i]
+			if isReal {
+				w = complex(real(w), 0)
+			}
+			if d := cmplx.Abs(got[i] - w); d > tol {
+				t.Fatalf("%s [%d] = %v, want %v", name, i, got[i], w)
+			}
+		}
+	}
+	b := must(NewBoxcarDecimator[T](3))
+	check("boxcar", decimateBlocks(b.Filter, in), want)
+	r := must(NewRationalBoxcarDecimator[T](48, 11))
+	check("rational", decimateBlocks(r.Filter, in), wantRational)
+}
+
+func TestBoxcarDecimatorsEveryWidth(t *testing.T) {
+	src := make([]complex128, 500)
+	for i := range src {
+		src[i] = complex(float64(i%13-6), float64(i%5-2))
+	}
+	want := decimateBlocks(must(NewBoxcarDecimator[complex128](3)).Filter, src)
+	wantRational := decimateBlocks(must(NewRationalBoxcarDecimator[complex128](48, 11)).Filter, src)
+	t.Run("float32", func(t *testing.T) { testBoxcarWidth[float32](t, want, wantRational, src, 1e-6) })
+	t.Run("float64", func(t *testing.T) { testBoxcarWidth[float64](t, want, wantRational, src, 1e-15) })
+	t.Run("complex64", func(t *testing.T) { testBoxcarWidth[complex64](t, want, wantRational, src, 1e-6) })
+	t.Run("complex128", func(t *testing.T) { testBoxcarWidth[complex128](t, want, wantRational, src, 0) })
 }

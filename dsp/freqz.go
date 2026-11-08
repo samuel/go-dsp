@@ -3,13 +3,14 @@ package dsp
 import "math"
 
 // Freqz evaluates the frequency response of the filter with feedforward
-// coefficients b and feedback coefficients a at each normalized angular
-// frequency in w, in radians per sample, so pi is the Nyquist frequency:
+// coefficients b and feedback coefficients a at each normalized frequency in
+// f, in cycles per sample, so 0.5 is the Nyquist frequency, as in firpm and
+// LowPassFIR. With w = 2*pi*f:
 //
-//	H(w) = sum(b[n] * exp(-j*w*n)) / sum(a[n] * exp(-j*w*n))
+//	H(f) = sum(b[n] * exp(-j*w*n)) / sum(a[n] * exp(-j*w*n))
 //
 // An empty or nil a means an FIR filter, the same as a of {1}. The result is a
-// fresh slice the same length as w.
+// fresh slice the same length as f.
 //
 // Unlike a transform of the impulse response this is exact: there is no
 // truncation, no transient, no window and no grid of the transform's choosing,
@@ -18,9 +19,10 @@ import "math"
 // way is a zero on the unit circle, where the numerator is computed by
 // cancellation and bottoms out around -300 dB rather than reaching the true
 // null.
-func Freqz(b, a []float64, w []float64) []complex128 {
-	h := make([]complex128, len(w))
-	for i, wi := range w {
+func Freqz(b, a []float64, f []float64) []complex128 {
+	h := make([]complex128, len(f))
+	for i, fi := range f {
+		wi := 2 * math.Pi * fi
 		num := polyAtExp(b, wi)
 		if len(a) == 0 {
 			h[i] = num
@@ -32,17 +34,18 @@ func Freqz(b, a []float64, w []float64) []complex128 {
 }
 
 // GroupDelay returns the group delay of the filter, -d(phase)/d(w), in samples,
-// at each normalized angular frequency in w. a is optional in the same way as
-// it is for Freqz.
+// at each normalized frequency in f, in cycles per sample as for Freqz. a is
+// optional in the same way as it is for Freqz.
 //
 // It is evaluated in closed form rather than by differencing a phase curve, so
-// it does not depend on how finely w is spaced and needs no unwrapping. A
+// it does not depend on how finely f is spaced and needs no unwrapping. A
 // linear-phase FIR filter of n taps therefore returns exactly (n-1)/2 at every
 // frequency. The delay is genuinely undefined at a zero on the unit circle, and
 // there the result is whatever the cancellation leaves.
-func GroupDelay(b, a []float64, w []float64) []float64 {
-	d := make([]float64, len(w))
-	for i, wi := range w {
+func GroupDelay(b, a []float64, f []float64) []float64 {
+	d := make([]float64, len(f))
+	for i, fi := range f {
+		wi := 2 * math.Pi * fi
 		// d(arg P)/dw = Im(P'/P) and P'(w) = -j*sum(n*p[n]*exp(-j*w*n)), so
 		// -d(arg P)/dw is Re(sum(n*p[n]*exp(-j*w*n)) / P). The delay of B/A is
 		// that quantity for B less the same for A.

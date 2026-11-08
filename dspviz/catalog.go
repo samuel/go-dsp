@@ -289,7 +289,11 @@ func Build(kind string, params map[string]float64, choices map[string]string) (P
 		if err != nil && h == nil {
 			return nil, fmt.Errorf("dspviz: %w", err)
 		}
-		return NewFIRProcessor(h, rate)
+		f, err := dsp.NewFIRFilter(h)
+		if err != nil {
+			return nil, err
+		}
+		return NewFIRProcessor(f, rate)
 
 	case "firdecim":
 		// The passband is the output Nyquist, which is what the decimator has
@@ -307,25 +311,29 @@ func Build(kind string, params map[string]float64, choices map[string]string) (P
 		if err != nil && h == nil {
 			return nil, fmt.Errorf("dspviz: %w", err)
 		}
-		return NewFIRDecimatorProcessor(h, factor, rate)
-
-	case "decimate":
-		f, err := dsp.NewBoxcarDecimator(int(math.Round(get("factor"))))
+		f, err := dsp.NewFIRDecimator(h, factor)
 		if err != nil {
 			return nil, err
 		}
-		return NewComplexDownsampleProcessor(f, get("rate"))
+		return NewFIRDecimatorProcessor(f, rate)
+
+	case "decimate":
+		f, err := dsp.NewBoxcarDecimator[complex64](int(math.Round(get("factor"))))
+		if err != nil {
+			return nil, err
+		}
+		return NewBoxcarDecimatorProcessor(f, get("rate"))
 
 	case "rational":
 		fast, slow := int(math.Round(get("fast"))), int(math.Round(get("slow")))
 		if slow > fast {
 			slow = fast
 		}
-		f, err := dsp.NewRationalBoxcarDecimator(fast, slow)
+		f, err := dsp.NewRationalBoxcarDecimator[float32](fast, slow)
 		if err != nil {
 			return nil, err
 		}
-		return NewRationalDownsampleProcessor(f)
+		return NewRationalBoxcarDecimatorProcessor(f)
 
 	case "dcblock":
 		f, err := dsp.NewDCFilter[float64](get("pole"))

@@ -178,7 +178,7 @@ TEXT ·U8ToC64(SB), NOSPLIT, $0
 // the only vector-mode instruction in it was the multiply by the scale
 // argument -- VCVT is scalar even in vector mode -- so once the scale went away
 // the vector-length dance around the loop cost four instructions per call and
-// bought nothing, and the useVector flag went with it. dsp/f32 still keeps one,
+// bought nothing, and the useVector flag went with it. dsp/internal/f32 still keeps one,
 // for math32_arm.s there, where there is real vector work to do.
 TEXT ·f32ToI16Asm(SB), NOSPLIT, $0
 	MOVW src+12(FP), R1

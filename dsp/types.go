@@ -55,3 +55,19 @@ func setReal[T Sample](dst []T, src []float64, div float64) {
 		panic("dsp: setReal: no case for this width")
 	}
 }
+
+// realSample returns v as a T, with a zero imaginary part for a complex T.
+func realSample[T Sample](v float64) T {
+	var z T
+	switch p := any(&z).(type) {
+	case *float32:
+		*p = float32(v)
+	case *float64:
+		*p = v
+	case *complex64:
+		*p = complex(float32(v), 0)
+	case *complex128:
+		*p = complex(v, 0)
+	}
+	return z
+}

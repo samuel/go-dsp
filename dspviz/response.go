@@ -129,11 +129,7 @@ func FreqResponse(p Processor, freq []float64, opt ResponseOptions) (*Response, 
 	switch method {
 	case MethodExact:
 		r.b, r.a = coef.Coefficients()
-		w := make([]float64, len(freq))
-		for i, f := range freq {
-			w[i] = 2 * math.Pi * f / inRate
-		}
-		r.H = dsp.Freqz(r.b, r.a, w)
+		r.H = dsp.Freqz(r.b, r.a, normalize(freq, inRate))
 	case MethodImpulse:
 		err = impulseResponse(r, p, opt)
 	case MethodTone:
@@ -167,12 +163,8 @@ func impulseResponse(r *Response, p Processor, opt ResponseOptions) error {
 	if len(h) == 0 {
 		return errors.New("dspviz: the processor produced no output for an impulse")
 	}
-	w := make([]float64, len(r.Freq))
 	_, outRate := p.Rates()
-	for i, f := range r.Freq {
-		w[i] = 2 * math.Pi * f / outRate
-	}
-	r.H = dsp.Freqz(h, nil, w)
+	r.H = dsp.Freqz(h, nil, normalize(r.Freq, outRate))
 	r.Warnings = append(r.Warnings, fmt.Sprintf(
 		"impulse response truncated to %d samples; anything below the energy in the discarded tail is not real", n))
 	return nil
@@ -467,15 +459,17 @@ func (r *Response) GroupDelay() []float64 {
 	if n == 0 {
 		return d
 	}
-	w := make([]float64, n)
-	for i, f := range r.Freq {
-		w[i] = 2 * math.Pi * f / r.Rate
-	}
 	if r.b != nil {
-		return dsp.GroupDelay(r.b, r.a, w)
+		return dsp.GroupDelay(r.b, r.a, normalize(r.Freq, r.Rate))
 	}
 	if n < 2 {
 		return d
+	}
+	// The phase is in radians, so its derivative is taken against angular
+	// frequency in radians per sample.
+	w := make([]float64, n)
+	for i, f := range r.Freq {
+		w[i] = 2 * math.Pi * f / r.Rate
 	}
 	p := r.UnwrappedPhase()
 	for i := range d {
@@ -517,4 +511,13 @@ func (r *Response) GridWarning() string {
 			"which is too coarse to unwrap the phase reliably", step, worst)
 	}
 	return ""
+}
+
+// normalize converts frequencies in Hz to cycles per sample at rate.
+func normalize(freq []float64, rate float64) []float64 {
+	f := make([]float64, len(freq))
+	for i, v := range freq {
+		f[i] = v / rate
+	}
+	return f
 }

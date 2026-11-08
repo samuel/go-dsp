@@ -21,7 +21,7 @@ func must[T any](v T, err error) T {
 // normalized angular frequency w.
 func response(f *BiQuadFilter[float64], w float64) float64 {
 	b, a := f.Coefficients()
-	return cmplx.Abs(Freqz(b, a, []float64{w})[0])
+	return cmplx.Abs(Freqz(b, a, []float64{w / (2 * math.Pi)})[0])
 }
 
 // TestBiQuadResponses checks each constructor against the gain the Audio EQ

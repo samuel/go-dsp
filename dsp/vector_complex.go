@@ -3,8 +3,8 @@ package dsp
 import (
 	"math"
 
-	"samuelks.com/dsp/dsp/f32"
-	"samuelks.com/dsp/dsp/f64"
+	"samuelks.com/dsp/dsp/internal/f32"
+	"samuelks.com/dsp/dsp/internal/f64"
 	"samuelks.com/dsp/dsp/internal/view"
 )
 

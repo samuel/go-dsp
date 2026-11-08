@@ -204,7 +204,7 @@ jobs:
           go-version: stable
       - run: go mod tidy -diff
       # The avo output is committed, so regenerating it must change nothing.
-      - run: go generate ./dsp/encoding ./dsp/f32
+      - run: go generate ./dsp/encoding ./dsp/internal/f32
       - run: git diff --exit-code
 
   govulncheck:

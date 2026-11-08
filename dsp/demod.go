@@ -36,34 +36,59 @@ func FastPolarDiscriminator(a, b complex64) float32 {
 //	          │   ┌───┐     ┌───┐   │
 //	          └──▶│z⁻¹├────▶│z^*├───┘
 //	              └───┘     └───┘
-type FMDemod struct {
-	pre complex64
+//
+// The arithmetic happens at C's width and the result is converted to F, as in
+// VCAbs. complex64 uses FastPolarDiscriminator and inherits FastAtan2's error
+// bound; FMDemod[complex64, float32] runs the assembly. complex128 uses the
+// exact PolarDiscriminator.
+type FMDemod[C Complex, F Float] struct {
+	// The assembly reads FMDemod[complex64, float32] at a fixed offset; see
+	// downsample_arm.go before changing this field.
+	pre C
 }
 
 // NewFMDemod returns an FM demodulator that starts from silence. The zero
 // value is equivalent and equally usable; the constructor is here so that every
-// stateful type in the package has one.
-func NewFMDemod() *FMDemod {
-	return &FMDemod{}
+// stateful type in the package has one. The types cannot be inferred and have
+// to be given, as in NewFMDemod[complex64, float32]().
+func NewFMDemod[C Complex, F Float]() *FMDemod[C, F] {
+	return &FMDemod[C, F]{}
 }
 
 // Demodulate writes one output sample per input sample, over
 // min(len(src), len(dst)) of them. The filter carries the previous sample
 // across calls, so a stream can be demodulated in blocks.
-// It returns nothing; the count is the min of the two lengths.
-func (f *FMDemod) Demodulate(dst []float32, src []complex64) {
-	fmDemodulateAsm(f, dst, src)
+func (f *FMDemod[C, F]) Demodulate(dst []F, src []C) {
+	if g, ok := any(f).(*FMDemod[complex64, float32]); ok {
+		fmDemodulateAsm(g, any(dst).([]float32), any(src).([]complex64))
+		return
+	}
+	n := min(len(src), len(dst))
+	_, single := any(src).([]complex64)
+	pre := f.pre
+	for i, inp := range src[:n] {
+		var d float64
+		if single {
+			d = float64(FastPolarDiscriminator(complex64(inp), complex64(pre)))
+		} else {
+			d = PolarDiscriminator(inp, pre)
+		}
+		dst[i] = F(d)
+		pre = inp
+	}
+	f.pre = pre
 }
 
 // Reset drops the carried sample, so the demodulator starts a new stream
 // without a phase step at the join.
-func (f *FMDemod) Reset() {
+func (f *FMDemod[C, F]) Reset() {
 	f.pre = 0
 }
 
-// Demodulating is FastPolarDiscriminator per sample against the previous one;
-// its explicit roundings must not be removed.
-func fmDemodulate(f *FMDemod, dst []float32, src []complex64) {
+// fmDemodulate is the Go reference behind the assembly. Demodulating is
+// FastPolarDiscriminator per sample against the previous one; its explicit
+// roundings must not be removed.
+func fmDemodulate(f *FMDemod[complex64, float32], dst []float32, src []complex64) {
 	n := min(len(src), len(dst))
 	pre := f.pre
 	for i, inp := range src[:n] {
