@@ -2,7 +2,7 @@
 
 package encoding
 
-import "github.com/samuel/go-dsp/dsp/internal/view"
+import "samuelks.com/dsp/dsp/internal/view"
 
 // U8ToC64 converts unsigned 8-bit interleaved complex samples to complex64
 // (32-bit parts), subtracting the 128 bias. It does not scale.

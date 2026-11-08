@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/samuel/go-dsp/dsp"
+	"samuelks.com/dsp/dsp"
 )
 
 // ToneTrackOptions describes the two-tone decision a demodulator is making.

@@ -5,8 +5,8 @@ import (
 	"math"
 	"slices"
 
-	"github.com/samuel/go-dsp/dsp"
-	"github.com/samuel/go-dsp/firpm"
+	"samuelks.com/dsp/dsp"
+	"samuelks.com/dsp/firpm"
 )
 
 // Param describes one adjustable number of a filter kind, with enough

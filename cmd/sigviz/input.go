@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/samuel/go-dsp/sampleio"
+	"samuelks.com/dsp/sampleio"
 )
 
 // blockFrames is how much of the file is buffered at once. Everything

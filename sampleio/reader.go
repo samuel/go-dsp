@@ -7,7 +7,7 @@ import (
 	"os"
 	"slices"
 
-	"github.com/samuel/go-dsp/dsp"
+	"samuelks.com/dsp/dsp"
 )
 
 // Channel selects which channel of a stream to read.

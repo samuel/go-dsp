@@ -28,9 +28,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samuel/go-dsp/dspviz"
-	"github.com/samuel/go-dsp/internal/clifile"
-	"github.com/samuel/go-dsp/internal/cliflags"
+	"samuelks.com/dsp/dspviz"
+	"samuelks.com/dsp/internal/clifile"
+	"samuelks.com/dsp/internal/cliflags"
 )
 
 func main() {

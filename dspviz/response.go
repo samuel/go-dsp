@@ -7,7 +7,7 @@ import (
 	"math/cmplx"
 	"strconv"
 
-	"github.com/samuel/go-dsp/dsp"
+	"samuelks.com/dsp/dsp"
 )
 
 // Method selects how a frequency response is arrived at.

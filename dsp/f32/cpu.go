@@ -1,6 +1,6 @@
 package f32
 
-import "github.com/samuel/go-dsp/dsp/internal/simdcpu"
+import "samuelks.com/dsp/dsp/internal/simdcpu"
 
 // The CPU flags this package dispatches on. simdcpu does the detection; these
 // are variables rather than calls for the reason given in dsp/encoding's cpu.go.

@@ -14,7 +14,7 @@ package dspviz
 import (
 	"errors"
 
-	"github.com/samuel/go-dsp/dsp"
+	"samuelks.com/dsp/dsp"
 )
 
 // Processor is a black-box signal processor: something that turns a stream of

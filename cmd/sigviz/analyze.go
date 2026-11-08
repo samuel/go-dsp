@@ -12,10 +12,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/samuel/go-dsp/dspviz"
-	"github.com/samuel/go-dsp/internal/clifile"
-	"github.com/samuel/go-dsp/internal/cliflags"
-	"github.com/samuel/go-dsp/sampleio"
+	"samuelks.com/dsp/dspviz"
+	"samuelks.com/dsp/internal/clifile"
+	"samuelks.com/dsp/internal/cliflags"
+	"samuelks.com/dsp/sampleio"
 )
 
 // views is which of the analyses to run. All are single-pass accumulators, so

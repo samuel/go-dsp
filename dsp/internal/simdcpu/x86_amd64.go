@@ -3,7 +3,7 @@ package simdcpu
 import (
 	"os"
 
-	"github.com/samuel/go-dsp/dsp/internal/cpu"
+	"samuelks.com/dsp/dsp/internal/cpu"
 )
 
 func init() {

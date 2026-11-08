@@ -7,8 +7,8 @@ import (
 	"io"
 	"log"
 
-	"github.com/samuel/go-dsp/dsp/dtmf"
-	"github.com/samuel/go-dsp/sampleio"
+	"samuelks.com/dsp/dsp/dtmf"
+	"samuelks.com/dsp/sampleio"
 )
 
 var (

@@ -12,8 +12,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/samuel/go-dsp/dspviz"
-	"github.com/samuel/go-dsp/internal/clifile"
+	"samuelks.com/dsp/dspviz"
+	"samuelks.com/dsp/internal/clifile"
 )
 
 // Output is the set of chart flags both commands take.

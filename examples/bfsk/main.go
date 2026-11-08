@@ -8,8 +8,8 @@ import (
 	"log"
 	"math"
 
-	"github.com/samuel/go-dsp/dsp"
-	"github.com/samuel/go-dsp/sampleio"
+	"samuelks.com/dsp/dsp"
+	"samuelks.com/dsp/sampleio"
 )
 
 var (

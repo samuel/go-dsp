@@ -1,4 +1,4 @@
-module github.com/samuel/go-dsp
+module samuelks.com/dsp
 
 go 1.26.0
 

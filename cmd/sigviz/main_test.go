@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samuel/go-dsp/sampleio"
+	"samuelks.com/dsp/sampleio"
 )
 
 // The subcommands are called directly rather than through a built binary, which

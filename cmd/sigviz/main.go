@@ -26,7 +26,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/samuel/go-dsp/sampleio"
+	"samuelks.com/dsp/sampleio"
 )
 
 func main() {

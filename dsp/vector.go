@@ -1,8 +1,8 @@
 package dsp
 
 import (
-	"github.com/samuel/go-dsp/dsp/f32"
-	"github.com/samuel/go-dsp/dsp/f64"
+	"samuelks.com/dsp/dsp/f32"
+	"samuelks.com/dsp/dsp/f64"
 )
 
 // Elementwise vector arithmetic over real samples. The naming, three-operand

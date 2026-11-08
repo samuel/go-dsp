@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/samuel/go-dsp/dsp"
+	"samuelks.com/dsp/dsp"
 )
 
 func TestImpulseAndStep(t *testing.T) {

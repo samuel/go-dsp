@@ -5,8 +5,8 @@ import (
 	"math/cmplx"
 	"testing"
 
-	"github.com/samuel/go-dsp/dsp"
-	"github.com/samuel/go-dsp/firpm"
+	"samuelks.com/dsp/dsp"
+	"samuelks.com/dsp/firpm"
 )
 
 // TestMeasurementNoiseFloor checks that a coherent tone read back over a whole

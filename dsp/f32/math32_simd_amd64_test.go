@@ -9,8 +9,8 @@ import (
 	"simd/archsimd"
 	"testing"
 
-	"github.com/samuel/go-dsp/dsp/internal/cpu"
-	"github.com/samuel/go-dsp/dsp/internal/view"
+	"samuelks.com/dsp/dsp/internal/cpu"
+	"samuelks.com/dsp/dsp/internal/view"
 )
 
 // TestVScaleF32Widths exercises each vector width directly rather than only the

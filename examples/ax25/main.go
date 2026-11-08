@@ -9,9 +9,9 @@ import (
 	"log"
 	"math"
 
-	"github.com/samuel/go-dsp/dsp"
-	"github.com/samuel/go-dsp/dsp/ax25"
-	"github.com/samuel/go-dsp/sampleio"
+	"samuelks.com/dsp/dsp"
+	"samuelks.com/dsp/dsp/ax25"
+	"samuelks.com/dsp/sampleio"
 )
 
 var (

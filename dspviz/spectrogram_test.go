@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/samuel/go-dsp/dsp"
+	"samuelks.com/dsp/dsp"
 )
 
 // testSignal is a deterministic signal with something in it at every scale: a

@@ -6,7 +6,7 @@ import (
 	"math"
 	"simd/archsimd"
 
-	"github.com/samuel/go-dsp/dsp/internal/view"
+	"samuelks.com/dsp/dsp/internal/view"
 )
 
 // Scale calculates dst[i] = src[i] * scale.

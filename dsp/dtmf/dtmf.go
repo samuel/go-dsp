@@ -15,7 +15,7 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/samuel/go-dsp/dsp"
+	"samuelks.com/dsp/dsp"
 )
 
 // Unexported so that an importer cannot rewrite them for the whole process;

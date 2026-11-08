@@ -1,8 +1,8 @@
 package sampleio
 
 import (
-	"github.com/samuel/go-dsp/dsp"
-	"github.com/samuel/go-dsp/dsp/encoding"
+	"samuelks.com/dsp/dsp"
+	"samuelks.com/dsp/dsp/encoding"
 )
 
 // decode fills dst with samples decoded from the front of src, normalized to

@@ -7,7 +7,7 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/samuel/go-dsp/dsp"
+	"samuelks.com/dsp/dsp"
 )
 
 // TestToneSpectrumIsClean checks that a transparent processor leaves a single

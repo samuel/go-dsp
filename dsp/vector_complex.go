@@ -3,9 +3,9 @@ package dsp
 import (
 	"math"
 
-	"github.com/samuel/go-dsp/dsp/f32"
-	"github.com/samuel/go-dsp/dsp/f64"
-	"github.com/samuel/go-dsp/dsp/internal/view"
+	"samuelks.com/dsp/dsp/f32"
+	"samuelks.com/dsp/dsp/f64"
+	"samuelks.com/dsp/dsp/internal/view"
 )
 
 // Elementwise vector arithmetic over complex samples. Every name is the real

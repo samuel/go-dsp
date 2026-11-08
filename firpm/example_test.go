@@ -5,7 +5,7 @@ import (
 	"log"
 	"math"
 
-	"github.com/samuel/go-dsp/firpm"
+	"samuelks.com/dsp/firpm"
 )
 
 // Design a length 32 bandpass filter with stopbands 0 to 0.1 and 0.425 to 0.5,

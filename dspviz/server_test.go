@@ -12,7 +12,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/samuel/go-dsp/dsp"
+	"samuelks.com/dsp/dsp"
 )
 
 func testServer(t *testing.T) *httptest.Server {

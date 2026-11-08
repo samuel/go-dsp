@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/samuel/go-dsp/dsp"
+	"samuelks.com/dsp/dsp"
 )
 
 // TestPalettesByName checks the name-to-palette lookup the command line and

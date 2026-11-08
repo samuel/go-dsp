@@ -6,7 +6,7 @@ import (
 	"math/cmplx"
 	"testing"
 
-	"github.com/samuel/go-dsp/dsp/f32"
+	"samuelks.com/dsp/dsp/f32"
 )
 
 // TestVectorCoversEveryWidth instantiates every member of Float and Complex

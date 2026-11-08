@@ -76,4 +76,4 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/samuel/go-dsp
+        - samuelks.com/dsp

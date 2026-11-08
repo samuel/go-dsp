@@ -26,7 +26,7 @@ Raspberry Pi 1, an AVX desktop or a wasm module.
 ## Installation
 
 ```sh
-go get github.com/samuel/go-dsp
+go get samuelks.com/dsp
 ```
 
 The module targets Go 1.26+, and assembly is for the four architectures with

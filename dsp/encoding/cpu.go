@@ -1,6 +1,6 @@
 package encoding
 
-import "github.com/samuel/go-dsp/dsp/internal/simdcpu"
+import "samuelks.com/dsp/dsp/internal/simdcpu"
 
 // The CPU flags this package dispatches on; the detection is simdcpu's.
 //

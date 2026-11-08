@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/samuel/go-dsp/dsp"
-	"github.com/samuel/go-dsp/firpm"
+	"samuelks.com/dsp/dsp"
+	"samuelks.com/dsp/firpm"
 )
 
 // must unwraps a constructor that returns an error, for the call sites here

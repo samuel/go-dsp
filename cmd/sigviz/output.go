@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/samuel/go-dsp/dsp"
-	"github.com/samuel/go-dsp/dspviz"
-	"github.com/samuel/go-dsp/internal/clifile"
-	"github.com/samuel/go-dsp/internal/cliflags"
+	"samuelks.com/dsp/dsp"
+	"samuelks.com/dsp/dspviz"
+	"samuelks.com/dsp/internal/clifile"
+	"samuelks.com/dsp/internal/cliflags"
 )
 
 // outputFlags are the flags that say what to draw and where to put it.

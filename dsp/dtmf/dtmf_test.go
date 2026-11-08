@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/samuel/go-dsp/dsp"
+	"samuelks.com/dsp/dsp"
 )
 
 // readWAV returns the samples of a 16-bit mono PCM WAV file, scaled to

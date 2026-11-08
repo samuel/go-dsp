@@ -6,7 +6,7 @@ import (
 	"math"
 	"math/cmplx"
 
-	"github.com/samuel/go-dsp/dsp"
+	"samuelks.com/dsp/dsp"
 )
 
 // SpectrogramOptions tunes how a spectrogram is drawn: pane size, palette,
