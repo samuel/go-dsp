@@ -2,7 +2,7 @@
 
 package f32
 
-//go:generate go run math32_avo_amd64.go -out math32_asm_amd64.s -stubs math32_asm_stub_amd64.go
+//go:generate go run -modfile=../../../tools.mod math32_avo_amd64.go -out math32_asm_amd64.s -stubs math32_asm_stub_amd64.go
 
 // The assembly fallbacks, used whenever the archsimd implementations in
 // math32_simd_amd64.go are unavailable: builds without GOEXPERIMENT=simd (the

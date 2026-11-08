@@ -5,7 +5,7 @@ import (
 	"math"
 )
 
-//go:generate go run conversion_avo_amd64.go -out conversion_avo_amd64.s -stubs conversion_avo_stub_amd64.go
+//go:generate go run -modfile=../../tools.mod conversion_avo_amd64.go -out conversion_avo_amd64.s -stubs conversion_avo_stub_amd64.go
 
 // U8ToI16 converts unsigned 8-bit samples to 16-bit signed, spreading each
 // byte over the full 16-bit range: the biased byte is replicated into both

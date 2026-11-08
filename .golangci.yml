@@ -1,11 +1,5 @@
 version: "2"
 
-run:
-  # Assembly-backed packages have a file set per GOARCH, and golangci-lint only
-  # ever sees the host's. Cross-check the others with a GOARCH-prefixed run.
-  build-tags:
-    - tools
-
 linters:
   default: standard
   enable:
