@@ -26,10 +26,10 @@ Go 1.27.
 - Assembly for 386, amd64 (SSE2, SSE4.1 and AVX, chosen at run time), arm
   (NEON and VFP) and arm64, with a pure-Go implementation on every other
   architecture and an optional `GOEXPERIMENT=simd` path.
-- `dsp/encoding`: sample-format conversions named `<source>To<destination>`,
+- `encoding`: sample-format conversions named `<source>To<destination>`,
   which never scale.
-- `dsp/ax25`: AX.25/HDLC frame decoding and the CRC-16/X-25 frame check.
-- `dsp/dtmf`: DTMF decoding.
+- `ax25`: AX.25/HDLC frame decoding and the CRC-16/X-25 frame check.
+- `dtmf`: DTMF decoding.
 - `firpm`: Parks-McClellan equiripple FIR design.
 - `sampleio`: reading WAV, RF64 and headerless captures, including rtl-sdr
   `cu8`, as normalized samples.

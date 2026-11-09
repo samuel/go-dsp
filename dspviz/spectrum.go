@@ -6,7 +6,7 @@ import (
 	"math"
 	"math/cmplx"
 
-	"samuelks.com/dsp/dsp"
+	"samuelks.com/dsp"
 )
 
 // SpectrumOptions tunes ToneSpectrum. The zero value is the default throughout.

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"samuelks.com/dsp/dsp"
+	"samuelks.com/dsp"
 )
 
 // TestPalettesByName checks the name-to-palette lookup the command line and

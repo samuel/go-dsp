@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"samuelks.com/dsp/dsp/encoding"
+	"samuelks.com/dsp/encoding"
 )
 
 // TestDecodeRails is the full-scale contract, written as literal codes rather

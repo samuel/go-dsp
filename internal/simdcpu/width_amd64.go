@@ -7,7 +7,7 @@ import (
 	"simd/archsimd"
 	"strconv"
 
-	"samuelks.com/dsp/dsp/internal/cpu"
+	"samuelks.com/dsp/internal/cpu"
 )
 
 // width is the widest vector, in bits, that the archsimd implementations

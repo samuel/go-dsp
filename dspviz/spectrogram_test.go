@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"samuelks.com/dsp/dsp"
+	"samuelks.com/dsp"
 )
 
 // testSignal is a deterministic signal with something in it at every scale: a

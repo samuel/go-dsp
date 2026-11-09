@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"samuelks.com/dsp/dsp"
+	"samuelks.com/dsp"
 )
 
 func TestImpulseAndStep(t *testing.T) {

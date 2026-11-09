@@ -1,6 +1,6 @@
 package encoding
 
-import "samuelks.com/dsp/dsp/internal/simdcpu"
+import "samuelks.com/dsp/internal/simdcpu"
 
 // The CPU flags this package dispatches on; the detection is simdcpu's.
 //
@@ -8,7 +8,7 @@ import "samuelks.com/dsp/dsp/internal/simdcpu"
 // the assembly reads must be declared where the assembly lives:
 // conversion_amd64.s reads ·useSSE4(SB), conversion_arm.s ·haveNEON+0(SB). And
 // the tests toggle them to exercise both paths on one machine, which only works
-// with a per-package copy — hence dsp/internal/f32's near-identical file.
+// with a per-package copy — hence internal/f32's near-identical file.
 var (
 	useSSE4   = simdcpu.HasSSE4()
 	haveNEON  = simdcpu.HaveNEON()

@@ -15,7 +15,7 @@ import (
 	"slices"
 	"strconv"
 
-	"samuelks.com/dsp/dsp"
+	"samuelks.com/dsp"
 )
 
 // Unexported so that an importer cannot rewrite them for the whole process;

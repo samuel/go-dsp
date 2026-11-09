@@ -7,7 +7,7 @@ import (
 	"math/big"
 	"testing"
 
-	"samuelks.com/dsp/dsp"
+	"samuelks.com/dsp"
 )
 
 // TestToneSpectrumIsClean checks that a transparent processor leaves a single

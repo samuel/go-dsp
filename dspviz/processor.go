@@ -14,7 +14,7 @@ package dspviz
 import (
 	"errors"
 
-	"samuelks.com/dsp/dsp"
+	"samuelks.com/dsp"
 )
 
 // Processor is a black-box signal processor: something that turns a stream of

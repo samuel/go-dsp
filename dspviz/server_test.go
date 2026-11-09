@@ -12,7 +12,7 @@ import (
 	"sync"
 	"testing"
 
-	"samuelks.com/dsp/dsp"
+	"samuelks.com/dsp"
 )
 
 func testServer(t *testing.T) *httptest.Server {

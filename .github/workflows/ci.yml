@@ -205,7 +205,7 @@ jobs:
       - run: go mod tidy -diff
       - run: go mod tidy -modfile=tools.mod -diff
       # The avo output is committed, so regenerating it must change nothing.
-      - run: go generate ./dsp/encoding ./dsp/internal/f32
+      - run: go generate ./encoding ./internal/f32
       - run: git diff --exit-code
 
   # Before 1.0 a minor release may break the API, so on main and pull requests
@@ -273,8 +273,8 @@ jobs:
         include:
           - { pkg: ./sampleio, target: FuzzReadWAVHeader }
           - { pkg: ./firpm, target: FuzzDesign }
-          - { pkg: ./dsp/ax25, target: FuzzFeed }
-          - { pkg: ./dsp/encoding, target: FuzzI16LEToF32 }
+          - { pkg: ./ax25, target: FuzzFeed }
+          - { pkg: ./encoding, target: FuzzI16LEToF32 }
           - { pkg: ./dspviz, target: FuzzWriteSVG }
           - { pkg: ./dspviz, target: FuzzHandleAnalyze }
     steps:

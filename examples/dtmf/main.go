@@ -5,7 +5,7 @@
 // The input is a WAV file, or a headerless file or standard input given with
 // -format and -rate:
 //
-//	dtmf dsp/dtmf/testdata/1223445-50ms-8000.wav
+//	dtmf dtmf/testdata/1223445-50ms-8000.wav
 package main
 
 import (
@@ -15,7 +15,7 @@ import (
 	"io"
 	"log"
 
-	"samuelks.com/dsp/dsp/dtmf"
+	"samuelks.com/dsp/dtmf"
 	"samuelks.com/dsp/sampleio"
 )
 

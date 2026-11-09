@@ -1,8 +1,8 @@
 package dsp
 
 import (
-	"samuelks.com/dsp/dsp/internal/f32"
-	"samuelks.com/dsp/dsp/internal/f64"
+	"samuelks.com/dsp/internal/f32"
+	"samuelks.com/dsp/internal/f64"
 )
 
 // Elementwise vector arithmetic over real samples. The naming, three-operand

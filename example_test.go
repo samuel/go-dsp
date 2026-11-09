@@ -5,7 +5,7 @@ import (
 	"log"
 	"math"
 
-	"samuelks.com/dsp/dsp"
+	"samuelks.com/dsp"
 )
 
 // gainDB returns the steady-state gain of a filter for a tone, from the peak of

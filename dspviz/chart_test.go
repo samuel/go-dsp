@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"samuelks.com/dsp/dsp"
+	"samuelks.com/dsp"
 	"samuelks.com/dsp/firpm"
 )
 

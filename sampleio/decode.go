@@ -1,8 +1,8 @@
 package sampleio
 
 import (
-	"samuelks.com/dsp/dsp"
-	"samuelks.com/dsp/dsp/encoding"
+	"samuelks.com/dsp"
+	"samuelks.com/dsp/encoding"
 )
 
 // decode fills dst with samples decoded from the front of src, normalized to

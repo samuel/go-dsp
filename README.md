@@ -13,12 +13,15 @@ Raspberry Pi 1, an AVX desktop or a wasm module.
 
 ## Packages
 
+Paths are relative to the module, `samuelks.com/dsp`, whose root is package
+`dsp`.
+
 | Path | Contents |
 | --- | --- |
-| `dsp` | The main API: generic vector operations (`VScale`, `VAdd`, ...), FM demodulation, IIR/biquad/FIR filters, boxcar and FIR decimators, Goertzel tone detection, sliding DFT, fixed-size FFT, transfer-function evaluation, window functions, Kaiser-windowed sinc low-pass design (`LowPassFIR`), FIR interpolation (`FIRInterpolator`, zero-phase `Upsample`), interpolators including a polyphase `SincInterpolator`, interleave/deinterleave, `FastAtan2`. |
-| `dsp/encoding` | The `<source>To<destination>` sample conversions (`U8ToF32`, `I16LEToF32`, `F32ToI16`, ...), never scaled. |
-| `dsp/ax25` | AX.25/HDLC frame decoding plus CRC-16/X-25 `FCS`/`CheckFCS`. |
-| `dsp/dtmf` | DTMF decoding built on Goertzel. |
+| `.` (`dsp`) | The main API: generic vector operations (`VScale`, `VAdd`, ...), FM demodulation, IIR/biquad/FIR filters, boxcar and FIR decimators, Goertzel tone detection, sliding DFT, fixed-size FFT, transfer-function evaluation, window functions, Kaiser-windowed sinc low-pass design (`LowPassFIR`), FIR interpolation (`FIRInterpolator`, zero-phase `Upsample`), interpolators including a polyphase `SincInterpolator`, interleave/deinterleave, `FastAtan2`. |
+| `encoding` | The `<source>To<destination>` sample conversions (`U8ToF32`, `I16LEToF32`, `F32ToI16`, ...), never scaled. |
+| `ax25` | AX.25/HDLC frame decoding plus CRC-16/X-25 `FCS`/`CheckFCS`. |
+| `dtmf` | DTMF decoding built on Goertzel. |
 | `sampleio` | Reading WAV/RF64 audio and headerless I/Q captures, handing over scale-normalized samples. |
 | `firpm` | Parks-McClellan (Remez exchange) linear-phase FIR design. |
 | `dspviz` | Measuring and drawing filters and recordings; stdlib-only SVG/PNG rendering. |
@@ -92,7 +95,7 @@ fmd.Demodulate(out, iq)
 
 ### Tone detection
 
-`dsp.Goertzel` measures a fixed set of frequencies per block; `dsp/dtmf`
+`dsp.Goertzel` measures a fixed set of frequencies per block; `dtmf`
 builds a DTMF decoder on top of it.
 
 ```go
@@ -140,7 +143,7 @@ interleaved run once and splits it in a single pass.
 
 ### Sample conversions
 
-`dsp/encoding` conversions are `<src>To<dst>` and never scale; the normalizing
+`encoding` conversions are `<src>To<dst>` and never scale; the normalizing
 factor belongs in the coefficients of the next linear stage, with
 `dsp.VScale` as the fallback. `F32ToI16` clips past full scale and converts
 NaN to zero, identically on every architecture.
@@ -209,8 +212,8 @@ extension; `analyze` writes a set and takes `-out <dir>`.
 ## Examples
 
 ```sh
-go run ./examples/dtmf dsp/dtmf/testdata/1223445-50ms-8000.wav      # -> 1223445
-go run ./examples/dtmf -rate 44100 dsp/dtmf/testdata/0123456789-50ms-44100.wav
+go run ./examples/dtmf dtmf/testdata/1223445-50ms-8000.wav      # -> 1223445
+go run ./examples/dtmf -rate 44100 dtmf/testdata/0123456789-50ms-44100.wav
 go run ./examples/ax25 -rate 11025 -baud 300 radio-paket300-11025.raw
 ```
 
@@ -247,8 +250,8 @@ target and, on amd64, by runtime CPU features:
 4. a pure-Go reference routing every assembly entry point to its fallback on
    architectures with no assembly at all
 
-Benchmarks live with the code: `go test ./dsp/internal/f32 -bench .` and
-`go test ./dsp/encoding -bench .` sweep sizes from 64 to 64K floats so
+Benchmarks live with the code: `go test ./internal/f32 -bench .` and
+`go test ./encoding -bench .` sweep sizes from 64 to 64K floats so
 loop-overhead changes stay visible.
 
 ## Validation

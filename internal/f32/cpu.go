@@ -1,9 +1,9 @@
 package f32
 
-import "samuelks.com/dsp/dsp/internal/simdcpu"
+import "samuelks.com/dsp/internal/simdcpu"
 
 // The CPU flags this package dispatches on. simdcpu does the detection; these
-// are variables rather than calls for the reason given in dsp/encoding's cpu.go.
+// are variables rather than calls for the reason given in encoding's cpu.go.
 //
 // math32_arm.s reads ·haveNEON+0(SB) and ·useVector+0(SB), and the tests toggle
 // all of them -- TestSIMDPreAVXFallback sets simdWidth directly to drive the

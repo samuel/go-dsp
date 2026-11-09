@@ -7,7 +7,7 @@ import (
 	"os"
 	"slices"
 
-	"samuelks.com/dsp/dsp"
+	"samuelks.com/dsp"
 )
 
 // Channel selects which channel of a stream to read.

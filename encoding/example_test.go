@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"math"
 
-	"samuelks.com/dsp/dsp"
-	"samuelks.com/dsp/dsp/encoding"
+	"samuelks.com/dsp"
+	"samuelks.com/dsp/encoding"
 )
 
 // Unsigned 8-bit samples, such as an rtl-sdr's, lose their 128 bias in the

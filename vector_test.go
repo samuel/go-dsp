@@ -6,7 +6,7 @@ import (
 	"math/cmplx"
 	"testing"
 
-	"samuelks.com/dsp/dsp/internal/f32"
+	"samuelks.com/dsp/internal/f32"
 )
 
 // TestVectorCoversEveryWidth instantiates every member of Float and Complex

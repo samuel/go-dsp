@@ -16,7 +16,7 @@ import (
 	"log"
 	"math"
 
-	"samuelks.com/dsp/dsp"
+	"samuelks.com/dsp"
 	"samuelks.com/dsp/sampleio"
 )
 

@@ -20,8 +20,8 @@ import (
 	"log"
 	"math"
 
-	"samuelks.com/dsp/dsp"
-	"samuelks.com/dsp/dsp/ax25"
+	"samuelks.com/dsp"
+	"samuelks.com/dsp/ax25"
 	"samuelks.com/dsp/sampleio"
 )
 

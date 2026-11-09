@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"samuelks.com/dsp/dsp"
+	"samuelks.com/dsp"
 	"samuelks.com/dsp/dspviz"
 	"samuelks.com/dsp/internal/clifile"
 	"samuelks.com/dsp/internal/cliflags"

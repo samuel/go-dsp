@@ -318,7 +318,7 @@ func TestDecimatorFilterInPlaceAliasing(t *testing.T) {
 // It can only fail on a 32-bit target -- 386 and arm here -- where the old
 // int arithmetic wrapped to a negative number, OutputLen returned a short
 // answer, and a caller sizing dst from it watched Filter run off the end. Run
-// it with qemu-test -arch arm ./dsp.
+// it with qemu-test -arch arm .
 func TestRationalOutputLenDoesNotOverflow(t *testing.T) {
 	f, err := NewRationalBoxcarDecimator[float32](44100, 8000)
 	if err != nil {

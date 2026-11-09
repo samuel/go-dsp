@@ -4,7 +4,7 @@
 
 //go:build amd64
 
-// Package cpu reports the x86 features the dispatchers in dsp/internal/simdcpu
+// Package cpu reports the x86 features the dispatchers in internal/simdcpu
 // select on.
 //
 // It is a trimmed copy of the Go runtime's internal/cpu: it detects only the

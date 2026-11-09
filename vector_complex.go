@@ -3,9 +3,9 @@ package dsp
 import (
 	"math"
 
-	"samuelks.com/dsp/dsp/internal/f32"
-	"samuelks.com/dsp/dsp/internal/f64"
-	"samuelks.com/dsp/dsp/internal/view"
+	"samuelks.com/dsp/internal/f32"
+	"samuelks.com/dsp/internal/f64"
+	"samuelks.com/dsp/internal/view"
 )
 
 // Elementwise vector arithmetic over complex samples. Every name is the real
