@@ -208,6 +208,55 @@ jobs:
       - run: go generate ./dsp/encoding ./dsp/internal/f32
       - run: git diff --exit-code
 
+  # Before 1.0 a minor release may break the API, so on main and pull requests
+  # the report against the last release is information, in the job summary.
+  # A tag push is where it is enforced: the tag must be annotated, have a
+  # CHANGELOG.md section, and be a version gorelease accepts for the API changes
+  # since the previous tag. gorelease compares signatures only, so a change of
+  # behavior behind the same signature still needs a CHANGELOG entry.
+  api:
+    runs-on: ubuntu-latest
+    env:
+      GORELEASE: golang.org/x/exp/cmd/gorelease@v0.0.0-20261106192419-47ce03d25ef0
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      # checkout can leave an annotated tag as a lightweight one; refetch them.
+      - run: git fetch --force --tags
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - run: go install "$GORELEASE"
+      - name: Check the release tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if [ "$(git cat-file -t "$tag")" != tag ]; then
+            echo "::error::$tag is a lightweight tag; release tags are annotated (git tag -a)"
+            exit 1
+          fi
+          if ! grep -q "^## \[${tag#v}\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no section for ${tag#v}"
+            exit 1
+          fi
+          base=$(git describe --tags --abbrev=0 --match 'v*' "$tag^" 2>/dev/null || echo none)
+          set -o pipefail # tee must not hide gorelease's verdict
+          gorelease -base="$base" -version="$tag" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Report API changes since the last release
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        run: |
+          if ! base=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null); then
+            echo "No release tag yet." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "## API changes since $base"
+            echo '```'
+            gorelease -base="$base" || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
   govulncheck:
     runs-on: ubuntu-latest
     steps:

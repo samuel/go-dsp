@@ -31,6 +31,9 @@ Raspberry Pi 1, an AVX desktop or a wasm module.
 go get samuelks.com/dsp
 ```
 
+Release notes are in [CHANGELOG.md](CHANGELOG.md). Before 1.0, a minor release
+may change the API.
+
 Supported Go versions are the minimum in `go.mod`, currently 1.27, through
 the latest release; CI builds and tests both ends. Assembly is for the four
 architectures with vector hardware: 386, amd64, arm (NEON/VFP) and arm64
