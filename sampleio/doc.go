@@ -22,28 +22,20 @@
 // channel a frame at a time, which is 3.1x a Reader per channel for stereo and
 // 2.5x at eight channels.
 //
-// # Format names
+// # Formats
 //
-// The names are dsp's, so that a format reads as the conversion it is: U8 and
-// I8 for 8-bit samples, I16, I24 and I32 for wider integers, F32 and F64 for
-// floats, with LE or BE for the byte order of anything wider than a byte.
-// ParseFormat also accepts the ffmpeg spelling of the signed integers, where
-// s16le means the same as i16le.
+// A sample encoding is a convert.Format, named as the conversion it is, and
+// samples are decoded by convert.Decode, which normalizes them to full scale:
+// the most negative integer code is exactly -1, so a full-scale sine reads
+// exactly 0 dBFS, which every decibel measured downstream is relative to.
+// Float samples are passed through unscaled, since a float file is already
+// written in those units; a Note records it if any sample is outside the range.
 //
-// Complex is not one of them. Interleaved I/Q is a layout over an ordinary
-// element type rather than an encoding of its own -- which is what dsp already
+// Complex is not a format. Interleaved I/Q is a layout over an ordinary element
+// type rather than an encoding of its own -- which is what convert already
 // means by C64, an interleaved pair of F32 -- so it is Options.IQ, and
 // ParseFormatSpec reads the leading c of the names an SDR writes: cu8 is
-// rtl-sdr's format, U8 with IQ set.
-//
-// # Full scale
-//
-// An integer sample is divided by 2^(bits-1), so the most negative code is
-// exactly -1 and the most positive is one step short of +1. That is what makes
-// a full-scale sine read exactly 0 dBFS, which every decibel measured
-// downstream is relative to. Float samples are passed through unscaled, since a
-// float file is already written in those units; a Note records it if any sample
-// is outside the range.
+// rtl-sdr's format, convert.U8 with IQ set.
 //
 // # Byte order
 //

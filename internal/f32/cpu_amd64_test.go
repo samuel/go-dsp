@@ -6,7 +6,7 @@ import "testing"
 // SIMD and the fallback assembly paths are exercised on one machine.
 //
 // Only AVX is toggled here. SSE4 gates the sample conversions, which live in
-// encoding and carry their own copy of this helper.
+// convert and carry their own copy of this helper.
 func simdTest(t *testing.T, fn func(t *testing.T)) {
 	if useAVX {
 		t.Run("avx", fn)

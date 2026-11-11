@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"samuelks.com/dsp"
+	"samuelks.com/dsp/convert"
 )
 
 // Channel selects which channel of a stream to read.
@@ -22,7 +23,7 @@ const blockBytes = 1 << 16
 
 // Info describes what a Reader found.
 type Info struct {
-	Format   Format
+	Format   convert.Format
 	Rate     float64
 	Channels int // interleaved channels in the file, before selection
 
@@ -58,7 +59,7 @@ func (i Info) Duration() float64 {
 type Options struct {
 	// Format is the encoding of a headerless stream. A container header wins
 	// over it, and reading raw requires it.
-	Format Format
+	Format convert.Format
 
 	// Rate overrides the rate a header states, and is required for raw input.
 	Rate float64
@@ -103,7 +104,6 @@ type Reader struct {
 	off int    // bytes of buf already decoded
 
 	gath []byte    // one channel's bytes, gathered contiguously
-	swap []byte    // byte-reversed samples, for a big-endian format
 	work []float64 // decoded scratch: for mixing, for pairing I/Q, for a planar read
 
 	// Reusable plane headers for a planar read, one field per width.
@@ -214,7 +214,7 @@ func newReader(src io.Reader, closer io.Closer, opt Options, size int64) (*Reade
 				r.info.Channels = 2
 			}
 		}
-		_, _, _, bits := opt.Format.info()
+		bits := opt.Format.Bits()
 		r.info.Bits = bits
 		r.info.Codec = "pcm"
 		if bits == 0 {
@@ -613,10 +613,10 @@ func (r *Reader) decodeReal(dst []float64, frames int) {
 	case r.elems == 1:
 		// The common case: mono, so the samples are already contiguous and the
 		// decode is one call over the whole run.
-		f.decode(dst, src, &r.swap)
+		convert.Decode(dst, src, f)
 
 	default:
-		f.decode(dst, r.gather(src, frames, int(r.pick), 1), &r.swap)
+		convert.Decode(dst, r.gather(src, frames, int(r.pick), 1), f)
 	}
 	r.noteOverrange(dst)
 }
@@ -626,7 +626,7 @@ func (r *Reader) decodeReal(dst []float64, frames int) {
 //
 // It is what a mixdown and a planar read share, and why neither gathers. The
 // exactly-sized run bounds the decode: src runs to the end of buf and
-// Format.decode stops at the shorter of its two slices. It also normalizes
+// convert.Decode stops at the shorter of its two slices. It also normalizes
 // every channel in one vectorized pass.
 func (r *Reader) decodeFrames(frames int) []float64 {
 	n := frames * r.elems
@@ -634,7 +634,7 @@ func (r *Reader) decodeFrames(frames int) []float64 {
 		r.work = make([]float64, n)
 	}
 	w := r.work[:n]
-	r.info.Format.decode(w, r.buf[r.off:], &r.swap)
+	convert.Decode(w, r.buf[r.off:], r.info.Format)
 	r.noteOverrange(w)
 	return w
 }
@@ -732,7 +732,7 @@ func (r *Reader) decodeComplex(dst []complex128, frames int) {
 		r.work = make([]float64, 2*frames)
 	}
 	w := r.work[:2*frames]
-	f.decode(w, src, &r.swap)
+	convert.Decode(w, src, f)
 	r.noteOverrange(w)
 	for i := range dst {
 		dst[i] = complex(w[i*2], w[i*2+1])

@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"samuelks.com/dsp/convert"
 )
 
 // The signal every fixture in testdata holds. Kept in step with
@@ -36,23 +38,23 @@ func fixtureTone() []float64 {
 func TestOpenWAVFixtures(t *testing.T) {
 	for _, tc := range []struct {
 		file      string
-		want      Format
+		want      convert.Format
 		bits      int
 		codec     string
 		channels  int
 		tolerance float64
 	}{
-		{"tone-u8.wav", U8, 8, "pcm", 1, 1.0 / 128},
-		{"tone-i16le.wav", I16LE, 16, "pcm", 1, 1.0 / 32768},
-		{"tone-i24le.wav", I24LE, 24, "pcm", 1, 1.0 / 8388608},
-		{"tone-i32le.wav", I32LE, 32, "pcm", 1, 1e-9},
-		{"tone-f32le.wav", F32LE, 32, "float", 1, 1e-7},
+		{"tone-u8.wav", convert.U8, 8, "pcm", 1, 1.0 / 128},
+		{"tone-i16le.wav", convert.I16LE, 16, "pcm", 1, 1.0 / 32768},
+		{"tone-i24le.wav", convert.I24LE, 24, "pcm", 1, 1.0 / 8388608},
+		{"tone-i32le.wav", convert.I32LE, 32, "pcm", 1, 1e-9},
+		{"tone-f32le.wav", convert.F32LE, 32, "float", 1, 1e-7},
 		// sox works in 32-bit internally, so even its float64 output carries
 		// only about 2^-31 of precision; the fixture tests this decoder, not
 		// sox's arithmetic.
-		{"tone-f64le.wav", F64LE, 64, "float", 1, 1e-9},
-		{"tone-rf64.wav", I16LE, 16, "pcm", 1, 1.0 / 32768},
-		{"stereo-i16le.wav", I16LE, 16, "pcm", 2, 1.0 / 32768},
+		{"tone-f64le.wav", convert.F64LE, 64, "float", 1, 1e-9},
+		{"tone-rf64.wav", convert.I16LE, 16, "pcm", 1, 1.0 / 32768},
+		{"stereo-i16le.wav", convert.I16LE, 16, "pcm", 2, 1.0 / 32768},
 	} {
 		t.Run(tc.file, func(t *testing.T) {
 			r, err := Open(filepath.Join("testdata", tc.file), Options{})
@@ -225,7 +227,7 @@ func TestOpenWAVRateOverride(t *testing.T) {
 // header bytes come through as samples, so there are more of them.
 func TestOpenWAVAsRaw(t *testing.T) {
 	r, err := Open(filepath.Join("testdata", "tone-i16le.wav"), Options{
-		Raw: true, Format: I16LE, Rate: 8000,
+		Raw: true, Format: convert.I16LE, Rate: 8000,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -560,7 +562,7 @@ func TestWAVExtensibleFromSox(t *testing.T) {
 // that is not a WAV must be readable as raw with nothing consumed.
 func TestSniffFallsBackToRaw(t *testing.T) {
 	raw := i16(0.5, -0.5, 0.25)
-	r, err := NewReader(bytes.NewReader(raw), Options{Format: I16LE, Rate: 8000})
+	r, err := NewReader(bytes.NewReader(raw), Options{Format: convert.I16LE, Rate: 8000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -570,7 +572,7 @@ func TestSniffFallsBackToRaw(t *testing.T) {
 	}
 
 	// Shorter than the four magic bytes.
-	short, err := NewReader(bytes.NewReader([]byte{1, 2}), Options{Format: I8, Rate: 8000})
+	short, err := NewReader(bytes.NewReader([]byte{1, 2}), Options{Format: convert.I8, Rate: 8000})
 	if err != nil {
 		t.Fatal(err)
 	}

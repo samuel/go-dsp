@@ -22,6 +22,7 @@ import (
 
 	"samuelks.com/dsp"
 	"samuelks.com/dsp/ax25"
+	"samuelks.com/dsp/convert"
 	"samuelks.com/dsp/sampleio"
 )
 
@@ -46,7 +47,7 @@ func run() error {
 	if flag.NArg() > 0 {
 		path = flag.Arg(0)
 	}
-	format, err := sampleio.ParseFormat(*flagFormat)
+	format, err := convert.ParseFormat(*flagFormat)
 	if err != nil {
 		return err
 	}

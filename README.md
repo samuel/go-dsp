@@ -19,7 +19,7 @@ Paths are relative to the module, `samuelks.com/dsp`, whose root is package
 | Path | Contents |
 | --- | --- |
 | `.` (`dsp`) | The main API: generic vector operations (`VScale`, `VAdd`, ...), FM demodulation, IIR/biquad/FIR filters, boxcar and FIR decimators, Goertzel tone detection, sliding DFT, fixed-size FFT, transfer-function evaluation, window functions, Kaiser-windowed sinc low-pass design (`LowPassFIR`), FIR interpolation (`FIRInterpolator`, zero-phase `Upsample`), interpolators including a polyphase `SincInterpolator`, interleave/deinterleave, `FastAtan2`. |
-| `encoding` | The `<source>To<destination>` sample conversions (`U8ToF32`, `I16LEToF32`, `F32ToI16`, ...), never scaled. |
+| `convert` | The `<source>To<destination>` sample conversions (`U8ToF32`, `I16LEToF32`, `F32ToI16`, ...), never scaled, and `Format` with `Decode` to full-scale float64. |
 | `ax25` | AX.25/HDLC frame decoding plus CRC-16/X-25 `FCS`/`CheckFCS`. |
 | `dtmf` | DTMF decoding built on Goertzel. |
 | `sampleio` | Reading WAV/RF64 audio and headerless I/Q captures, handing over scale-normalized samples. |
@@ -168,14 +168,22 @@ interleaved run once and splits it in a single pass.
 
 ### Sample conversions
 
-`encoding` conversions are `<src>To<dst>` and never scale; the normalizing
+`convert` conversions are `<src>To<dst>` and never scale; the normalizing
 factor belongs in the coefficients of the next linear stage, with
 `dsp.VScale` as the fallback. `F32ToI16` clips past full scale and converts
 NaN to zero, identically on every architecture.
 
 ```go
-encoding.U8ToF32(dst, src) // u8 []byte -> float32
-encoding.F32ToI16(i16, f32) // clips
+convert.U8ToF32(dst, src) // u8 []byte -> float32
+convert.F32ToI16(i16, f32) // clips
+```
+
+`convert.Format` names a byte encoding by the same scheme, and `Decode` is the
+one function that scales: it turns any format into float64 on [-1, 1).
+
+```go
+f, err := convert.ParseFormat("i24be")
+n := convert.Decode(dst, raw, f) // n == min(len(dst), len(raw)/f.Width())
 ```
 
 ### FIR design
@@ -298,7 +306,7 @@ identical across architectures and vector widths, except that 32-bit arm's
 NEON flushes subnormal values to zero.
 
 Benchmarks live with the code: `go test ./internal/f32 -bench .` and
-`go test ./encoding -bench .` sweep sizes from 64 to 64K floats so
+`go test ./convert -bench .` sweep sizes from 64 to 64K floats so
 loop-overhead changes stay visible.
 
 ## Validation

@@ -36,8 +36,9 @@ Go 1.27.
   decimators, interpolators and `SincInterpolator` run vectorized block FIR
   and dot-product kernels whose results are identical on every architecture
   apart from subnormals, which 32-bit arm's NEON flushes to zero.
-- `encoding`: sample-format conversions named `<source>To<destination>`,
-  which never scale.
+- `convert`: sample-format conversions named `<source>To<destination>`,
+  which never scale, and `Format` with `Decode`, which reads any format into
+  float64 normalized to full scale.
 - `ax25`: AX.25/HDLC frame decoding and the CRC-16/X-25 frame check.
 - `dtmf`: DTMF decoding.
 - `firpm`: Parks-McClellan equiripple FIR design.

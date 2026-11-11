@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"samuelks.com/dsp/convert"
 )
 
 // WAV format tags. Anything else is a codec this package does not decode.
@@ -24,7 +26,7 @@ var ksSuffix = [14]byte{0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0x
 
 // wavHeader is what a WAV says about itself.
 type wavHeader struct {
-	format    Format
+	format    convert.Format
 	rate      float64
 	channels  int
 	bits      int
@@ -220,7 +222,7 @@ func (h *wavHeader) readFmt(r io.Reader, size int64) error {
 
 // wavFormat maps a tag and a width to an encoding. RIFF is little-endian, so
 // nothing here can be big-endian.
-func wavFormat(tag uint16, bits int) (Format, string, error) {
+func wavFormat(tag uint16, bits int) (convert.Format, string, error) {
 	switch tag {
 	case wavPCM:
 		switch bits {
@@ -228,22 +230,22 @@ func wavFormat(tag uint16, bits int) (Format, string, error) {
 		// the format, and the reason an 8-bit file read as signed looks
 		// inverted.
 		case 8:
-			return U8, "pcm", nil
+			return convert.U8, "pcm", nil
 		case 16:
-			return I16LE, "pcm", nil
+			return convert.I16LE, "pcm", nil
 		case 24:
-			return I24LE, "pcm", nil
+			return convert.I24LE, "pcm", nil
 		case 32:
-			return I32LE, "pcm", nil
+			return convert.I32LE, "pcm", nil
 		}
 		return 0, "", fmt.Errorf("sampleio: %d-bit PCM", bits)
 
 	case wavFloat:
 		switch bits {
 		case 32:
-			return F32LE, "float", nil
+			return convert.F32LE, "float", nil
 		case 64:
-			return F64LE, "float", nil
+			return convert.F64LE, "float", nil
 		}
 		return 0, "", fmt.Errorf("sampleio: %d-bit float", bits)
 
