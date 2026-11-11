@@ -27,3 +27,33 @@ func vabsC64AVX(dst []float32, src []complex64)
 
 // vabsC64SSE2 calculates dst[i] = |src[i]| using SSE2.
 func vabsC64SSE2(dst []float32, src []complex64)
+
+// firF32AVX implements FIR for stride 1 using AVX.
+func firF32AVX(dst []float32, work []float32, taps []float32)
+
+// firF32SSE2 implements FIR for stride 1 using SSE2.
+func firF32SSE2(dst []float32, work []float32, taps []float32)
+
+// cfirRealAVX implements CFIRReal for stride 1 using AVX.
+func cfirRealAVX(dst []complex64, work []complex64, taps []float32)
+
+// cfirRealSSE2 implements CFIRReal for stride 1 using SSE2.
+func cfirRealSSE2(dst []complex64, work []complex64, taps []float32)
+
+// cfirAVX implements CFIR for stride 1 using AVX.
+func cfirAVX(dst []complex64, work []complex64, taps []complex64)
+
+// cfirSSE2 implements CFIR for stride 1 using SSE2.
+func cfirSSE2(dst []complex64, work []complex64, taps []complex64)
+
+// dotF32AVX implements Dot using AVX. x must be at least as long as c.
+func dotF32AVX(x []float32, c []float32) float32
+
+// dotF32SSE2 implements Dot using SSE2. x must be at least as long as c.
+func dotF32SSE2(x []float32, c []float32) float32
+
+// cdotRealAVX implements CDotReal using AVX. x must be at least as long as c.
+func cdotRealAVX(x []complex64, c []float32) complex64
+
+// cdotRealSSE2 implements CDotReal using SSE2. x must be at least as long as c.
+func cdotRealSSE2(x []complex64, c []float32) complex64

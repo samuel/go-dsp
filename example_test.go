@@ -47,7 +47,7 @@ func ExampleNewBiquadLowPass() {
 // offset by a constant frequency demodulates to a constant: 2*pi times the
 // offset in cycles per sample.
 //
-// FMDemod[complex64, float32] runs the assembly, built on FastAtan2, whose
+// FMDemod[complex64, float32] is built on FastAtan2, whose
 // error of up to about 0.01 radians is invisible under audio but not in a
 // printed number; complex128 uses the exact discriminator.
 func ExampleFMDemod() {

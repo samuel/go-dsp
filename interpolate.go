@@ -4,6 +4,8 @@ import (
 	"errors"
 	"math"
 
+	"samuelks.com/dsp/internal/f32"
+	"samuelks.com/dsp/internal/f64"
 	"samuelks.com/dsp/internal/view"
 )
 
@@ -311,21 +313,38 @@ func (s *SincInterpolator[F]) At[T Sample](src []T, x float64) T {
 }
 
 // realDot returns the sum of x[k]*c[k] over len(c) samples of x, multiplying a
-// complex sample by each real coefficient part by part. The sum accumulates at
-// the component width of T.
+// complex sample by each real coefficient part by part. When c is at the
+// sample's component width it runs the Dot kernels, whose summation order is
+// fixed; otherwise it sums in order at the sample's width.
 func realDot[T Sample, F Float](x []T, c []F) T {
 	var z T
 	switch p := any(&z).(type) {
 	case *float32:
-		*p, _ = realDotInterleaved(any(x).([]float32), c, 1)
+		if cc, ok := any(c).([]float32); ok {
+			*p = f32.Dot(any(x).([]float32), cc)
+		} else {
+			*p, _ = realDotInterleaved(any(x).([]float32), c, 1)
+		}
 	case *float64:
-		*p, _ = realDotInterleaved(any(x).([]float64), c, 1)
+		if cc, ok := any(c).([]float64); ok {
+			*p = f64.Dot(any(x).([]float64), cc)
+		} else {
+			*p, _ = realDotInterleaved(any(x).([]float64), c, 1)
+		}
 	case *complex64:
-		re, im := realDotInterleaved(view.C64ToF32(any(x).([]complex64)), c, 2)
-		*p = complex(re, im)
+		if cc, ok := any(c).([]float32); ok {
+			*p = f32.CDotReal(any(x).([]complex64), cc)
+		} else {
+			re, im := realDotInterleaved(view.C64ToF32(any(x).([]complex64)), c, 2)
+			*p = complex(re, im)
+		}
 	case *complex128:
-		re, im := realDotInterleaved(view.C128ToF64(any(x).([]complex128)), c, 2)
-		*p = complex(re, im)
+		if cc, ok := any(c).([]float64); ok {
+			*p = f64.CDotReal(any(x).([]complex128), cc)
+		} else {
+			re, im := realDotInterleaved(view.C128ToF64(any(x).([]complex128)), c, 2)
+			*p = complex(re, im)
+		}
 	default:
 		panic("dsp: realDot: no case for this width")
 	}
@@ -333,20 +352,21 @@ func realDot[T Sample, F Float](x []T, c []F) T {
 }
 
 // realDotInterleaved returns the sums of x[lanes*k+l]*c[k] for lanes l of 0
-// and, when lanes is 2, 1: a real dot product over one real channel or the two
-// channels of an interleaved complex signal.
+// and, when lanes is 2, 1: a dot product over one real channel or the two
+// channels of an interleaved complex signal, for coefficients at another
+// width. Each product is rounded before it is added, as in the kernels.
 func realDotInterleaved[E, F Float](x []E, c []F, lanes int) (re, im E) {
 	if lanes == 1 {
 		x = x[:len(c)]
 		for k, v := range c {
-			re += x[k] * E(v)
+			re += E(x[k] * E(v)) //nolint:unconvert // rounds the product; see the comment above
 		}
 		return re, 0
 	}
 	x = x[:2*len(c)]
 	for k, v := range c {
-		re += x[2*k] * E(v)
-		im += x[2*k+1] * E(v)
+		re += E(x[2*k] * E(v))   //nolint:unconvert // rounds the product; see the comment above
+		im += E(x[2*k+1] * E(v)) //nolint:unconvert // rounds the product; see the comment above
 	}
 	return re, im
 }

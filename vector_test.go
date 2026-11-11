@@ -17,6 +17,65 @@ func TestVectorCoversEveryWidth(t *testing.T) {
 	t.Run("float64", func(t *testing.T) { checkRealFamily[float64](t) })
 	t.Run("complex64", func(t *testing.T) { checkComplexFamily[complex64](t) })
 	t.Run("complex128", func(t *testing.T) { checkComplexFamily[complex128](t) })
+
+	// The FIR and dot-product kernels, reached through the types that use
+	// them, at every sample width and every coefficient form.
+	t.Run("FIR/float32", func(t *testing.T) { checkFIRKernels[float32, float32](t) })
+	t.Run("FIR/float64", func(t *testing.T) { checkFIRKernels[float64, float64](t) })
+	t.Run("FIR/complex64", func(t *testing.T) { checkFIRKernels[complex64, float32](t) })
+	t.Run("FIR/complex128", func(t *testing.T) { checkFIRKernels[complex128, float64](t) })
+}
+
+// checkFIRKernels runs FIRFilter, FIRDecimator and FIRInterpolator with native
+// taps, and with real taps for a complex T, plus SincInterpolator.Apply with
+// coefficients at T's component width F. Every value is a small integer, so
+// each result is exact.
+func checkFIRKernels[T Sample, F Float](t *testing.T) {
+	taps := []T{1, 2, 3}
+	rtaps := []F{1, 2, 3}
+	src := []T{1, 0, 0, 0, 1, 0, 0, 0}
+	// The impulse response, twice.
+	want := []T{1, 2, 3, 0, 1, 2, 3, 0}
+
+	check := func(name string, p Processor[T, T], want []T) {
+		t.Helper()
+		got := make([]T, p.OutputLen(len(src)))
+		p.Process(got, src)
+		wantSlice(t, name, got, want)
+	}
+	check("FIRFilter", must(NewFIRFilter(taps)), want)
+	check("FIRDecimator", must(NewFIRDecimator(taps, 2)), []T{1, 3, 1, 3})
+	check("FIRInterpolator", must(NewFIRInterpolator(taps, 2)), []T{1, 2, 3, 0, 0, 0, 0, 0, 1, 2, 3, 0, 0, 0, 0, 0})
+	if isComplex[T]() {
+		check("FIRFilter real taps", must(newRealCoefFIRFilterAny[T](rtaps)), want)
+	}
+
+	s := must(NewSincInterpolator[F](8, 4, 0.45, 6))
+	coeffs := []F{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	buf := make([]T, len(coeffs))
+	for i := range buf {
+		buf[i] = T(1)
+	}
+	if got := s.Apply(buf, coeffs); got != T(55) {
+		t.Errorf("Apply = %v, want 55", got)
+	}
+}
+
+// newRealCoefFIRFilterAny is NewRealCoefFIRFilter for a T known to be complex
+// but constrained only by Sample.
+func newRealCoefFIRFilterAny[T Sample, F Float](taps []F) (*FIRFilter[T], error) {
+	var f any
+	var err error
+	switch any(*new(T)).(type) {
+	case complex64:
+		f, err = NewRealCoefFIRFilter[complex64](taps)
+	case complex128:
+		f, err = NewRealCoefFIRFilter[complex128](taps)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return f.(*FIRFilter[T]), nil
 }
 
 func checkRealFamily[F Float](t *testing.T) {

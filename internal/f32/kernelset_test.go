@@ -6,32 +6,52 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
 
-// kernelNames are the per-width kernels the generic entry points in vector.go
-// dispatch to. Every architecture has to supply all of them.
-var kernelNames = []string{"Scale", "Max", "Min", "CAbs"}
+// kernelFamilies are the sets of kernels that every architecture has to
+// supply, each split across mutually exclusive files matched by glob.
+var kernelFamilies = []struct {
+	glob  string
+	names []string
+}{
+	// The per-width kernels behind dsp's generic vector functions.
+	{"math32_*.go", []string{"Scale", "Max", "Min", "CAbs"}},
+	// The FIR and dot-product leaves behind the checked wrappers in fir.go.
+	{"fir_*.go", []string{"firF32", "cfirReal", "cfir", "dotF32", "cdotReal"}},
+	// The per-sample kernels, assembly on arm and the references elsewhere.
+	{"sample_*.go", []string{"FastAtan2", "FastAtan2Fine", "Rotate90", "FMDemod", "BoxcarDecimate", "RationalBoxcarDecimate"}},
+}
 
-// TestKernelSetComplete parses the files declaring the float32 kernels, groups
-// them by build tag, and requires every group to declare the same set of names.
+// TestKernelSetComplete parses the files declaring each family of kernels,
+// groups them by build tag, and requires every group to declare the family's
+// whole set of names.
 //
-// The kernels live in six mutually exclusive files whose tags partition the
+// A family lives in mutually exclusive files whose tags partition the
 // architectures by hand, the last a negated tag nobody edits when adding a
 // kernel to one architecture. A missing name fails only on the architecture
 // nobody cross-compiles — I16ToI16LE once shipped with no stub on 386. Parsing
 // checks every group from one host; linking still catches a declaration with no
 // TEXT symbol behind it.
 func TestKernelSetComplete(t *testing.T) {
-	files, err := filepath.Glob("math32_*.go")
+	for _, fam := range kernelFamilies {
+		t.Run(fam.glob, func(t *testing.T) {
+			checkKernelFamily(t, fam.glob, fam.names)
+		})
+	}
+}
+
+func checkKernelFamily(t *testing.T, glob string, kernelNames []string) {
+	files, err := filepath.Glob(glob)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(files) == 0 {
 		// The test binary is running somewhere without the package source --
-		// under qemu-test, say. asm_stubs_test.go skips for the same reason.
-		t.Skip("no math32_*.go alongside the test binary")
+		// under qemu-test, say.
+		t.Skipf("no %s alongside the test binary", glob)
 	}
 	groups := make(map[string]map[string]bool)
 	for _, f := range files {
@@ -52,10 +72,8 @@ func TestKernelSetComplete(t *testing.T) {
 			if !ok || fn.Recv != nil {
 				continue
 			}
-			for _, k := range kernelNames {
-				if fn.Name.Name == k {
-					names[k] = true
-				}
+			if slices.Contains(kernelNames, fn.Name.Name) {
+				names[fn.Name.Name] = true
 			}
 		}
 		if len(names) == 0 {
@@ -94,11 +112,10 @@ func buildKey(name string, src []byte) string {
 }
 
 func sortedKeys(m map[string]bool) []string {
-	var out []string
-	for _, k := range kernelNames {
-		if m[k] {
-			out = append(out, k)
-		}
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
 	}
+	slices.Sort(out)
 	return out
 }

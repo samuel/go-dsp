@@ -181,8 +181,8 @@ func TestPolarDiscriminator(t *testing.T) {
 	}
 }
 
-// TestFMDemodMethod covers the exported method, which the other tests
-// reach past by calling fmDemodulateAsm directly.
+// TestFMDemodMethod checks the complex64 kernel against FastPolarDiscriminator
+// applied sample by sample.
 func TestFMDemodMethod(t *testing.T) {
 	src := []complex64{complex(0, 2), complex(1, 2), complex(-3, 7), complex(4, -9)}
 	dst := make([]float32, len(src)+1)
@@ -192,7 +192,11 @@ func TestFMDemodMethod(t *testing.T) {
 		t.Errorf("wrote past the shorter slice: %v", dst[len(src)])
 	}
 	want := make([]float32, len(src))
-	fmDemodulate(&FMDemod[complex64, float32]{}, want, src)
+	var pre complex64
+	for i, v := range src {
+		want[i] = FastPolarDiscriminator(v, pre)
+		pre = v
+	}
 	for i := range want {
 		if dst[i] != want[i] {
 			t.Errorf("[%d] = %v, want %v", i, dst[i], want[i])
@@ -200,15 +204,15 @@ func TestFMDemodMethod(t *testing.T) {
 	}
 }
 
-// TestExportedWrappers covers the exported entry points, which the tests
-// otherwise reach past by calling the asm symbols directly.
+// TestExportedWrappers checks the complex64 kernels behind Rotator90 and
+// BoxcarDecimator against the generic loops.
 func TestExportedWrappers(t *testing.T) {
 	cplx := make([]complex64, 8)
 	for i := range cplx {
 		cplx[i] = complex(float32(i), float32(-i))
 	}
 	want := slices.Clone(cplx)
-	rotate90(want)
+	rotate90From(0, want)
 	NewRotator90[complex64]().Process(cplx, cplx)
 	if !slices.Equal(cplx, want) {
 		t.Errorf("Rotator90.Process gave %v, want %v", cplx, want)

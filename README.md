@@ -112,7 +112,7 @@ y := s.At(iq, 10.25) // iq is []complex64
 ### FM demodulation
 
 ```go
-fmd := dsp.NewFMDemod[complex64, float32]() // complex64 runs the assembly
+fmd := dsp.NewFMDemod[complex64, float32]() // complex64 uses FastAtan2
 out := make([]float32, len(iq))
 fmd.Process(out, iq)
 ```
@@ -285,8 +285,14 @@ target and, on amd64, by runtime CPU features:
 2. avo-generated assembly (amd64, AVX1 and SSE2 leaves), hand-written assembly
    for 32-bit arm (NEON/VFP) and arm64 and 386
 3. scalar Go for 386 and any future port
-4. a pure-Go reference routing every assembly entry point to its fallback on
-   architectures with no assembly at all
+4. the pure-Go reference, which every other path reproduces bit for bit and
+   which runs on architectures with no assembly at all
+
+The FIR filters, decimators and interpolators share one block FIR kernel, and
+`SincInterpolator` one dot-product kernel, vectorized on every architecture
+with assembly. Each product is rounded before it is added, so results are
+identical across architectures and vector widths, except that 32-bit arm's
+NEON flushes subnormal values to zero.
 
 Benchmarks live with the code: `go test ./internal/f32 -bench .` and
 `go test ./encoding -bench .` sweep sizes from 64 to 64K floats so

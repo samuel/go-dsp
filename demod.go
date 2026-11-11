@@ -1,6 +1,10 @@
 package dsp
 
-import "math/cmplx"
+import (
+	"math/cmplx"
+
+	"samuelks.com/dsp/internal/f32"
+)
 
 // PolarDiscriminator returns the phase angle between two complex vectors
 // equivalent to arg(a * conj(b)). The returned angle is in the range [-Pi, Pi].
@@ -20,9 +24,8 @@ func PolarDiscriminator[C Complex](a, b C) float64 {
 // float32 statement. That is also why it takes complex64 rather than being
 // generic over Complex.
 func FastPolarDiscriminator(a, b complex64) float32 {
-	// Each product is rounded before it is added or subtracted. Without that,
-	// arm64 contracts the two pairs into FMSUB and FMADD, which the four separate
-	// MULF instructions in demod_arm.s cannot reproduce; see the note on quadPoly.
+	// Each product is rounded before it is added or subtracted, as in the
+	// demodulator kernel, so the two agree on every architecture.
 	return FastAtan2(
 		float32(imag(a)*real(b))-float32(real(a)*imag(b)),
 		float32(real(a)*real(b))+float32(imag(a)*imag(b)),
@@ -39,11 +42,10 @@ func FastPolarDiscriminator(a, b complex64) float32 {
 //
 // The arithmetic happens at C's width and the result is converted to F, as in
 // VAbs. complex64 uses FastPolarDiscriminator and inherits FastAtan2's error
-// bound; FMDemod[complex64, float32] runs the assembly. complex128 uses the
+// bound; FMDemod[complex64, float32] runs a kernel with VFP assembly on 32-bit
+// arm. complex128 uses the
 // exact PolarDiscriminator.
 type FMDemod[C Complex, F Float] struct {
-	// The assembly reads FMDemod[complex64, float32] at a fixed offset; see
-	// downsample_arm.go before changing this field.
 	pre C
 }
 
@@ -65,7 +67,7 @@ func (f *FMDemod[C, F]) Process(dst []F, src []C) int {
 	checkDst("FMDemod", len(dst), len(src))
 	dst = dst[:len(src)]
 	if g, ok := any(f).(*FMDemod[complex64, float32]); ok {
-		fmDemodulateAsm(g, any(dst).([]float32), any(src).([]complex64))
+		g.pre = f32.FMDemod(any(dst).([]float32), any(src).([]complex64), g.pre)
 		return len(src)
 	}
 	_, single := any(src).([]complex64)
@@ -88,17 +90,4 @@ func (f *FMDemod[C, F]) Process(dst []F, src []C) int {
 // without a phase step at the join.
 func (f *FMDemod[C, F]) Reset() {
 	f.pre = 0
-}
-
-// fmDemodulate is the Go reference behind the assembly. Demodulating is
-// FastPolarDiscriminator per sample against the previous one; its explicit
-// roundings must not be removed.
-func fmDemodulate(f *FMDemod[complex64, float32], dst []float32, src []complex64) {
-	n := min(len(src), len(dst))
-	pre := f.pre
-	for i, inp := range src[:n] {
-		dst[i] = FastPolarDiscriminator(inp, pre)
-		pre = inp
-	}
-	f.pre = pre
 }

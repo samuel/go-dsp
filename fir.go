@@ -69,7 +69,7 @@ func (f *FIRFilter[T]) Process(dst, src []T) int {
 		return 0
 	}
 	w := f.stage(src)
-	f.taps.fir(dst, 1, w, len(f.hist), 1, len(src))
+	f.taps.fir(dst[:len(src)], w, 1)
 	f.save(w, len(src))
 	return len(src)
 }
@@ -185,7 +185,9 @@ func (d *FIRDecimator[T]) Process(dst, src []T) int {
 	}
 	w := d.f.stage(src)
 	out := d.OutputLen(len(src))
-	d.f.taps.fir(dst, 1, w, len(d.f.hist)+d.phase, d.factor, out)
+	if out > 0 {
+		d.f.taps.fir(dst[:out], w[d.phase:], d.factor)
+	}
 	d.advance(len(src))
 	d.f.save(w, len(src))
 	return out
@@ -231,6 +233,9 @@ type FIRInterpolator[T Sample] struct {
 	// branches[p] holds taps p, p+factor, p+2*factor, ..., zero-padded to a
 	// common length, which is what output phase p applies to the inputs.
 	branches []coefs[T]
+	// plane receives one branch's outputs, one per input, before they are
+	// interleaved into dst.
+	plane []T
 }
 
 // NewFIRInterpolator returns an interpolator that raises the rate by factor
@@ -290,8 +295,15 @@ func (it *FIRInterpolator[T]) Process(dst, src []T) int {
 		return 0
 	}
 	w := it.f.stage(src)
+	if cap(it.plane) < len(src) {
+		it.plane = make([]T, len(src))
+	}
+	plane := it.plane[:len(src)]
 	for p := range it.branches {
-		it.branches[p].fir(dst[p:], factor, w, len(it.f.hist), 1, len(src))
+		it.branches[p].fir(plane, w, 1)
+		for i, v := range plane {
+			dst[i*factor+p] = v
+		}
 	}
 	it.f.save(w, len(src))
 	return len(src) * factor

@@ -5,69 +5,6 @@ import (
 	"testing"
 )
 
-func TestBoxcarDecimator(t *testing.T) {
-	src := []complex64{complex(0.0, 2.0), complex(1.0, 2.0), complex(-3.0, 7.0), complex(4.0, -9.0)}
-
-	// A filter each, since the state carries across calls and there is no way
-	// to rewind one.
-	dst := make([]complex64, 256)
-	copy(dst, src)
-	f, err := NewBoxcarDecimator[complex64](2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dst = dst[:boxcarDecimateAsm(f, dst, dst)]
-
-	expected := make([]complex64, 256)
-	copy(expected, src)
-	f, err = NewBoxcarDecimator[complex64](2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	expected = expected[:boxcarDecimate(f, expected, expected)]
-
-	if len(dst) != len(expected) {
-		t.Fatalf("Output doesn't match expected:\n%+v\n%+v", dst, expected)
-	}
-	for i := range dst {
-		if dst[i] != expected[i] {
-			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", dst, expected)
-		}
-	}
-}
-
-func TestRationalBoxcarDecimator(t *testing.T) {
-	src := make([]float32, 256)
-	for i := range src {
-		src[i] = float32(i - 128)
-	}
-
-	dst := make([]float32, 256)
-	copy(dst, src)
-	f, err := NewRationalBoxcarDecimator[float32](3, 2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dst = dst[:rationalBoxcarDecimateAsm(f, dst, dst)]
-
-	expected := make([]float32, 256)
-	copy(expected, src)
-	f, err = NewRationalBoxcarDecimator[float32](3, 2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	expected = expected[:rationalBoxcarDecimate(f, expected, expected)]
-
-	if len(dst) != len(expected) {
-		t.Fatalf("Output doesn't match expected: %+v != %+v", dst, expected)
-	}
-	for i := range dst {
-		if dst[i] != expected[i] {
-			t.Fatalf("Output doesn't match expected: %+v != %+v", dst, expected)
-		}
-	}
-}
-
 // TestRationalBoxcarDecimatorRipple checks that a non-integer ratio has
 // no periodic gain ripple. Each output averages either two input samples or
 // one, so scaling both by a fixed Slow/Fast used to put an alternating gain --
@@ -103,22 +40,9 @@ func BenchmarkBoxcarDecimator(b *testing.B) {
 	for i := range 256 {
 		src[i] = complex(float32(i)-128.0, -(float32(i) - 128.0))
 	}
+	dst := make([]complex64, len(src))
 	for range b.N {
-		_ = boxcarDecimateAsm(filter, src, src)
-	}
-}
-
-func BenchmarkBoxcarDecimator_Go(b *testing.B) {
-	filter, err := NewBoxcarDecimator[complex64](2)
-	if err != nil {
-		b.Fatal(err)
-	}
-	src := make([]complex64, 256)
-	for i := range 256 {
-		src[i] = complex(float32(i)-128.0, -(float32(i) - 128.0))
-	}
-	for range b.N {
-		_ = boxcarDecimate(filter, src, src)
+		filter.Process(dst, src)
 	}
 }
 
@@ -131,22 +55,9 @@ func BenchmarkRationalBoxcarDecimator(b *testing.B) {
 	for i := range 256 {
 		src[i] = float32(i) - 128.0
 	}
+	dst := make([]float32, len(src))
 	for range b.N {
-		_ = rationalBoxcarDecimateAsm(filter, src, src)
-	}
-}
-
-func BenchmarkRationalBoxcarDecimator_Go(b *testing.B) {
-	filter, err := NewRationalBoxcarDecimator[float32](3, 2)
-	if err != nil {
-		b.Fatal(err)
-	}
-	src := make([]float32, 256)
-	for i := range 256 {
-		src[i] = float32(i) - 128.0
-	}
-	for range b.N {
-		_ = rationalBoxcarDecimate(filter, src, src)
+		filter.Process(dst, src)
 	}
 }
 

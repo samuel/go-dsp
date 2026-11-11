@@ -102,26 +102,10 @@ func BenchmarkFastAtan2(b *testing.B) {
 	}
 }
 
-func BenchmarkFastAtan2_Go(b *testing.B) {
-	for range b.N {
-		for _, xy := range atanBenchTable {
-			fastAtan2(xy[1], xy[0])
-		}
-	}
-}
-
 func BenchmarkFastAtan2Fine(b *testing.B) {
 	for range b.N {
 		for _, xy := range atanBenchTable {
 			FastAtan2Fine(xy[1], xy[0])
-		}
-	}
-}
-
-func BenchmarkFastAtan2Fine_Go(b *testing.B) {
-	for range b.N {
-		for _, xy := range atanBenchTable {
-			fastAtan2Fine(xy[1], xy[0])
 		}
 	}
 }

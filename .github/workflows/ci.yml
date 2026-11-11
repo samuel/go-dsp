@@ -132,7 +132,7 @@ jobs:
           - { name: armv6, goarch: arm, goarm: "6", qemu: arm }
           - { name: armv7, goarch: arm, goarm: "7", qemu: arm }
           - { name: armv7-vfp-vector, goarch: arm, goarm: "7", qemu: arm, env: ARMVECTOR=1 }
-          # Architectures with no assembly, which run asm_fallback.go.
+          # Architectures with no assembly, which run the pure-Go references.
           - { name: riscv64, goarch: riscv64, qemu: riscv64 }
           # Big-endian, which the little-endian conversions must not assume.
           - { name: s390x, goarch: s390x, qemu: s390x }

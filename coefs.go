@@ -3,7 +3,8 @@ package dsp
 import (
 	"slices"
 
-	"samuelks.com/dsp/internal/view"
+	"samuelks.com/dsp/internal/f32"
+	"samuelks.com/dsp/internal/f64"
 )
 
 // coefs is a coefficient set held in one of two forms, the other one nil:
@@ -136,47 +137,30 @@ func polyphase[E any](taps []E, factor int) [][]E {
 	return branches
 }
 
-// fir writes n outputs of the FIR filter with these coefficients as taps:
-// dst[k*dstStep] = sum over j of taps[j]*w[at+k*srcStep-j]. w must hold
-// len(taps)-1 samples in front of at.
-func (c *coefs[T]) fir(dst []T, dstStep int, w []T, at, srcStep, n int) {
+// fir writes the outputs of the FIR filter with these coefficients as taps
+// to dst: dst[k] = sum over j of taps[j]*work[k*stride+len(taps)-1-j], with
+// the kernel's rounding. work holds len(taps)-1 samples of history in front of
+// the first output's sample.
+func (c *coefs[T]) fir(dst, work []T, stride int) {
 	switch r := c.real.(type) {
 	case []float32:
-		firReal(view.C64ToF32(any(dst).([]complex64)), dstStep, view.C64ToF32(any(w).([]complex64)), r, at, srcStep, n)
+		f32.CFIRReal(any(dst).([]complex64), any(work).([]complex64), r, stride)
 		return
 	case []float64:
-		firReal(view.C128ToF64(any(dst).([]complex128)), dstStep, view.C128ToF64(any(w).([]complex128)), r, at, srcStep, n)
+		f64.CFIRReal(any(dst).([]complex128), any(work).([]complex128), r, stride)
 		return
 	}
-	for k := range n {
-		dst[k*dstStep] = firDot(c.native, w, at+k*srcStep)
-	}
-}
-
-// firDot returns the sum of taps[j]*w[at-j], which needs len(taps)-1 samples
-// of w in front of at.
-func firDot[T Sample](taps, w []T, at int) T {
-	var sum T
-	for j, c := range taps {
-		sum += c * w[at-j]
-	}
-	return sum
-}
-
-// firReal is coefs.fir for real taps over a complex signal, with dst and w the
-// interleaved views of complex slices and every index counted in complex
-// samples.
-func firReal[E Float](dst []E, dstStep int, w, taps []E, at, srcStep, n int) {
-	for k := range n {
-		i := at + k*srcStep
-		var re, im E
-		for j, c := range taps {
-			p := 2 * (i - j)
-			re += c * w[p]
-			im += c * w[p+1]
-		}
-		o := 2 * k * dstStep
-		dst[o], dst[o+1] = re, im
+	switch t := any(c.native).(type) {
+	case []float32:
+		f32.FIR(any(dst).([]float32), any(work).([]float32), t, stride)
+	case []float64:
+		f64.FIR(any(dst).([]float64), any(work).([]float64), t, stride)
+	case []complex64:
+		f32.CFIR(any(dst).([]complex64), any(work).([]complex64), t, stride)
+	case []complex128:
+		f64.CFIR(any(dst).([]complex128), any(work).([]complex128), t, stride)
+	default:
+		panic("dsp: FIR: no kernel for this width")
 	}
 }
 

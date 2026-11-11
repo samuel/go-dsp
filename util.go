@@ -1,5 +1,7 @@
 package dsp
 
+import "samuelks.com/dsp/internal/f32"
+
 // Rotator90 multiplies successive samples by successive powers of j
 // (1, j, -1, -j), which shifts a complex signal by a quarter of the sample
 // rate. A power of j only moves and negates the real and imaginary parts, so
@@ -46,7 +48,7 @@ func (r *Rotator90[C]) Process(dst, src []C) int {
 		}
 	}
 	n := len(s) &^ 3
-	rotate90Asm(s[:n])
+	f32.Rotate90(s[:n])
 	r.phase = rotate90From(0, s[n:])
 	return len(src)
 }
@@ -77,18 +79,4 @@ func rotate90From[C Complex](phase int, samples []C) int {
 		}
 	}
 	return (phase + len(samples)) & 3
-}
-
-// rotate90 is the complex64 rotation from phase zero over whole groups of four,
-// the pattern the assembly implements and the Go reference the stubs on
-// architectures without their own version jump to. A trailing group of fewer
-// than four is left untouched, which is why callers hand it a length that is a
-// multiple of four and rotate the remainder themselves.
-func rotate90(samples []complex64) {
-	n := len(samples) &^ 3
-	for i := 0; i < n; i += 4 {
-		samples[i+1] = complex(-imag(samples[i+1]), real(samples[i+1]))
-		samples[i+2] = -samples[i+2]
-		samples[i+3] = complex(imag(samples[i+3]), -real(samples[i+3]))
-	}
 }

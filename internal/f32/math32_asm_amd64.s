@@ -633,3 +633,1103 @@ scalar:
 
 done:
 	RET
+
+DATA evenSignF32<>+0(SB)/4, $0x80000000
+DATA evenSignF32<>+4(SB)/4, $0x00000000
+DATA evenSignF32<>+8(SB)/4, $0x80000000
+DATA evenSignF32<>+12(SB)/4, $0x00000000
+DATA evenSignF32<>+16(SB)/4, $0x80000000
+DATA evenSignF32<>+20(SB)/4, $0x00000000
+DATA evenSignF32<>+24(SB)/4, $0x80000000
+DATA evenSignF32<>+28(SB)/4, $0x00000000
+GLOBL evenSignF32<>(SB), RODATA|NOPTR, $32
+
+// func firF32AVX(dst []float32, work []float32, taps []float32)
+// Requires: AVX, SSE
+TEXT ·firF32AVX(SB), NOSPLIT, $0-72
+	MOVQ dst_base+0(FP), AX
+	MOVQ dst_len+8(FP), CX
+	MOVQ work_base+24(FP), DX
+	MOVQ taps_base+48(FP), BX
+	MOVQ taps_len+56(FP), SI
+
+	// Point work at the newest sample of the first output, and count floats
+	MOVQ SI, DI
+	DECQ DI
+	SHLQ $0x02, DI
+	ADDQ DI, DX
+	XORQ DI, DI
+	MOVQ CX, R8
+	ANDQ $-32, R8
+
+block:
+	CMPQ   DI, R8
+	JGE    single
+	LEAQ   (DX)(DI*4), R9
+	MOVQ   BX, R10
+	MOVQ   SI, R11
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+
+blocktaps:
+	VBROADCASTSS (R10), Y4
+	VMULPS       (R9), Y4, Y5
+	VADDPS       Y5, Y0, Y0
+	VMULPS       32(R9), Y4, Y5
+	VADDPS       Y5, Y1, Y1
+	VMULPS       64(R9), Y4, Y5
+	VADDPS       Y5, Y2, Y2
+	VMULPS       96(R9), Y4, Y4
+	VADDPS       Y4, Y3, Y3
+	ADDQ         $0x00000004, R10
+	SUBQ         $0x00000004, R9
+	DECQ         R11
+	JNZ          blocktaps
+	VMOVUPS      Y0, (AX)(DI*4)
+	VMOVUPS      Y1, 32(AX)(DI*4)
+	VMOVUPS      Y2, 64(AX)(DI*4)
+	VMOVUPS      Y3, 96(AX)(DI*4)
+	ADDQ         $0x00000020, DI
+	JMP          block
+
+single:
+	MOVQ CX, R8
+	ANDQ $-8, R8
+
+singleloop:
+	CMPQ   DI, R8
+	JGE    tail
+	LEAQ   (DX)(DI*4), R9
+	MOVQ   BX, R10
+	MOVQ   SI, R11
+	VXORPS Y0, Y0, Y0
+
+singletaps:
+	VBROADCASTSS (R10), Y1
+	VMULPS       (R9), Y1, Y1
+	VADDPS       Y1, Y0, Y0
+	ADDQ         $0x00000004, R10
+	SUBQ         $0x00000004, R9
+	DECQ         R11
+	JNZ          singletaps
+	VMOVUPS      Y0, (AX)(DI*4)
+	ADDQ         $0x00000008, DI
+	JMP          singleloop
+
+	// Recompute the last full vector: every lane is an independent output
+tail:
+	CMPQ   DI, CX
+	JGE    done
+	CMPQ   CX, $0x00000008
+	JL     scalar
+	MOVQ   CX, DI
+	SUBQ   $0x00000008, DI
+	LEAQ   (DX)(DI*4), CX
+	MOVQ   BX, DX
+	MOVQ   SI, BX
+	VXORPS Y0, Y0, Y0
+
+tailtaps:
+	VBROADCASTSS (DX), Y1
+	VMULPS       (CX), Y1, Y1
+	VADDPS       Y1, Y0, Y0
+	ADDQ         $0x00000004, DX
+	SUBQ         $0x00000004, CX
+	DECQ         BX
+	JNZ          tailtaps
+	VMOVUPS      Y0, (AX)(DI*4)
+	JMP          done
+
+	// Fewer floats than one vector: one output at a time
+scalar:
+	VZEROUPPER
+
+scalarloop:
+	CMPQ  DI, CX
+	JGE   scalardone
+	LEAQ  (DX)(DI*4), R8
+	MOVQ  BX, R9
+	MOVQ  SI, R10
+	XORPS X0, X0
+
+scalartaps:
+	MOVSS (R8), X1
+	MULSS (R9), X1
+	ADDSS X1, X0
+	ADDQ  $0x00000004, R9
+	SUBQ  $0x00000004, R8
+	DECQ  R10
+	JNZ   scalartaps
+	MOVSS X0, (AX)(DI*4)
+	ADDQ  $0x00000001, DI
+	JMP   scalarloop
+
+scalardone:
+	RET
+
+done:
+	VZEROUPPER
+	RET
+
+// func firF32SSE2(dst []float32, work []float32, taps []float32)
+// Requires: SSE
+TEXT ·firF32SSE2(SB), NOSPLIT, $0-72
+	MOVQ dst_base+0(FP), AX
+	MOVQ dst_len+8(FP), CX
+	MOVQ work_base+24(FP), DX
+	MOVQ taps_base+48(FP), BX
+	MOVQ taps_len+56(FP), SI
+
+	// Point work at the newest sample of the first output, and count floats
+	MOVQ SI, DI
+	DECQ DI
+	SHLQ $0x02, DI
+	ADDQ DI, DX
+	XORQ DI, DI
+	MOVQ CX, R8
+	ANDQ $-16, R8
+
+block:
+	CMPQ  DI, R8
+	JGE   single
+	LEAQ  (DX)(DI*4), R9
+	MOVQ  BX, R10
+	MOVQ  SI, R11
+	XORPS X0, X0
+	XORPS X1, X1
+	XORPS X2, X2
+	XORPS X3, X3
+
+blocktaps:
+	MOVSS  (R10), X4
+	SHUFPS $0x00, X4, X4
+	MOVUPS (R9), X5
+	MULPS  X4, X5
+	ADDPS  X5, X0
+	MOVUPS 16(R9), X5
+	MULPS  X4, X5
+	ADDPS  X5, X1
+	MOVUPS 32(R9), X5
+	MULPS  X4, X5
+	ADDPS  X5, X2
+	MOVUPS 48(R9), X5
+	MULPS  X4, X5
+	ADDPS  X5, X3
+	ADDQ   $0x00000004, R10
+	SUBQ   $0x00000004, R9
+	DECQ   R11
+	JNZ    blocktaps
+	MOVUPS X0, (AX)(DI*4)
+	MOVUPS X1, 16(AX)(DI*4)
+	MOVUPS X2, 32(AX)(DI*4)
+	MOVUPS X3, 48(AX)(DI*4)
+	ADDQ   $0x00000010, DI
+	JMP    block
+
+single:
+	MOVQ CX, R8
+	ANDQ $-4, R8
+
+singleloop:
+	CMPQ  DI, R8
+	JGE   tail
+	LEAQ  (DX)(DI*4), R9
+	MOVQ  BX, R10
+	MOVQ  SI, R11
+	XORPS X0, X0
+
+singletaps:
+	MOVSS  (R10), X1
+	SHUFPS $0x00, X1, X1
+	MOVUPS (R9), X2
+	MULPS  X1, X2
+	ADDPS  X2, X0
+	ADDQ   $0x00000004, R10
+	SUBQ   $0x00000004, R9
+	DECQ   R11
+	JNZ    singletaps
+	MOVUPS X0, (AX)(DI*4)
+	ADDQ   $0x00000004, DI
+	JMP    singleloop
+
+	// Recompute the last full vector: every lane is an independent output
+tail:
+	CMPQ  DI, CX
+	JGE   done
+	CMPQ  CX, $0x00000004
+	JL    scalar
+	MOVQ  CX, DI
+	SUBQ  $0x00000004, DI
+	LEAQ  (DX)(DI*4), CX
+	MOVQ  BX, DX
+	MOVQ  SI, BX
+	XORPS X0, X0
+
+tailtaps:
+	MOVSS  (DX), X1
+	SHUFPS $0x00, X1, X1
+	MOVUPS (CX), X2
+	MULPS  X1, X2
+	ADDPS  X2, X0
+	ADDQ   $0x00000004, DX
+	SUBQ   $0x00000004, CX
+	DECQ   BX
+	JNZ    tailtaps
+	MOVUPS X0, (AX)(DI*4)
+	JMP    done
+
+	// Fewer floats than one vector: one output at a time
+scalar:
+scalarloop:
+	CMPQ  DI, CX
+	JGE   scalardone
+	LEAQ  (DX)(DI*4), R8
+	MOVQ  BX, R9
+	MOVQ  SI, R10
+	XORPS X0, X0
+
+scalartaps:
+	MOVSS (R8), X1
+	MULSS (R9), X1
+	ADDSS X1, X0
+	ADDQ  $0x00000004, R9
+	SUBQ  $0x00000004, R8
+	DECQ  R10
+	JNZ   scalartaps
+	MOVSS X0, (AX)(DI*4)
+	ADDQ  $0x00000001, DI
+	JMP   scalarloop
+
+scalardone:
+	RET
+
+done:
+	RET
+
+// func cfirRealAVX(dst []complex64, work []complex64, taps []float32)
+// Requires: AVX, SSE, SSE2
+TEXT ·cfirRealAVX(SB), NOSPLIT, $0-72
+	MOVQ dst_base+0(FP), AX
+	MOVQ dst_len+8(FP), CX
+	MOVQ work_base+24(FP), DX
+	MOVQ taps_base+48(FP), BX
+	MOVQ taps_len+56(FP), SI
+
+	// Point work at the newest sample of the first output, and count floats
+	MOVQ SI, DI
+	DECQ DI
+	SHLQ $0x03, DI
+	SHLQ $0x01, CX
+	ADDQ DI, DX
+	XORQ DI, DI
+	MOVQ CX, R8
+	ANDQ $-32, R8
+
+block:
+	CMPQ   DI, R8
+	JGE    single
+	LEAQ   (DX)(DI*4), R9
+	MOVQ   BX, R10
+	MOVQ   SI, R11
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+
+blocktaps:
+	VBROADCASTSS (R10), Y4
+	VMULPS       (R9), Y4, Y5
+	VADDPS       Y5, Y0, Y0
+	VMULPS       32(R9), Y4, Y5
+	VADDPS       Y5, Y1, Y1
+	VMULPS       64(R9), Y4, Y5
+	VADDPS       Y5, Y2, Y2
+	VMULPS       96(R9), Y4, Y4
+	VADDPS       Y4, Y3, Y3
+	ADDQ         $0x00000004, R10
+	SUBQ         $0x00000008, R9
+	DECQ         R11
+	JNZ          blocktaps
+	VMOVUPS      Y0, (AX)(DI*4)
+	VMOVUPS      Y1, 32(AX)(DI*4)
+	VMOVUPS      Y2, 64(AX)(DI*4)
+	VMOVUPS      Y3, 96(AX)(DI*4)
+	ADDQ         $0x00000020, DI
+	JMP          block
+
+single:
+	MOVQ CX, R8
+	ANDQ $-8, R8
+
+singleloop:
+	CMPQ   DI, R8
+	JGE    tail
+	LEAQ   (DX)(DI*4), R9
+	MOVQ   BX, R10
+	MOVQ   SI, R11
+	VXORPS Y0, Y0, Y0
+
+singletaps:
+	VBROADCASTSS (R10), Y1
+	VMULPS       (R9), Y1, Y1
+	VADDPS       Y1, Y0, Y0
+	ADDQ         $0x00000004, R10
+	SUBQ         $0x00000008, R9
+	DECQ         R11
+	JNZ          singletaps
+	VMOVUPS      Y0, (AX)(DI*4)
+	ADDQ         $0x00000008, DI
+	JMP          singleloop
+
+	// Recompute the last full vector: every lane is an independent output
+tail:
+	CMPQ   DI, CX
+	JGE    done
+	CMPQ   CX, $0x00000008
+	JL     scalar
+	MOVQ   CX, DI
+	SUBQ   $0x00000008, DI
+	LEAQ   (DX)(DI*4), CX
+	MOVQ   BX, DX
+	MOVQ   SI, BX
+	VXORPS Y0, Y0, Y0
+
+tailtaps:
+	VBROADCASTSS (DX), Y1
+	VMULPS       (CX), Y1, Y1
+	VADDPS       Y1, Y0, Y0
+	ADDQ         $0x00000004, DX
+	SUBQ         $0x00000008, CX
+	DECQ         BX
+	JNZ          tailtaps
+	VMOVUPS      Y0, (AX)(DI*4)
+	JMP          done
+
+	// Fewer floats than one vector: one output at a time
+scalar:
+	VZEROUPPER
+
+scalarloop:
+	CMPQ  DI, CX
+	JGE   scalardone
+	LEAQ  (DX)(DI*4), R8
+	MOVQ  BX, R9
+	MOVQ  SI, R10
+	XORPS X0, X0
+
+scalartaps:
+	MOVSD    (R8), X1
+	MOVSS    (R9), X2
+	UNPCKLPS X2, X2
+	MULPS    X2, X1
+	ADDPS    X1, X0
+	ADDQ     $0x00000004, R9
+	SUBQ     $0x00000008, R8
+	DECQ     R10
+	JNZ      scalartaps
+	MOVSD    X0, (AX)(DI*4)
+	ADDQ     $0x00000002, DI
+	JMP      scalarloop
+
+scalardone:
+	RET
+
+done:
+	VZEROUPPER
+	RET
+
+// func cfirRealSSE2(dst []complex64, work []complex64, taps []float32)
+// Requires: SSE, SSE2
+TEXT ·cfirRealSSE2(SB), NOSPLIT, $0-72
+	MOVQ dst_base+0(FP), AX
+	MOVQ dst_len+8(FP), CX
+	MOVQ work_base+24(FP), DX
+	MOVQ taps_base+48(FP), BX
+	MOVQ taps_len+56(FP), SI
+
+	// Point work at the newest sample of the first output, and count floats
+	MOVQ SI, DI
+	DECQ DI
+	SHLQ $0x03, DI
+	SHLQ $0x01, CX
+	ADDQ DI, DX
+	XORQ DI, DI
+	MOVQ CX, R8
+	ANDQ $-16, R8
+
+block:
+	CMPQ  DI, R8
+	JGE   single
+	LEAQ  (DX)(DI*4), R9
+	MOVQ  BX, R10
+	MOVQ  SI, R11
+	XORPS X0, X0
+	XORPS X1, X1
+	XORPS X2, X2
+	XORPS X3, X3
+
+blocktaps:
+	MOVSS  (R10), X4
+	SHUFPS $0x00, X4, X4
+	MOVUPS (R9), X5
+	MULPS  X4, X5
+	ADDPS  X5, X0
+	MOVUPS 16(R9), X5
+	MULPS  X4, X5
+	ADDPS  X5, X1
+	MOVUPS 32(R9), X5
+	MULPS  X4, X5
+	ADDPS  X5, X2
+	MOVUPS 48(R9), X5
+	MULPS  X4, X5
+	ADDPS  X5, X3
+	ADDQ   $0x00000004, R10
+	SUBQ   $0x00000008, R9
+	DECQ   R11
+	JNZ    blocktaps
+	MOVUPS X0, (AX)(DI*4)
+	MOVUPS X1, 16(AX)(DI*4)
+	MOVUPS X2, 32(AX)(DI*4)
+	MOVUPS X3, 48(AX)(DI*4)
+	ADDQ   $0x00000010, DI
+	JMP    block
+
+single:
+	MOVQ CX, R8
+	ANDQ $-4, R8
+
+singleloop:
+	CMPQ  DI, R8
+	JGE   tail
+	LEAQ  (DX)(DI*4), R9
+	MOVQ  BX, R10
+	MOVQ  SI, R11
+	XORPS X0, X0
+
+singletaps:
+	MOVSS  (R10), X1
+	SHUFPS $0x00, X1, X1
+	MOVUPS (R9), X2
+	MULPS  X1, X2
+	ADDPS  X2, X0
+	ADDQ   $0x00000004, R10
+	SUBQ   $0x00000008, R9
+	DECQ   R11
+	JNZ    singletaps
+	MOVUPS X0, (AX)(DI*4)
+	ADDQ   $0x00000004, DI
+	JMP    singleloop
+
+	// Recompute the last full vector: every lane is an independent output
+tail:
+	CMPQ  DI, CX
+	JGE   done
+	CMPQ  CX, $0x00000004
+	JL    scalar
+	MOVQ  CX, DI
+	SUBQ  $0x00000004, DI
+	LEAQ  (DX)(DI*4), CX
+	MOVQ  BX, DX
+	MOVQ  SI, BX
+	XORPS X0, X0
+
+tailtaps:
+	MOVSS  (DX), X1
+	SHUFPS $0x00, X1, X1
+	MOVUPS (CX), X2
+	MULPS  X1, X2
+	ADDPS  X2, X0
+	ADDQ   $0x00000004, DX
+	SUBQ   $0x00000008, CX
+	DECQ   BX
+	JNZ    tailtaps
+	MOVUPS X0, (AX)(DI*4)
+	JMP    done
+
+	// Fewer floats than one vector: one output at a time
+scalar:
+scalarloop:
+	CMPQ  DI, CX
+	JGE   scalardone
+	LEAQ  (DX)(DI*4), R8
+	MOVQ  BX, R9
+	MOVQ  SI, R10
+	XORPS X0, X0
+
+scalartaps:
+	MOVSD    (R8), X1
+	MOVSS    (R9), X2
+	UNPCKLPS X2, X2
+	MULPS    X2, X1
+	ADDPS    X1, X0
+	ADDQ     $0x00000004, R9
+	SUBQ     $0x00000008, R8
+	DECQ     R10
+	JNZ      scalartaps
+	MOVSD    X0, (AX)(DI*4)
+	ADDQ     $0x00000002, DI
+	JMP      scalarloop
+
+scalardone:
+	RET
+
+done:
+	RET
+
+// func cfirAVX(dst []complex64, work []complex64, taps []complex64)
+// Requires: AVX, SSE, SSE2
+TEXT ·cfirAVX(SB), NOSPLIT, $0-72
+	MOVQ dst_base+0(FP), AX
+	MOVQ dst_len+8(FP), CX
+	MOVQ work_base+24(FP), DX
+	MOVQ taps_base+48(FP), BX
+	MOVQ taps_len+56(FP), SI
+
+	// Point work at the newest sample of the first output, and count floats
+	MOVQ    SI, DI
+	DECQ    DI
+	SHLQ    $0x03, DI
+	SHLQ    $0x01, CX
+	ADDQ    DI, DX
+	VMOVUPS evenSignF32<>+0(SB), Y0
+	XORQ    DI, DI
+	MOVQ    CX, R8
+	ANDQ    $-32, R8
+
+block:
+	CMPQ   DI, R8
+	JGE    single
+	LEAQ   (DX)(DI*4), R9
+	MOVQ   BX, R10
+	MOVQ   SI, R11
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+	VXORPS Y4, Y4, Y4
+
+blocktaps:
+	VBROADCASTSS (R10), Y5
+	VBROADCASTSS 4(R10), Y6
+	VXORPS       Y0, Y6, Y6
+	VMULPS       (R9), Y5, Y7
+	VPERMILPS    $0xb1, (R9), Y8
+	VMULPS       Y8, Y6, Y8
+	VADDPS       Y8, Y7, Y7
+	VADDPS       Y7, Y1, Y1
+	VMULPS       32(R9), Y5, Y7
+	VPERMILPS    $0xb1, 32(R9), Y8
+	VMULPS       Y8, Y6, Y8
+	VADDPS       Y8, Y7, Y7
+	VADDPS       Y7, Y2, Y2
+	VMULPS       64(R9), Y5, Y7
+	VPERMILPS    $0xb1, 64(R9), Y8
+	VMULPS       Y8, Y6, Y8
+	VADDPS       Y8, Y7, Y7
+	VADDPS       Y7, Y3, Y3
+	VMULPS       96(R9), Y5, Y5
+	VPERMILPS    $0xb1, 96(R9), Y7
+	VMULPS       Y7, Y6, Y7
+	VADDPS       Y7, Y5, Y5
+	VADDPS       Y5, Y4, Y4
+	ADDQ         $0x00000008, R10
+	SUBQ         $0x00000008, R9
+	DECQ         R11
+	JNZ          blocktaps
+	VMOVUPS      Y1, (AX)(DI*4)
+	VMOVUPS      Y2, 32(AX)(DI*4)
+	VMOVUPS      Y3, 64(AX)(DI*4)
+	VMOVUPS      Y4, 96(AX)(DI*4)
+	ADDQ         $0x00000020, DI
+	JMP          block
+
+single:
+	MOVQ CX, R8
+	ANDQ $-8, R8
+
+singleloop:
+	CMPQ   DI, R8
+	JGE    tail
+	LEAQ   (DX)(DI*4), R9
+	MOVQ   BX, R10
+	MOVQ   SI, R11
+	VXORPS Y1, Y1, Y1
+
+singletaps:
+	VBROADCASTSS (R10), Y2
+	VBROADCASTSS 4(R10), Y3
+	VXORPS       Y0, Y3, Y3
+	VMULPS       (R9), Y2, Y2
+	VPERMILPS    $0xb1, (R9), Y4
+	VMULPS       Y4, Y3, Y4
+	VADDPS       Y4, Y2, Y2
+	VADDPS       Y2, Y1, Y1
+	ADDQ         $0x00000008, R10
+	SUBQ         $0x00000008, R9
+	DECQ         R11
+	JNZ          singletaps
+	VMOVUPS      Y1, (AX)(DI*4)
+	ADDQ         $0x00000008, DI
+	JMP          singleloop
+
+	// Recompute the last full vector: every lane is an independent output
+tail:
+	CMPQ   DI, CX
+	JGE    done
+	CMPQ   CX, $0x00000008
+	JL     scalar
+	MOVQ   CX, DI
+	SUBQ   $0x00000008, DI
+	LEAQ   (DX)(DI*4), CX
+	MOVQ   BX, DX
+	MOVQ   SI, BX
+	VXORPS Y1, Y1, Y1
+
+tailtaps:
+	VBROADCASTSS (DX), Y2
+	VBROADCASTSS 4(DX), Y3
+	VXORPS       Y0, Y3, Y3
+	VMULPS       (CX), Y2, Y2
+	VPERMILPS    $0xb1, (CX), Y4
+	VMULPS       Y4, Y3, Y4
+	VADDPS       Y4, Y2, Y2
+	VADDPS       Y2, Y1, Y1
+	ADDQ         $0x00000008, DX
+	SUBQ         $0x00000008, CX
+	DECQ         BX
+	JNZ          tailtaps
+	VMOVUPS      Y1, (AX)(DI*4)
+	JMP          done
+
+	// Fewer floats than one vector: one output at a time
+scalar:
+	VZEROUPPER
+	MOVUPS evenSignF32<>+0(SB), X0
+
+scalarloop:
+	CMPQ  DI, CX
+	JGE   scalardone
+	LEAQ  (DX)(DI*4), R8
+	MOVQ  BX, R9
+	MOVQ  SI, R10
+	XORPS X1, X1
+
+scalartaps:
+	MOVSD  (R8), X2
+	MOVAPS X2, X3
+	SHUFPS $0xb1, X3, X3
+	MOVSS  (R9), X4
+	SHUFPS $0x00, X4, X4
+	MOVSS  4(R9), X5
+	SHUFPS $0x00, X5, X5
+	XORPS  X0, X5
+	MULPS  X4, X2
+	MULPS  X5, X3
+	ADDPS  X3, X2
+	ADDPS  X2, X1
+	ADDQ   $0x00000008, R9
+	SUBQ   $0x00000008, R8
+	DECQ   R10
+	JNZ    scalartaps
+	MOVSD  X1, (AX)(DI*4)
+	ADDQ   $0x00000002, DI
+	JMP    scalarloop
+
+scalardone:
+	RET
+
+done:
+	VZEROUPPER
+	RET
+
+// func cfirSSE2(dst []complex64, work []complex64, taps []complex64)
+// Requires: SSE, SSE2
+TEXT ·cfirSSE2(SB), NOSPLIT, $0-72
+	MOVQ dst_base+0(FP), AX
+	MOVQ dst_len+8(FP), CX
+	MOVQ work_base+24(FP), DX
+	MOVQ taps_base+48(FP), BX
+	MOVQ taps_len+56(FP), SI
+
+	// Point work at the newest sample of the first output, and count floats
+	MOVQ   SI, DI
+	DECQ   DI
+	SHLQ   $0x03, DI
+	SHLQ   $0x01, CX
+	ADDQ   DI, DX
+	MOVUPS evenSignF32<>+0(SB), X0
+	XORQ   DI, DI
+	MOVQ   CX, R8
+	ANDQ   $-16, R8
+
+block:
+	CMPQ  DI, R8
+	JGE   single
+	LEAQ  (DX)(DI*4), R9
+	MOVQ  BX, R10
+	MOVQ  SI, R11
+	XORPS X1, X1
+	XORPS X2, X2
+	XORPS X3, X3
+	XORPS X4, X4
+
+blocktaps:
+	MOVSS  (R10), X5
+	SHUFPS $0x00, X5, X5
+	MOVSS  4(R10), X6
+	SHUFPS $0x00, X6, X6
+	XORPS  X0, X6
+	MOVUPS (R9), X7
+	MOVAPS X7, X8
+	SHUFPS $0xb1, X8, X8
+	MULPS  X5, X7
+	MULPS  X6, X8
+	ADDPS  X8, X7
+	ADDPS  X7, X1
+	MOVUPS 16(R9), X7
+	MOVAPS X7, X8
+	SHUFPS $0xb1, X8, X8
+	MULPS  X5, X7
+	MULPS  X6, X8
+	ADDPS  X8, X7
+	ADDPS  X7, X2
+	MOVUPS 32(R9), X7
+	MOVAPS X7, X8
+	SHUFPS $0xb1, X8, X8
+	MULPS  X5, X7
+	MULPS  X6, X8
+	ADDPS  X8, X7
+	ADDPS  X7, X3
+	MOVUPS 48(R9), X7
+	MOVAPS X7, X8
+	SHUFPS $0xb1, X8, X8
+	MULPS  X5, X7
+	MULPS  X6, X8
+	ADDPS  X8, X7
+	ADDPS  X7, X4
+	ADDQ   $0x00000008, R10
+	SUBQ   $0x00000008, R9
+	DECQ   R11
+	JNZ    blocktaps
+	MOVUPS X1, (AX)(DI*4)
+	MOVUPS X2, 16(AX)(DI*4)
+	MOVUPS X3, 32(AX)(DI*4)
+	MOVUPS X4, 48(AX)(DI*4)
+	ADDQ   $0x00000010, DI
+	JMP    block
+
+single:
+	MOVQ CX, R8
+	ANDQ $-4, R8
+
+singleloop:
+	CMPQ  DI, R8
+	JGE   tail
+	LEAQ  (DX)(DI*4), R9
+	MOVQ  BX, R10
+	MOVQ  SI, R11
+	XORPS X1, X1
+
+singletaps:
+	MOVSS  (R10), X2
+	SHUFPS $0x00, X2, X2
+	MOVSS  4(R10), X3
+	SHUFPS $0x00, X3, X3
+	XORPS  X0, X3
+	MOVUPS (R9), X4
+	MOVAPS X4, X5
+	SHUFPS $0xb1, X5, X5
+	MULPS  X2, X4
+	MULPS  X3, X5
+	ADDPS  X5, X4
+	ADDPS  X4, X1
+	ADDQ   $0x00000008, R10
+	SUBQ   $0x00000008, R9
+	DECQ   R11
+	JNZ    singletaps
+	MOVUPS X1, (AX)(DI*4)
+	ADDQ   $0x00000004, DI
+	JMP    singleloop
+
+	// Recompute the last full vector: every lane is an independent output
+tail:
+	CMPQ  DI, CX
+	JGE   done
+	CMPQ  CX, $0x00000004
+	JL    scalar
+	MOVQ  CX, DI
+	SUBQ  $0x00000004, DI
+	LEAQ  (DX)(DI*4), CX
+	MOVQ  BX, DX
+	MOVQ  SI, BX
+	XORPS X1, X1
+
+tailtaps:
+	MOVSS  (DX), X2
+	SHUFPS $0x00, X2, X2
+	MOVSS  4(DX), X3
+	SHUFPS $0x00, X3, X3
+	XORPS  X0, X3
+	MOVUPS (CX), X4
+	MOVAPS X4, X5
+	SHUFPS $0xb1, X5, X5
+	MULPS  X2, X4
+	MULPS  X3, X5
+	ADDPS  X5, X4
+	ADDPS  X4, X1
+	ADDQ   $0x00000008, DX
+	SUBQ   $0x00000008, CX
+	DECQ   BX
+	JNZ    tailtaps
+	MOVUPS X1, (AX)(DI*4)
+	JMP    done
+
+	// Fewer floats than one vector: one output at a time
+scalar:
+	MOVUPS evenSignF32<>+0(SB), X0
+
+scalarloop:
+	CMPQ  DI, CX
+	JGE   scalardone
+	LEAQ  (DX)(DI*4), R8
+	MOVQ  BX, R9
+	MOVQ  SI, R10
+	XORPS X1, X1
+
+scalartaps:
+	MOVSD  (R8), X2
+	MOVAPS X2, X3
+	SHUFPS $0xb1, X3, X3
+	MOVSS  (R9), X4
+	SHUFPS $0x00, X4, X4
+	MOVSS  4(R9), X5
+	SHUFPS $0x00, X5, X5
+	XORPS  X0, X5
+	MULPS  X4, X2
+	MULPS  X5, X3
+	ADDPS  X3, X2
+	ADDPS  X2, X1
+	ADDQ   $0x00000008, R9
+	SUBQ   $0x00000008, R8
+	DECQ   R10
+	JNZ    scalartaps
+	MOVSD  X1, (AX)(DI*4)
+	ADDQ   $0x00000002, DI
+	JMP    scalarloop
+
+scalardone:
+	RET
+
+done:
+	RET
+
+// func dotF32AVX(x []float32, c []float32) float32
+// Requires: AVX, SSE
+TEXT ·dotF32AVX(SB), NOSPLIT, $0-52
+	MOVQ   x_base+0(FP), AX
+	MOVQ   c_base+24(FP), CX
+	MOVQ   c_len+32(FP), DX
+	VXORPS Y0, Y0, Y0
+	XORQ   BX, BX
+	MOVQ   DX, SI
+	ANDQ   $-8, SI
+
+block:
+	CMPQ    BX, SI
+	JGE     reduce
+	VMOVUPS (CX)(BX*4), Y1
+	VMULPS  (AX)(BX*4), Y1, Y1
+	VADDPS  Y1, Y0, Y0
+	ADDQ    $0x00000008, BX
+	JMP     block
+
+reduce:
+	VEXTRACTF128 $0x01, Y0, X1
+	VADDPS       X1, X0, X0
+	VZEROUPPER
+	MOVHLPS      X0, X2
+	ADDPS        X2, X0
+	MOVAPS       X0, X1
+	SHUFPS       $0x55, X1, X1
+	ADDSS        X1, X0
+
+tail:
+	CMPQ  BX, DX
+	JGE   done
+	MOVSS (AX)(BX*4), X1
+	MULSS (CX)(BX*4), X1
+	ADDSS X1, X0
+	INCQ  BX
+	JMP   tail
+
+done:
+	MOVSS X0, ret+48(FP)
+	RET
+
+// func dotF32SSE2(x []float32, c []float32) float32
+// Requires: SSE
+TEXT ·dotF32SSE2(SB), NOSPLIT, $0-52
+	MOVQ  x_base+0(FP), AX
+	MOVQ  c_base+24(FP), CX
+	MOVQ  c_len+32(FP), DX
+	XORPS X0, X0
+	XORPS X1, X1
+	XORQ  BX, BX
+	MOVQ  DX, SI
+	ANDQ  $-8, SI
+
+block:
+	CMPQ   BX, SI
+	JGE    reduce
+	MOVUPS (CX)(BX*4), X2
+	MOVUPS (AX)(BX*4), X3
+	MULPS  X2, X3
+	ADDPS  X3, X0
+	MOVUPS 16(CX)(BX*4), X2
+	MOVUPS 16(AX)(BX*4), X3
+	MULPS  X2, X3
+	ADDPS  X3, X1
+	ADDQ   $0x00000008, BX
+	JMP    block
+
+reduce:
+	ADDPS   X1, X0
+	MOVHLPS X0, X4
+	ADDPS   X4, X0
+	MOVAPS  X0, X1
+	SHUFPS  $0x55, X1, X1
+	ADDSS   X1, X0
+
+tail:
+	CMPQ  BX, DX
+	JGE   done
+	MOVSS (AX)(BX*4), X1
+	MULSS (CX)(BX*4), X1
+	ADDSS X1, X0
+	INCQ  BX
+	JMP   tail
+
+done:
+	MOVSS X0, ret+48(FP)
+	RET
+
+// func cdotRealAVX(x []complex64, c []float32) complex64
+// Requires: AVX, SSE, SSE2
+TEXT ·cdotRealAVX(SB), NOSPLIT, $0-56
+	MOVQ   x_base+0(FP), AX
+	MOVQ   c_base+24(FP), CX
+	MOVQ   c_len+32(FP), DX
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	XORQ   BX, BX
+	MOVQ   DX, SI
+	ANDQ   $-8, SI
+
+block:
+	CMPQ       BX, SI
+	JGE        reduce
+	VMOVUPS    (CX)(BX*4), Y2
+	VUNPCKLPS  Y2, Y2, Y3
+	VUNPCKHPS  Y2, Y2, Y2
+	VPERM2F128 $0x20, Y2, Y3, Y5
+	VPERM2F128 $0x31, Y2, Y3, Y2
+	VMULPS     (AX)(BX*8), Y5, Y3
+	VADDPS     Y3, Y0, Y0
+	VMULPS     32(AX)(BX*8), Y2, Y2
+	VADDPS     Y2, Y1, Y1
+	ADDQ       $0x00000008, BX
+	JMP        block
+
+reduce:
+	VADDPS       Y1, Y0, Y0
+	VEXTRACTF128 $0x01, Y0, X1
+	VADDPS       X1, X0, X0
+	VZEROUPPER
+	MOVHLPS      X0, X4
+	ADDPS        X4, X0
+
+	// The real part is in lane 0 and the imaginary part in lane 1
+tail:
+	CMPQ     BX, DX
+	JGE      done
+	MOVSD    (AX)(BX*8), X1
+	MOVSS    (CX)(BX*4), X2
+	UNPCKLPS X2, X2
+	MULPS    X2, X1
+	ADDPS    X1, X0
+	INCQ     BX
+	JMP      tail
+
+done:
+	MOVSS  X0, ret_real+48(FP)
+	MOVAPS X0, X0
+	SHUFPS $0x55, X0, X0
+	MOVSS  X0, ret_imag+52(FP)
+	RET
+
+// func cdotRealSSE2(x []complex64, c []float32) complex64
+// Requires: SSE, SSE2
+TEXT ·cdotRealSSE2(SB), NOSPLIT, $0-56
+	MOVQ  x_base+0(FP), AX
+	MOVQ  c_base+24(FP), CX
+	MOVQ  c_len+32(FP), DX
+	XORPS X0, X0
+	XORPS X1, X1
+	XORPS X2, X2
+	XORPS X3, X3
+	XORQ  BX, BX
+	MOVQ  DX, SI
+	ANDQ  $-8, SI
+
+block:
+	CMPQ     BX, SI
+	JGE      reduce
+	MOVUPS   (CX)(BX*4), X4
+	MOVAPS   X4, X5
+	UNPCKLPS X5, X5
+	UNPCKHPS X4, X4
+	MOVUPS   (AX)(BX*8), X6
+	MULPS    X5, X6
+	ADDPS    X6, X0
+	MOVUPS   16(AX)(BX*8), X5
+	MULPS    X4, X5
+	ADDPS    X5, X1
+	MOVUPS   16(CX)(BX*4), X4
+	MOVAPS   X4, X5
+	UNPCKLPS X5, X5
+	UNPCKHPS X4, X4
+	MOVUPS   32(AX)(BX*8), X6
+	MULPS    X5, X6
+	ADDPS    X6, X2
+	MOVUPS   48(AX)(BX*8), X5
+	MULPS    X4, X5
+	ADDPS    X5, X3
+	ADDQ     $0x00000008, BX
+	JMP      block
+
+reduce:
+	ADDPS   X2, X0
+	ADDPS   X3, X1
+	ADDPS   X1, X0
+	MOVHLPS X0, X7
+	ADDPS   X7, X0
+
+	// The real part is in lane 0 and the imaginary part in lane 1
+tail:
+	CMPQ     BX, DX
+	JGE      done
+	MOVSD    (AX)(BX*8), X1
+	MOVSS    (CX)(BX*4), X2
+	UNPCKLPS X2, X2
+	MULPS    X2, X1
+	ADDPS    X1, X0
+	INCQ     BX
+	JMP      tail
+
+done:
+	MOVSS  X0, ret_real+48(FP)
+	MOVAPS X0, X0
+	SHUFPS $0x55, X0, X0
+	MOVSS  X0, ret_imag+52(FP)
+	RET

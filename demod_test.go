@@ -16,25 +16,6 @@ func init() {
 	}
 }
 
-func TestFMDemodulation(t *testing.T) {
-	filter := &FMDemod[complex64, float32]{}
-	src := []complex64{complex(0.0, 2.0), complex(1.0, 2.0), complex(-3.0, 7.0), complex(4.0, -9.0)}
-	dst := make([]float32, len(src))
-	filter.pre = 0.0
-	fmDemodulateAsm(filter, dst, src)
-	expected := make([]float32, len(src))
-	filter.pre = 0.0
-	fmDemodulate(filter, expected, src)
-	if len(dst) != len(expected) {
-		t.Fatalf("Output doesn't match expected:\n%+v\n%+v", dst, expected)
-	}
-	for i := range dst {
-		if dst[i] != expected[i] {
-			t.Fatalf("Output doesn't match expected:\n%+v\n%+v", dst, expected)
-		}
-	}
-}
-
 func BenchmarkFastPolarDiscriminator(b *testing.B) {
 	x := complex(float32(1), float32(2))
 	y := complex(float32(-3), float32(9))
@@ -44,44 +25,12 @@ func BenchmarkFastPolarDiscriminator(b *testing.B) {
 }
 
 func BenchmarkFMDemodulation(b *testing.B) {
-	filter := &FMDemod[complex64, float32]{}
+	filter := NewFMDemod[complex64, float32]()
 	dst := make([]float32, benchSize)
 	b.SetBytes(benchSize)
 	b.ResetTimer()
 	for range b.N {
-		fmDemodulateAsm(filter, dst, demodBenchSamples)
-	}
-}
-
-func BenchmarkFMDemodulation_Go(b *testing.B) {
-	filter := &FMDemod[complex64, float32]{}
-	dst := make([]float32, benchSize)
-	b.SetBytes(benchSize)
-	b.ResetTimer()
-	for range b.N {
-		fmDemodulate(filter, dst, demodBenchSamples)
-	}
-}
-
-// TestFMDemodulateShortOutput checks that the kernel processes
-// min(len(dst), len(src)) samples and never writes past dst.
-func TestFMDemodulateShortOutput(t *testing.T) {
-	src := []complex64{complex(0, 2), complex(1, 2), complex(-3, 7), complex(4, -9), complex(1, 1)}
-	for n := range len(src) + 2 {
-		// One extra element to catch a write past the end.
-		dst := make([]float32, n+1)
-		fmDemodulateAsm(&FMDemod[complex64, float32]{}, dst[:n], src)
-		if dst[n] != 0 {
-			t.Fatalf("n=%d: wrote past the end: %v", n, dst)
-		}
-
-		ref := make([]float32, n)
-		fmDemodulate(&FMDemod[complex64, float32]{}, ref, src)
-		for i := range ref {
-			if dst[i] != ref[i] {
-				t.Fatalf("n=%d [%d]: asm %v, go %v", n, i, dst[i], ref[i])
-			}
-		}
+		filter.Process(dst, demodBenchSamples)
 	}
 }
 
@@ -102,7 +51,7 @@ func TestFMDemodReset(t *testing.T) {
 	}
 }
 
-// TestFMDemodWidths checks the paths that do not run the assembly: complex128
+// TestFMDemodWidths checks the paths that do not run the kernel: complex128
 // is the exact discriminator, and a mismatched output width is the input
 // width's answer converted.
 func TestFMDemodWidths(t *testing.T) {

@@ -1,16 +1,19 @@
 package dsp
 
-import "errors"
+import (
+	"errors"
+
+	"samuelks.com/dsp/internal/f32"
+)
 
 // BoxcarDecimator decimates by a whole-number factor, summing each group of
 // that many consecutive samples into one output. That boxcar average is a
 // cheap low-pass, so it also serves as the anti-alias filter. The sum is not
 // divided by the factor, so the filter has a gain of the factor.
 //
-// complex64 runs the assembly; the other widths run the same loop in Go.
+// complex64 runs a kernel with VFP assembly on 32-bit arm; the other widths
+// run the same loop in Go.
 type BoxcarDecimator[T Sample] struct {
-	// The assembly reads BoxcarDecimator[complex64] at fixed offsets; see
-	// downsample_arm.go before changing these fields.
 	factor int
 
 	now       T
@@ -43,7 +46,9 @@ func (f *BoxcarDecimator[T]) OutputLen(inputs int) int {
 func (f *BoxcarDecimator[T]) Process(dst, src []T) int {
 	checkDst("BoxcarDecimator", len(dst), f.OutputLen(len(src)))
 	if c, ok := any(f).(*BoxcarDecimator[complex64]); ok {
-		return boxcarDecimateAsm(c, any(dst).([]complex64), any(src).([]complex64))
+		var n int
+		n, c.now, c.prevIndex = f32.BoxcarDecimate(any(dst).([]complex64), any(src).([]complex64), c.factor, c.now, c.prevIndex)
+		return n
 	}
 	return boxcarDecimateGeneric(f, dst, src)
 }
@@ -56,12 +61,6 @@ func (f *BoxcarDecimator[T]) Ratio() (in, out int) { return f.factor, 1 }
 func (f *BoxcarDecimator[T]) Reset() {
 	f.now = 0
 	f.prevIndex = 0
-}
-
-// boxcarDecimate is the Go reference behind the complex64 assembly, and the
-// fallback the assembly stubs jump to.
-func boxcarDecimate(f *BoxcarDecimator[complex64], dst, src []complex64) int {
-	return boxcarDecimateGeneric(f, dst, src)
 }
 
 func boxcarDecimateGeneric[T Sample](f *BoxcarDecimator[T], dst, src []T) int {
@@ -85,10 +84,9 @@ func boxcarDecimateGeneric[T Sample](f *BoxcarDecimator[T], dst, src []T) int {
 // samples that fall in each output period, but it divides each sum by the
 // number that went into it, so the filter has unity gain.
 //
-// float32 runs the assembly; the other widths run the same loop in Go.
+// float32 runs a kernel with VFP assembly on 32-bit arm; the other widths run
+// the same loop in Go.
 type RationalBoxcarDecimator[T Sample] struct {
-	// The assembly reads RationalBoxcarDecimator[float32] at fixed offsets;
-	// see downsample_arm.go before changing these fields.
 	fast, slow int
 
 	sum       T
@@ -125,7 +123,10 @@ func (f *RationalBoxcarDecimator[T]) OutputLen(inputs int) int {
 func (f *RationalBoxcarDecimator[T]) Process(dst, src []T) int {
 	checkDst("RationalBoxcarDecimator", len(dst), f.OutputLen(len(src)))
 	if r, ok := any(f).(*RationalBoxcarDecimator[float32]); ok {
-		return rationalBoxcarDecimateAsm(r, any(dst).([]float32), any(src).([]float32))
+		var n int
+		n, r.sum, r.count, r.prevIndex = f32.RationalBoxcarDecimate(any(dst).([]float32), any(src).([]float32),
+			r.fast, r.slow, r.sum, r.count, r.prevIndex)
+		return n
 	}
 	return rationalBoxcarDecimateGeneric(f, dst, src)
 }
@@ -142,12 +143,6 @@ func (f *RationalBoxcarDecimator[T]) Reset() {
 	f.sum = 0
 	f.count = 0
 	f.prevIndex = 0
-}
-
-// rationalBoxcarDecimate is the Go reference behind the float32 assembly, and
-// the fallback the assembly stubs jump to. See boxcarDecimate.
-func rationalBoxcarDecimate(f *RationalBoxcarDecimator[float32], dst, src []float32) int {
-	return rationalBoxcarDecimateGeneric(f, dst, src)
 }
 
 func rationalBoxcarDecimateGeneric[T Sample](f *RationalBoxcarDecimator[T], dst, src []T) int {

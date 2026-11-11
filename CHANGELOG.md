@@ -32,7 +32,10 @@ Go 1.27.
   multiplies, and `RealCoefficients` on every linear time-invariant type.
 - Assembly for 386, amd64 (SSE2, SSE4.1 and AVX, chosen at run time), arm
   (NEON and VFP) and arm64, with a pure-Go implementation on every other
-  architecture and an optional `GOEXPERIMENT=simd` path.
+  architecture and an optional `GOEXPERIMENT=simd` path. The FIR filters,
+  decimators, interpolators and `SincInterpolator` run vectorized block FIR
+  and dot-product kernels whose results are identical on every architecture
+  apart from subnormals, which 32-bit arm's NEON flushes to zero.
 - `encoding`: sample-format conversions named `<source>To<destination>`,
   which never scale.
 - `ax25`: AX.25/HDLC frame decoding and the CRC-16/X-25 frame check.

@@ -36,6 +36,23 @@ func main() {
 	absAVX()
 	absSSE2()
 
+	signMask := evenSignMask()
+	for _, k := range []firKind{
+		{"firF32", "func(dst, work, taps []float32)", "FIR", 1, false},
+		{"cfirReal", "func(dst, work []complex64, taps []float32)", "CFIRReal", 2, false},
+		{"cfir", "func(dst, work, taps []complex64)", "CFIR", 2, true},
+	} {
+		for _, isa := range []vecISA{avx, sse2} {
+			firLeaf(k, isa, signMask)
+		}
+	}
+	for _, isa := range []vecISA{avx, sse2} {
+		dotLeaf(isa)
+	}
+	for _, isa := range []vecISA{avx, sse2} {
+		cdotRealLeaf(isa)
+	}
+
 	Generate()
 }
 
@@ -439,4 +456,517 @@ func absSSE2() {
 			return re
 		},
 		func(src VecVirtual, dst Mem) { MOVUPS(src, dst) })
+}
+
+// vecISA is one of the two vector widths the FIR and dot-product leaves are
+// generated for.
+type vecISA struct {
+	name  string // function name suffix
+	lanes int    // float32 per vector
+}
+
+var (
+	avx  = vecISA{"AVX", 8}
+	sse2 = vecISA{"SSE2", 4}
+)
+
+func (v vecISA) isAVX() bool { return v.lanes == 8 }
+
+func (v vecISA) vec() VecVirtual {
+	if v.isAVX() {
+		return YMM()
+	}
+	return XMM()
+}
+
+func (v vecISA) zero(dst VecVirtual) {
+	if v.isAVX() {
+		VXORPS(dst, dst, dst)
+		return
+	}
+	XORPS(dst, dst)
+}
+
+func (v vecISA) bcast(src Mem, dst VecVirtual) {
+	if v.isAVX() {
+		avxBroadcast(src, dst)
+		return
+	}
+	sseBroadcast(src, dst)
+}
+
+// load is an unaligned load.
+func (v vecISA) load(src Mem, dst VecVirtual) {
+	if v.isAVX() {
+		VMOVUPS(src, dst)
+		return
+	}
+	MOVUPS(src, dst)
+}
+
+func (v vecISA) store(src VecVirtual, dst Mem) {
+	if v.isAVX() {
+		VMOVUPS(src, dst)
+		return
+	}
+	MOVUPS(src, dst)
+}
+
+// mulMem sets dst = s * m. SSE's MULPS faults on an unaligned memory operand,
+// so that form loads first.
+func (v vecISA) mulMem(m Mem, s, dst VecVirtual) {
+	if v.isAVX() {
+		VMULPS(m, s, dst)
+		return
+	}
+	MOVUPS(m, dst)
+	MULPS(s, dst)
+}
+
+func (v vecISA) add(src, dst VecVirtual) {
+	if v.isAVX() {
+		VADDPS(src, dst, dst)
+		return
+	}
+	ADDPS(src, dst)
+}
+
+// evenSignMask defines 32 bytes with the sign bit set in every even float32
+// lane: the real lanes of interleaved complex data.
+func evenSignMask() Mem {
+	m := GLOBL("evenSignF32", RODATA|NOPTR)
+	for i := range 8 {
+		var v uint32
+		if i%2 == 0 {
+			v = 0x80000000
+		}
+		DATA(4*i, U32(v))
+	}
+	return m
+}
+
+// firKind describes one of the three FIR leaves.
+type firKind struct {
+	name string // function name prefix
+	sig  string
+	doc  string // the wrapper in fir.go it implements
+	unit int    // float32 per sample and per output
+	cplx bool   // complex taps
+}
+
+// firVecs is the number of output vectors per pass over the taps. Four
+// independent accumulator chains cover the latency of the adds.
+const firVecs = 4
+
+// firLeaf emits a stride-1 FIR over the float32 view of dst and work. Each
+// vector lane is one output float, accumulating over the taps in order, so the
+// result is the reference's whatever the width. A complex sample is two
+// adjacent lanes, so with real taps the complex filter is the real one with
+// samples twice as far apart.
+func firLeaf(k firKind, isa vecISA, signMask Mem) {
+	name := k.name + isa.name
+	TEXT(name, NOSPLIT, k.sig)
+	Doc(fmt.Sprintf("%s implements %s for stride 1 using %s.", name, k.doc, isa.name))
+
+	dst := Load(Param("dst").Base(), GP64())
+	nf := Load(Param("dst").Len(), GP64())
+	work := Load(Param("work").Base(), GP64())
+	taps := Load(Param("taps").Base(), GP64())
+	ntaps := Load(Param("taps").Len(), GP64())
+
+	f := firFrame{k: k, isa: isa, dst: dst, work: work, taps: taps, ntaps: ntaps}
+
+	Comment("Point work at the newest sample of the first output, and count floats")
+	hist := GP64()
+	MOVQ(ntaps, hist)
+	DECQ(hist)
+	if k.unit == 2 {
+		SHLQ(U8(3), hist)
+		SHLQ(U8(1), nf)
+	} else {
+		SHLQ(U8(2), hist)
+	}
+	ADDQ(hist, work)
+
+	if k.cplx {
+		f.mask = isa.vec()
+		isa.load(signMask, f.mask)
+	}
+
+	lanes := isa.lanes
+	i := GP64()
+	XORQ(i, i)
+	end := GP64()
+	MOVQ(nf, end)
+	ANDQ(I32(^(firVecs*lanes - 1)), end)
+
+	Label("block")
+	CMPQ(i, end)
+	JGE(LabelRef("single"))
+	f.vectors(firVecs, i, "blocktaps")
+	ADDQ(U32(firVecs*lanes), i)
+	JMP(LabelRef("block"))
+
+	Label("single")
+	MOVQ(nf, end)
+	ANDQ(I32(^(lanes - 1)), end)
+	Label("singleloop")
+	CMPQ(i, end)
+	JGE(LabelRef("tail"))
+	f.vectors(1, i, "singletaps")
+	ADDQ(U32(lanes), i)
+	JMP(LabelRef("singleloop"))
+
+	Comment("Recompute the last full vector: every lane is an independent output")
+	Label("tail")
+	CMPQ(i, nf)
+	JGE(LabelRef("done"))
+	CMPQ(nf, U32(lanes))
+	JL(LabelRef("scalar"))
+	MOVQ(nf, i)
+	SUBQ(U32(lanes), i)
+	f.vectors(1, i, "tailtaps")
+	JMP(LabelRef("done"))
+
+	Comment("Fewer floats than one vector: one output at a time")
+	Label("scalar")
+	if isa.isAVX() {
+		VZEROUPPER()
+	}
+	var maskX VecVirtual
+	if k.cplx {
+		maskX = XMM()
+		MOVUPS(signMask, maskX)
+	}
+	Label("scalarloop")
+	CMPQ(i, nf)
+	JGE(LabelRef("scalardone"))
+	f.scalar(i, maskX)
+	ADDQ(U32(k.unit), i)
+	JMP(LabelRef("scalarloop"))
+	Label("scalardone")
+	RET()
+
+	Label("done")
+	if isa.isAVX() {
+		VZEROUPPER()
+	}
+	RET()
+}
+
+// firFrame holds the registers shared by the parts of one FIR leaf.
+type firFrame struct {
+	k                      firKind
+	isa                    vecISA
+	dst, work, taps, ntaps Register
+	mask                   VecVirtual // evenSignF32, for complex taps
+}
+
+// start sets up a pass over the taps for the outputs starting at float i:
+// the newest sample, the first tap and the tap count.
+func (f firFrame) start(i Register) (wp, tp, cnt Register) {
+	wp = GP64()
+	LEAQ(Mem{Base: f.work, Index: i, Scale: 4}, wp)
+	tp = GP64()
+	MOVQ(f.taps, tp)
+	cnt = GP64()
+	MOVQ(f.ntaps, cnt)
+	return wp, tp, cnt
+}
+
+// next steps to the next tap and the next older sample.
+func (f firFrame) next(wp, tp, cnt Register, loop string) {
+	tapSize := 4
+	if f.k.cplx {
+		tapSize = 8
+	}
+	ADDQ(U32(tapSize), tp)
+	SUBQ(U32(4*f.k.unit), wp)
+	DECQ(cnt)
+	JNZ(LabelRef(loop))
+}
+
+// vectors computes vecs vectors of output floats starting at float i.
+func (f firFrame) vectors(vecs int, i Register, loop string) {
+	isa := f.isa
+	wp, tp, cnt := f.start(i)
+	accs := make([]VecVirtual, vecs)
+	for v := range accs {
+		accs[v] = isa.vec()
+		isa.zero(accs[v])
+	}
+	Label(loop)
+	if !f.k.cplx {
+		c := isa.vec()
+		isa.bcast(Mem{Base: tp}, c)
+		for v, acc := range accs {
+			p := isa.vec()
+			isa.mulMem(Mem{Base: wp, Disp: v * isa.lanes * 4}, c, p)
+			isa.add(p, acc)
+		}
+	} else {
+		// p1 = v*cr and p2 = swap(v)*ci with the real lanes negated, so p1+p2
+		// is (cr*vr - ci*vi, cr*vi + ci*vr) with each product rounded. The
+		// sign goes on ci once per tap: (-ci)*vi rounds to exactly -(ci*vi).
+		cr := isa.vec()
+		isa.bcast(Mem{Base: tp}, cr)
+		ci := isa.vec()
+		isa.bcast(Mem{Base: tp, Disp: 4}, ci)
+		if isa.isAVX() {
+			VXORPS(f.mask, ci, ci)
+		} else {
+			XORPS(f.mask, ci)
+		}
+		for v, acc := range accs {
+			m := Mem{Base: wp, Disp: v * isa.lanes * 4}
+			p := isa.vec()
+			s := isa.vec()
+			if isa.isAVX() {
+				VMULPS(m, cr, p)
+				VPERMILPS(U8(0xb1), m, s)
+				VMULPS(s, ci, s)
+			} else {
+				MOVUPS(m, p)
+				MOVAPS(p, s)
+				SHUFPS(U8(0xb1), s, s)
+				MULPS(cr, p)
+				MULPS(ci, s)
+			}
+			isa.add(s, p)
+			isa.add(p, acc)
+		}
+	}
+	f.next(wp, tp, cnt, loop)
+	for v, acc := range accs {
+		isa.store(acc, Mem{Base: f.dst, Index: i, Scale: 4, Disp: v * isa.lanes * 4})
+	}
+}
+
+// scalar computes the one output starting at float i in the low one or two
+// lanes of an xmm, with SSE: an AVX leaf has executed VZEROUPPER first.
+func (f firFrame) scalar(i Register, mask VecVirtual) {
+	wp, tp, cnt := f.start(i)
+	acc := XMM()
+	XORPS(acc, acc)
+	Label("scalartaps")
+	switch {
+	case f.k.unit == 1:
+		p := XMM()
+		MOVSS(Mem{Base: wp}, p)
+		MULSS(Mem{Base: tp}, p)
+		ADDSS(p, acc)
+	case !f.k.cplx:
+		p := XMM()
+		MOVSD(Mem{Base: wp}, p)
+		c := XMM()
+		MOVSS(Mem{Base: tp}, c)
+		UNPCKLPS(c, c)
+		MULPS(c, p)
+		ADDPS(p, acc)
+	default:
+		p := XMM()
+		MOVSD(Mem{Base: wp}, p)
+		s := XMM()
+		MOVAPS(p, s)
+		SHUFPS(U8(0xb1), s, s)
+		cr := XMM()
+		sseBroadcast(Mem{Base: tp}, cr)
+		ci := XMM()
+		sseBroadcast(Mem{Base: tp, Disp: 4}, ci)
+		XORPS(mask, ci)
+		MULPS(cr, p)
+		MULPS(ci, s)
+		ADDPS(s, p)
+		ADDPS(p, acc)
+	}
+	f.next(wp, tp, cnt, "scalartaps")
+	out := Mem{Base: f.dst, Index: i, Scale: 4}
+	if f.k.unit == 1 {
+		MOVSS(acc, out)
+	} else {
+		MOVSD(acc, out)
+	}
+}
+
+// reduce8 adds accumulators 4-7 to 0-3, leaving the four sums in an xmm. The
+// eight are the two halves of the ymm t, or the xmm t (0-3) and u (4-7). An
+// AVX leaf executes VZEROUPPER here: everything after it is SSE.
+func reduce8(isa vecISA, t, u VecVirtual) VecVirtual {
+	if isa.isAVX() {
+		hi := XMM()
+		VEXTRACTF128(U8(1), t, hi)
+		s := XMM()
+		VADDPS(hi, t.AsX(), s)
+		VZEROUPPER()
+		return s
+	}
+	ADDPS(u, t)
+	return t
+}
+
+// dotLeaf emits Dot: eight accumulators, one ymm or two xmm, combined as
+// combine8 does, then the remainder added in order.
+func dotLeaf(isa vecISA) {
+	name := "dotF32" + isa.name
+	TEXT(name, NOSPLIT, "func(x, c []float32) float32")
+	Doc(fmt.Sprintf("%s implements Dot using %s. x must be at least as long as c.", name, isa.name))
+	x := Load(Param("x").Base(), GP64())
+	c := Load(Param("c").Base(), GP64())
+	n := Load(Param("c").Len(), GP64())
+
+	accs := make([]VecVirtual, 8/isa.lanes)
+	for k := range accs {
+		accs[k] = isa.vec()
+		isa.zero(accs[k])
+	}
+	i := GP64()
+	XORQ(i, i)
+	end := GP64()
+	MOVQ(n, end)
+	ANDQ(I32(-8), end)
+
+	Label("block")
+	CMPQ(i, end)
+	JGE(LabelRef("reduce"))
+	for k, acc := range accs {
+		cv := isa.vec()
+		isa.load(Mem{Base: c, Index: i, Scale: 4, Disp: k * isa.lanes * 4}, cv)
+		p := isa.vec()
+		isa.mulMem(Mem{Base: x, Index: i, Scale: 4, Disp: k * isa.lanes * 4}, cv, p)
+		isa.add(p, acc)
+	}
+	ADDQ(U32(8), i)
+	JMP(LabelRef("block"))
+
+	Label("reduce")
+	var u VecVirtual
+	if !isa.isAVX() {
+		u = accs[1]
+	}
+	t := reduce8(isa, accs[0], u)
+	hi := XMM()
+	MOVHLPS(t, hi)
+	ADDPS(hi, t)
+	s := XMM()
+	MOVAPS(t, s)
+	SHUFPS(U8(0x55), s, s)
+	ADDSS(s, t)
+
+	Label("tail")
+	CMPQ(i, n)
+	JGE(LabelRef("done"))
+	p := XMM()
+	MOVSS(Mem{Base: x, Index: i, Scale: 4}, p)
+	MULSS(Mem{Base: c, Index: i, Scale: 4}, p)
+	ADDSS(p, t)
+	INCQ(i)
+	JMP(LabelRef("tail"))
+
+	Label("done")
+	Store(t, ReturnIndex(0))
+	RET()
+}
+
+// cdotRealLeaf emits CDotReal: Dot over each part of interleaved complex
+// samples, eight samples per block. The coefficients are duplicated into
+// adjacent lanes to line up with the samples, so lane pair l of the
+// accumulators holds accumulator l of both parts, and the combine is Dot's
+// tree two lanes at a time.
+func cdotRealLeaf(isa vecISA) {
+	name := "cdotReal" + isa.name
+	TEXT(name, NOSPLIT, "func(x []complex64, c []float32) complex64")
+	Doc(fmt.Sprintf("%s implements CDotReal using %s. x must be at least as long as c.", name, isa.name))
+	x := Load(Param("x").Base(), GP64())
+	c := Load(Param("c").Base(), GP64())
+	n := Load(Param("c").Len(), GP64())
+
+	// Each accumulator vector holds lanes/2 samples' worth.
+	accs := make([]VecVirtual, 16/isa.lanes)
+	for k := range accs {
+		accs[k] = isa.vec()
+		isa.zero(accs[k])
+	}
+	i := GP64()
+	XORQ(i, i)
+	end := GP64()
+	MOVQ(n, end)
+	ANDQ(I32(-8), end)
+
+	Label("block")
+	CMPQ(i, end)
+	JGE(LabelRef("reduce"))
+	if isa.isAVX() {
+		// The unpacks work within each 128-bit half, giving
+		// [c0 c0 c1 c1 | c4 c4 c5 c5] and [c2 c2 c3 c3 | c6 c6 c7 c7];
+		// VPERM2F128 regroups the halves in sample order.
+		cv := YMM()
+		VMOVUPS(Mem{Base: c, Index: i, Scale: 4}, cv)
+		lo := YMM()
+		VUNPCKLPS(cv, cv, lo)
+		hi := YMM()
+		VUNPCKHPS(cv, cv, hi)
+		c0 := YMM()
+		VPERM2F128(U8(0x20), hi, lo, c0)
+		c1 := YMM()
+		VPERM2F128(U8(0x31), hi, lo, c1)
+		for k, cd := range []VecVirtual{c0, c1} {
+			p := YMM()
+			VMULPS(Mem{Base: x, Index: i, Scale: 8, Disp: 32 * k}, cd, p)
+			VADDPS(p, accs[k], accs[k])
+		}
+	} else {
+		for h := range 2 {
+			cv := XMM()
+			MOVUPS(Mem{Base: c, Index: i, Scale: 4, Disp: 16 * h}, cv)
+			lo := XMM()
+			MOVAPS(cv, lo)
+			UNPCKLPS(lo, lo)
+			UNPCKHPS(cv, cv)
+			for k, cd := range []VecVirtual{lo, cv} {
+				p := XMM()
+				isa.mulMem(Mem{Base: x, Index: i, Scale: 8, Disp: 32*h + 16*k}, cd, p)
+				ADDPS(p, accs[2*h+k])
+			}
+		}
+	}
+	ADDQ(U32(8), i)
+	JMP(LabelRef("block"))
+
+	// The first half of accs holds accumulators 0-3 of both parts and the
+	// second half 4-7.
+	Label("reduce")
+	var t VecVirtual
+	if isa.isAVX() {
+		VADDPS(accs[1], accs[0], accs[0])
+		t = reduce8(isa, accs[0], nil)
+	} else {
+		ADDPS(accs[2], accs[0])
+		ADDPS(accs[3], accs[1])
+		t = reduce8(isa, accs[0], accs[1])
+	}
+	hi := XMM()
+	MOVHLPS(t, hi)
+	ADDPS(hi, t)
+
+	Comment("The real part is in lane 0 and the imaginary part in lane 1")
+	Label("tail")
+	CMPQ(i, n)
+	JGE(LabelRef("done"))
+	p := XMM()
+	MOVSD(Mem{Base: x, Index: i, Scale: 8}, p)
+	cs := XMM()
+	MOVSS(Mem{Base: c, Index: i, Scale: 4}, cs)
+	UNPCKLPS(cs, cs)
+	MULPS(cs, p)
+	ADDPS(p, t)
+	INCQ(i)
+	JMP(LabelRef("tail"))
+
+	Label("done")
+	Store(t, ReturnIndex(0).Real())
+	im := XMM()
+	MOVAPS(t, im)
+	SHUFPS(U8(0x55), im, im)
+	Store(im, ReturnIndex(0).Imag())
+	RET()
 }
