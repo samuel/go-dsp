@@ -80,6 +80,9 @@ jobs:
             flags: -race
           - name: 386
             env: GOARCH=386
+          # No SSE2, so pcm runs its Go references.
+          - name: 386-softfloat
+            env: GOARCH=386 GO386=softfloat
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -205,7 +208,7 @@ jobs:
       - run: go mod tidy -diff
       - run: go mod tidy -modfile=tools.mod -diff
       # The avo output is committed, so regenerating it must change nothing.
-      - run: go generate ./convert ./internal/f32
+      - run: GOARCH=amd64 go generate ./pcm ./internal/f32
       - run: git diff --exit-code
 
   # Before 1.0 a minor release may break the API, so on main and pull requests
@@ -274,7 +277,8 @@ jobs:
           - { pkg: ./sampleio, target: FuzzReadWAVHeader }
           - { pkg: ./firpm, target: FuzzDesign }
           - { pkg: ./ax25, target: FuzzFeed }
-          - { pkg: ./convert, target: FuzzI16LEToF32 }
+          - { pkg: ./pcm, target: FuzzDecode }
+          - { pkg: ./pcm, target: FuzzEncodeDecode }
           - { pkg: ./plot, target: FuzzWriteSVG }
           - { pkg: ./internal/viz, target: FuzzHandleAnalyze }
     steps:

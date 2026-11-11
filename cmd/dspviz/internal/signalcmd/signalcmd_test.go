@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"samuelks.com/dsp/convert"
+	"samuelks.com/dsp/pcm"
 	"samuelks.com/dsp/sampleio"
 )
 
@@ -781,7 +781,7 @@ func TestFormatsListsEveryFormat(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, f := range convert.Formats() {
+	for _, f := range pcm.Formats() {
 		if !strings.Contains(out, f.String()) {
 			t.Errorf("the listing omits %q:\n%s", f, out)
 		}

@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"samuelks.com/dsp/convert"
+	"samuelks.com/dsp/pcm"
 	"samuelks.com/dsp/sampleio"
 )
 
@@ -46,7 +46,7 @@ type inputFlags struct {
 
 func (f *inputFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&f.format, "format", "", "sample format of a headerless file: "+
-		strings.Join(convert.FormatNames(), ", ")+", each optionally with a leading c for interleaved I/Q")
+		strings.Join(pcm.FormatNames(), ", ")+", each optionally with a leading c for interleaved I/Q")
 	fs.Float64Var(&f.rate, "rate", 0, "sample rate in Hz; required for a headerless file, an override for a WAV")
 	fs.IntVar(&f.channels, "channels", 0, "interleaved channels in a headerless file")
 	fs.StringVar(&f.channel, "channel", "all",

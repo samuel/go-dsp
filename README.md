@@ -5,7 +5,7 @@
 
 Go packages and command-line tools for digital signal processing (DSP).
 It is useful for Software Defined Radio (SDR), audio, and general signal
-processing. It includes primitives, sample-format conversions, protocol
+processing. It includes primitives, a sample-format codec, protocol
 decoders, and analysis tooling. The performance-critical functions have
 hand-written and generated assembly for 386, amd64, arm and arm64, with
 a pure-Go scalar fallback everywhere else, so the same code runs on a
@@ -19,7 +19,7 @@ Paths are relative to the module, `samuelks.com/dsp`, whose root is package
 | Path | Contents |
 | --- | --- |
 | `.` (`dsp`) | The main API: generic vector operations (`VScale`, `VAdd`, ...), FM demodulation, IIR/biquad/FIR filters, boxcar and FIR decimators, Goertzel tone detection, sliding DFT, fixed-size FFT, transfer-function evaluation, window functions, Kaiser-windowed sinc low-pass design (`LowPassFIR`), FIR interpolation (`FIRInterpolator`, zero-phase `Upsample`), interpolators including a polyphase `SincInterpolator`, interleave/deinterleave, `FastAtan2`. |
-| `convert` | The `<source>To<destination>` sample conversions (`U8ToF32`, `I16LEToF32`, `F32ToI16`, ...), never scaled, and `Format` with `Decode` to full-scale float64. |
+| `pcm` | The sample codec: `Format` names an encoding (`U8`, `I16LE`, `F32BE`, ...), and `Decode` and `Encode` move between bytes and full-scale samples of any width, real or interleaved complex. |
 | `ax25` | AX.25/HDLC frame decoding plus CRC-16/X-25 `FCS`/`CheckFCS`. |
 | `dtmf` | DTMF decoding built on Goertzel. |
 | `sampleio` | Reading WAV/RF64 audio and headerless I/Q captures, handing over scale-normalized samples. |
@@ -166,24 +166,21 @@ rd, err := sampleio.Open("iq.raw", sampleio.Options{Format: f, IQ: iq, Rate: 2_5
 Read every channel at once with `ReadFloat64Planar`, which decodes the
 interleaved run once and splits it in a single pass.
 
-### Sample conversions
+### Sample formats
 
-`convert` conversions are `<src>To<dst>` and never scale; the normalizing
-factor belongs in the coefficients of the next linear stage, with
-`dsp.VScale` as the fallback. `F32ToI16` clips past full scale and converts
-NaN to zero, identically on every architecture.
-
-```go
-convert.U8ToF32(dst, src) // u8 []byte -> float32
-convert.F32ToI16(i16, f32) // clips
-```
-
-`convert.Format` names a byte encoding by the same scheme, and `Decode` is the
-one function that scales: it turns any format into float64 on [-1, 1).
+`pcm.Decode` turns bytes of any `pcm.Format` into samples of any width, at
+full scale: an integer is divided by 2^(bits-1), so the codes run [-1, 1).
+`pcm.Encode` multiplies back, rounds to nearest even with no dither, clips to
+the rails and encodes NaN as zero, so every integer code round-trips. A
+complex slice reads and writes interleaved I/Q pairs. Float formats pass
+through unscaled.
 
 ```go
-f, err := convert.ParseFormat("i24be")
-n := convert.Decode(dst, raw, f) // n == min(len(dst), len(raw)/f.Width())
+f, err := pcm.ParseFormat("i24be")
+n := pcm.Decode(dst, raw, f)      // n == min(len(dst), len(raw)/f.Width())
+iq := make([]complex64, len(raw)/2)
+pcm.Decode(iq, raw, pcm.U8)       // rtl-sdr cu8
+pcm.Encode(out, samples, pcm.I16LE)
 ```
 
 ### FIR design
@@ -271,10 +268,13 @@ go run ./examples/ax25 -rate 11025 -baud 300 radio-paket300-11025.raw
   filter's `a` is nil), with `ok` false when any coefficient has a non-zero
   imaginary part; `FIRFilter.Taps` and `IIRFilter.Coefficients` return them
   at the sample type.
-- **Conversions never scale**; a `LE` suffix means the byte slice holds
-  little-endian values.
-- **Stateless 1:1 operations process `min(dst, src)`** and return nothing:
-  the `V` functions and the conversions.
+- **Samples are full scale everywhere**: `pcm.Decode` divides an integer
+  format by 2^(bits-1) and `pcm.Encode` multiplies by it, so nothing
+  downstream carries a format's range. A `LE` or `BE` suffix on a `Format` is
+  the byte order of its samples.
+- **Stateless 1:1 operations process `min(dst, src)`**: the `V` functions
+  return nothing, and `pcm.Decode` and `pcm.Encode` return the samples
+  converted.
 - **Stateful block processors implement `Processor`**: `Process` consumes all
   of `src`, returns `OutputLen(len(src))` and panics if `dst` is shorter.
   Rate changers report `Ratio() (in, out int)`, input rate to output rate.
@@ -306,14 +306,14 @@ identical across architectures and vector widths, except that 32-bit arm's
 NEON flushes subnormal values to zero.
 
 Benchmarks live with the code: `go test ./internal/f32 -bench .` and
-`go test ./convert -bench .` sweep sizes from 64 to 64K floats so
+`go test ./pcm -bench .` sweep sizes from 64 to 64K floats so
 loop-overhead changes stay visible.
 
 ## Validation
 
 The assembly is validated against the pure-Go reference implementations it
 falls back to, including unaligned slices and mismatched lengths, and the
-conversions are swept for out-of-bounds writes at every length from 1 to 200.
+codec kernels are swept for out-of-bounds writes at every length from 1 to 200.
 `sampleio` fixtures are generated with sox/ffmpeg and cross-checked by
 `go test ./sampleio -oracle`; `firpm` is checked against the Fortran original it
 was transliterated from (`go generate ./firpm`); and `plot` line charts have

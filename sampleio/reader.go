@@ -8,7 +8,7 @@ import (
 	"slices"
 
 	"samuelks.com/dsp"
-	"samuelks.com/dsp/convert"
+	"samuelks.com/dsp/pcm"
 )
 
 // Channel selects which channel of a stream to read.
@@ -23,7 +23,7 @@ const blockBytes = 1 << 16
 
 // Info describes what a Reader found.
 type Info struct {
-	Format   convert.Format
+	Format   pcm.Format
 	Rate     float64
 	Channels int // interleaved channels in the file, before selection
 
@@ -59,7 +59,7 @@ func (i Info) Duration() float64 {
 type Options struct {
 	// Format is the encoding of a headerless stream. A container header wins
 	// over it, and reading raw requires it.
-	Format convert.Format
+	Format pcm.Format
 
 	// Rate overrides the rate a header states, and is required for raw input.
 	Rate float64
@@ -613,10 +613,10 @@ func (r *Reader) decodeReal(dst []float64, frames int) {
 	case r.elems == 1:
 		// The common case: mono, so the samples are already contiguous and the
 		// decode is one call over the whole run.
-		convert.Decode(dst, src, f)
+		pcm.Decode(dst, src, f)
 
 	default:
-		convert.Decode(dst, r.gather(src, frames, int(r.pick), 1), f)
+		pcm.Decode(dst, r.gather(src, frames, int(r.pick), 1), f)
 	}
 	r.noteOverrange(dst)
 }
@@ -626,7 +626,7 @@ func (r *Reader) decodeReal(dst []float64, frames int) {
 //
 // It is what a mixdown and a planar read share, and why neither gathers. The
 // exactly-sized run bounds the decode: src runs to the end of buf and
-// convert.Decode stops at the shorter of its two slices. It also normalizes
+// pcm.Decode stops at the shorter of its two slices. It also normalizes
 // every channel in one vectorized pass.
 func (r *Reader) decodeFrames(frames int) []float64 {
 	n := frames * r.elems
@@ -634,7 +634,7 @@ func (r *Reader) decodeFrames(frames int) []float64 {
 		r.work = make([]float64, n)
 	}
 	w := r.work[:n]
-	convert.Decode(w, r.buf[r.off:], r.info.Format)
+	pcm.Decode(w, r.buf[r.off:], r.info.Format)
 	r.noteOverrange(w)
 	return w
 }
@@ -732,7 +732,7 @@ func (r *Reader) decodeComplex(dst []complex128, frames int) {
 		r.work = make([]float64, 2*frames)
 	}
 	w := r.work[:2*frames]
-	convert.Decode(w, src, f)
+	pcm.Decode(w, src, f)
 	r.noteOverrange(w)
 	for i := range dst {
 		dst[i] = complex(w[i*2], w[i*2+1])

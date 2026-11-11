@@ -20,7 +20,7 @@ import (
 	"os"
 	"strings"
 
-	"samuelks.com/dsp/convert"
+	"samuelks.com/dsp/pcm"
 )
 
 // Run runs "dspviz signal" with the arguments after it and returns the exit
@@ -136,7 +136,7 @@ func usage() {
 
 func formats() {
 	fmt.Println("sample formats, for -format on a headerless file:")
-	for _, f := range convert.Formats() {
+	for _, f := range pcm.Formats() {
 		fmt.Printf("  %-6s %s\n", f, f.Desc())
 	}
 	fmt.Println("\nA leading c makes the samples interleaved I/Q, so cu8 is rtl-sdr's format")

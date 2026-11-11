@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"samuelks.com/dsp/convert"
+	"samuelks.com/dsp/pcm"
 )
 
 // TestParseFormatSpec covers the names an SDR capture actually carries, where a
@@ -12,17 +12,17 @@ import (
 func TestParseFormatSpec(t *testing.T) {
 	for _, tc := range []struct {
 		in     string
-		want   convert.Format
+		want   pcm.Format
 		wantIQ bool
 	}{
-		{"cu8", convert.U8, true}, // rtl-sdr
-		{"cs8", convert.I8, true}, // hackrf
-		{"cs16le", convert.I16LE, true},
-		{"cf32le", convert.F32LE, true},
-		{"ci16le", convert.I16LE, true},
-		{"u8", convert.U8, false},
-		{"i16le", convert.I16LE, false},
-		{"f32le", convert.F32LE, false},
+		{"cu8", pcm.U8, true}, // rtl-sdr
+		{"cs8", pcm.I8, true}, // hackrf
+		{"cs16le", pcm.I16LE, true},
+		{"cf32le", pcm.F32LE, true},
+		{"ci16le", pcm.I16LE, true},
+		{"u8", pcm.U8, false},
+		{"i16le", pcm.I16LE, false},
+		{"f32le", pcm.F32LE, false},
 	} {
 		got, iq, err := ParseFormatSpec(tc.in)
 		if err != nil {

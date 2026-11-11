@@ -24,18 +24,18 @@
 //
 // # Formats
 //
-// A sample encoding is a convert.Format, named as the conversion it is, and
-// samples are decoded by convert.Decode, which normalizes them to full scale:
-// the most negative integer code is exactly -1, so a full-scale sine reads
+// A sample encoding is a pcm.Format, and samples are decoded by pcm.Decode,
+// which normalizes them to full scale: the most negative integer code is
+// exactly -1, so a full-scale sine reads
 // exactly 0 dBFS, which every decibel measured downstream is relative to.
 // Float samples are passed through unscaled, since a float file is already
 // written in those units; a Note records it if any sample is outside the range.
 //
 // Complex is not a format. Interleaved I/Q is a layout over an ordinary element
-// type rather than an encoding of its own -- which is what convert already
-// means by C64, an interleaved pair of F32 -- so it is Options.IQ, and
+// type rather than an encoding of its own -- pcm.Decode into a complex slice
+// reads interleaved pairs of any format -- so it is Options.IQ, and
 // ParseFormatSpec reads the leading c of the names an SDR writes: cu8 is
-// rtl-sdr's format, convert.U8 with IQ set.
+// rtl-sdr's format, pcm.U8 with IQ set.
 //
 // # Byte order
 //

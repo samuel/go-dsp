@@ -15,8 +15,8 @@ import (
 	"io"
 	"log"
 
-	"samuelks.com/dsp/convert"
 	"samuelks.com/dsp/dtmf"
+	"samuelks.com/dsp/pcm"
 	"samuelks.com/dsp/sampleio"
 )
 
@@ -37,7 +37,7 @@ func run() error {
 	if flag.NArg() > 0 {
 		path = flag.Arg(0)
 	}
-	format, err := convert.ParseFormat(*flagFormat)
+	format, err := pcm.ParseFormat(*flagFormat)
 	if err != nil {
 		return err
 	}
