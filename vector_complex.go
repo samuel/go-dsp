@@ -8,54 +8,22 @@ import (
 	"samuelks.com/dsp/internal/view"
 )
 
-// Elementwise vector arithmetic over complex samples. Every name is the real
-// one from vector.go with C inserted after the V, and that file's rules apply
-// unchanged; Real on the end means the other operand is real.
+// Elementwise operations over complex samples only. The rules in vector.go
+// apply unchanged; Real on the end of a name means the other operand is real.
 //
 // The kernels are the real kernels over a reinterpreted slice -- complex64 is
 // two float32 with no padding, complex128 two float64, and archsimd has no
 // complex vector types. view.C64ToF32 and view.C128ToF64 are that view. The length
 // contract survives it, since min(2a, 2b) is 2*min(a, b).
 
-// VCAdd writes dst[i] = a[i] + b[i], over min(len(dst), len(a), len(b))
-// elements. Any of the slices may be the same, so VCAdd(x, x, y) accumulates y
-// into x.
-func VCAdd[C Complex](dst, a, b []C) {
-	n := min(len(dst), len(a), len(b))
-	for i, v := range a[:n] {
-		dst[i] = v + b[i]
-	}
-}
-
-// VCSub writes dst[i] = a[i] - b[i], under VCAdd's length and aliasing rules.
-func VCSub[C Complex](dst, a, b []C) {
-	n := min(len(dst), len(a), len(b))
-	for i, v := range a[:n] {
-		dst[i] = v - b[i]
-	}
-}
-
-// VCMul writes dst[i] = a[i] * b[i], the complex product, under VCAdd's length
-// and aliasing rules.
-func VCMul[C Complex](dst, a, b []C) {
-	switch d := any(dst).(type) {
-	case []complex64:
-		vcmulC64(d, any(a).([]complex64), any(b).([]complex64))
-	case []complex128:
-		vcmulC128(d, any(a).([]complex128), any(b).([]complex128))
-	default:
-		panic("dsp: VCMul: no kernel for this width")
-	}
-}
-
-// vcmulC64 is the complex64 product with every intermediate rounded.
+// vmulC64 is the complex64 product with every intermediate rounded.
 //
 // As vabsC64Scalar explains: written as xr*yr-xi*yi, Go may contract into an
 // FMA and arm64 does,
 // while VFMADDSUB fuses on amd64 and VMULPS+VSUBPS and 32-bit arm's VMLA do
 // not. Pinning the roundings is what lets a vector path match. It is also why
-// this is not the one-line generic body VCAdd gets.
-func vcmulC64(dst, a, b []complex64) {
+// this is not the one-line generic body VAdd gets.
+func vmulC64(dst, a, b []complex64) {
 	n := min(len(dst), len(a), len(b))
 	for i, x := range a[:n] {
 		y := b[i]
@@ -67,8 +35,8 @@ func vcmulC64(dst, a, b []complex64) {
 	}
 }
 
-// vcmulC128 is vcmulC64 at the wider width; see the note there.
-func vcmulC128(dst, a, b []complex128) {
+// vmulC128 is vmulC64 at the wider width; see the note there.
+func vmulC128(dst, a, b []complex128) {
 	n := min(len(dst), len(a), len(b))
 	for i, x := range a[:n] {
 		y := b[i]
@@ -80,23 +48,8 @@ func vcmulC128(dst, a, b []complex128) {
 	}
 }
 
-// VCScale writes dst[i] = src[i] * k for a complex k, which rotates as well as
-// scales. It processes min(len(dst), len(src)) elements and the slices may be
-// the same. Use VCScaleReal for a real gain: that is a plain per-lane multiply
-// with no rotation and reaches the real kernel directly.
-func VCScale[C Complex](dst, src []C, k C) {
-	switch d := any(dst).(type) {
-	case []complex64:
-		vcscaleC64(d, any(src).([]complex64), any(k).(complex64))
-	case []complex128:
-		vcscaleC128(d, any(src).([]complex128), any(k).(complex128))
-	default:
-		panic("dsp: VCScale: no kernel for this width")
-	}
-}
-
-// vcscaleC64 rounds its intermediates for the reason vcmulC64 does.
-func vcscaleC64(dst, src []complex64, k complex64) {
+// vscaleC64 rounds its intermediates for the reason vmulC64 does.
+func vscaleC64(dst, src []complex64, k complex64) {
 	n := min(len(dst), len(src))
 	kr, ki := real(k), imag(k)
 	for i, x := range src[:n] {
@@ -108,8 +61,8 @@ func vcscaleC64(dst, src []complex64, k complex64) {
 	}
 }
 
-// vcscaleC128 is vcscaleC64 at the wider width.
-func vcscaleC128(dst, src []complex128, k complex128) {
+// vscaleC128 is vscaleC64 at the wider width.
+func vscaleC128(dst, src []complex128, k complex128) {
 	n := min(len(dst), len(src))
 	kr, ki := real(k), imag(k)
 	for i, x := range src[:n] {
@@ -121,11 +74,11 @@ func vcscaleC128(dst, src []complex128, k complex128) {
 	}
 }
 
-// VCScaleReal scales the real and imaginary parts of every sample by the same
+// VScaleReal scales the real and imaginary parts of every sample by the same
 // real factor, over min(len(dst), len(src)) elements. The slices may be the
 // same.
 //
-// The scalar is generic over its own width, as VCMulReal's slice of them is, so
+// The scalar is generic over its own width, as VMulReal's slice of them is, so
 // the two members of the Real family read the same way. It is converted to C's
 // component width on the way in either way, so F changes nothing but what the
 // caller may hand over without a conversion of its own.
@@ -133,7 +86,7 @@ func vcscaleC128(dst, src []complex128, k complex128) {
 // One consequence: an untyped integer literal will not do, since inference
 // gives it its default type and int does not satisfy Float. Write the factor as
 // 2.0 rather than 2.
-func VCScaleReal[C Complex, F Float](dst, src []C, k F) {
+func VScaleReal[C Complex, F Float](dst, src []C, k F) {
 	switch d := any(dst).(type) {
 	case []complex64:
 		s := any(src).([]complex64)
@@ -142,13 +95,13 @@ func VCScaleReal[C Complex, F Float](dst, src []C, k F) {
 		s := any(src).([]complex128)
 		f64.Scale(view.C128ToF64(d), view.C128ToF64(s), float64(k))
 	default:
-		panic("dsp: VCScaleReal: no kernel for this width")
+		panic("dsp: VScaleReal: no kernel for this width")
 	}
 }
 
-// VCConj writes dst[i] = conj(src[i]), over min(len(dst), len(src)) elements.
+// VConj writes dst[i] = conj(src[i]), over min(len(dst), len(src)) elements.
 // The slices may be the same.
-func VCConj[C Complex](dst, src []C) {
+func VConj[C Complex](dst, src []C) {
 	switch d := any(dst).(type) {
 	case []complex64:
 		s := any(src).([]complex64)
@@ -159,7 +112,7 @@ func VCConj[C Complex](dst, src []C) {
 		n := min(len(d), len(s))
 		conjF64(view.C128ToF64(d[:n]), view.C128ToF64(s[:n]))
 	default:
-		panic("dsp: VCConj: no kernel for this width")
+		panic("dsp: VConj: no kernel for this width")
 	}
 }
 
@@ -179,25 +132,25 @@ func conjF64(dst, src []float64) {
 	}
 }
 
-// VCAbs writes dst[i] = |src[i]|, the magnitude of each complex value, over
+// VAbs writes dst[i] = |src[i]|, the magnitude of each complex value, over
 // min(len(dst), len(src)) elements.
 //
 // F is normally C's component type; Go cannot say so, so a mismatched pair is
 // legal, correct and slow. The arithmetic happens at C's component width and
-// the result is converted, so VCAbs[complex64, float64] is the float32 answer
+// the result is converted, so VAbs[complex64, float64] is the float32 answer
 // widened rather than a better one.
 //
 // At complex128 there is nothing wider to accumulate the squares in, so a
 // magnitude above about 1.3e154 overflows where math.Hypot would not. Hypot has
 // no vector form, so the naive expression is the contract at both widths.
-func VCAbs[C Complex, F Float](dst []F, src []C) {
+func VAbs[C Complex, F Float](dst []F, src []C) {
 	switch s := any(src).(type) {
 	case []complex64:
 		vcabs64(dst, s)
 	case []complex128:
 		vcabs128(dst, s)
 	default:
-		panic("dsp: VCAbs: no kernel for this width")
+		panic("dsp: VAbs: no kernel for this width")
 	}
 }
 
@@ -225,19 +178,19 @@ func vcabs128[F Float](dst []F, src []complex128) {
 	}
 }
 
-// VCMulReal multiplies each complex sample by the matching real value, which is
+// VMulReal multiplies each complex sample by the matching real value, which is
 // how a window is applied to a complex signal. It processes
 // min(len(dst), len(src), len(w)) elements.
 //
-// F and C pair the same way they do for VCAbs, with the same consequences.
-func VCMulReal[C Complex, F Float](dst, src []C, w []F) {
+// F and C pair the same way they do for VAbs, with the same consequences.
+func VMulReal[C Complex, F Float](dst, src []C, w []F) {
 	switch d := any(dst).(type) {
 	case []complex64:
 		vcmulRealC64(d, any(src).([]complex64), w)
 	case []complex128:
 		vcmulRealC128(d, any(src).([]complex128), w)
 	default:
-		panic("dsp: VCMulReal: no kernel for this width")
+		panic("dsp: VMulReal: no kernel for this width")
 	}
 }
 
@@ -265,23 +218,23 @@ func vcmulRealC128[F Float](dst, src []complex128, w []F) {
 	}
 }
 
-// VCMagSq writes dst[i] = |src[i]|^2, the squared magnitude of each complex
+// VMagSq writes dst[i] = |src[i]|^2, the squared magnitude of each complex
 // value, over min(len(dst), len(src)) elements.
 //
-// It is VCAbs without the square root, and cheaper for it. Reach for it wherever
+// It is VAbs without the square root, and cheaper for it. Reach for it wherever
 // the magnitudes are only compared or accumulated -- power detection, an AGC, an
 // energy measure -- since the square root is monotonic and buys nothing there.
-// F and C pair as they do for VCAbs, with the same consequences, except that
+// F and C pair as they do for VAbs, with the same consequences, except that
 // there is no square root to overflow: the complex128 form squares at float64
 // and so saturates to +Inf above about 1.3e154 rather than earlier.
-func VCMagSq[C Complex, F Float](dst []F, src []C) {
+func VMagSq[C Complex, F Float](dst []F, src []C) {
 	switch s := any(src).(type) {
 	case []complex64:
 		vcmagsq64(dst, s)
 	case []complex128:
 		vcmagsq128(dst, s)
 	default:
-		panic("dsp: VCMagSq: no kernel for this width")
+		panic("dsp: VMagSq: no kernel for this width")
 	}
 }
 

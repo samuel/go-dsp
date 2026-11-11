@@ -211,7 +211,7 @@ func TestTransformRealZeroPads(t *testing.T) {
 
 	f, _ := NewFFT[complex128](n)
 	got := make([]complex128, n)
-	ForwardReal(f, got, x)
+	f.ForwardReal(got, x)
 	for k := range got {
 		if cmplx.Abs(got[k]-want[k]) > 1e-6 {
 			t.Fatalf("bin %d: got %v, want %v", k, got[k], want[k])

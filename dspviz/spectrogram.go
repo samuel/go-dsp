@@ -412,7 +412,7 @@ func (b *SpectrogramBuilder) emitReal() {
 	for i := range b.size {
 		b.rbuf[i] = b.ring[i] * b.w[i]
 	}
-	dsp.ForwardReal(b.fft, b.spec, b.rbuf)
+	b.fft.ForwardReal(b.spec, b.rbuf)
 
 	row := make([]float64, len(b.freqs))
 	for i := range row {

@@ -10,9 +10,8 @@ import (
 )
 
 // TestVectorCoversEveryWidth instantiates every member of Float and Complex
-// against every generic entry point and checks a known result. The dispatch
-// switches have no default arm, so a constraint member added without a matching
-// arm compiles and writes nothing; checking a real answer is what catches it.
+// against every generic entry point and checks a known result, so a constraint
+// member added without a matching dispatch arm fails here rather than in use.
 func TestVectorCoversEveryWidth(t *testing.T) {
 	t.Run("float32", func(t *testing.T) { checkRealFamily[float32](t) })
 	t.Run("float64", func(t *testing.T) { checkRealFamily[float64](t) })
@@ -79,23 +78,23 @@ func checkComplexFamily[C Complex](t *testing.T) {
 	b := []C{complex(0, 1), complex(2, 0), complex(1, 1)}
 	dst := make([]C, len(a))
 
-	VCAdd(dst, a, b)
-	wantSlice(t, "VCAdd", dst, []C{complex(1, 3), complex(-1, 4), complex(6, -5)})
+	VAdd(dst, a, b)
+	wantSlice(t, "VAdd", dst, []C{complex(1, 3), complex(-1, 4), complex(6, -5)})
 
-	VCSub(dst, a, b)
-	wantSlice(t, "VCSub", dst, []C{complex(1, 1), complex(-5, 4), complex(4, -7)})
+	VSub(dst, a, b)
+	wantSlice(t, "VSub", dst, []C{complex(1, 1), complex(-5, 4), complex(4, -7)})
 
-	VCMul(dst, a, b)
-	wantSlice(t, "VCMul", dst, []C{complex(-2, 1), complex(-6, 8), complex(11, -1)})
+	VMul(dst, a, b)
+	wantSlice(t, "VMul", dst, []C{complex(-2, 1), complex(-6, 8), complex(11, -1)})
 
-	VCScale(dst, a, complex(0, 1))
-	wantSlice(t, "VCScale", dst, []C{complex(-2, 1), complex(-4, -3), complex(6, 5)})
+	VScale(dst, a, complex(0, 1))
+	wantSlice(t, "VScale", dst, []C{complex(-2, 1), complex(-4, -3), complex(6, 5)})
 
-	VCScaleReal(dst, a, 2.0)
-	wantSlice(t, "VCScaleReal", dst, []C{complex(2, 4), complex(-6, 8), complex(10, -12)})
+	VScaleReal(dst, a, 2.0)
+	wantSlice(t, "VScaleReal", dst, []C{complex(2, 4), complex(-6, 8), complex(10, -12)})
 
-	VCConj(dst, a)
-	wantSlice(t, "VCConj", dst, []C{complex(1, -2), complex(-3, -4), complex(5, 6)})
+	VConj(dst, a)
+	wantSlice(t, "VConj", dst, []C{complex(1, -2), complex(-3, -4), complex(5, 6)})
 
 	if got, want := Conj(a[0]), C(complex(1, -2)); got != want {
 		t.Errorf("Conj = %v, want %v", got, want)
@@ -111,36 +110,36 @@ func checkComplexFamily[C Complex](t *testing.T) {
 	// pair must equal the matched one widened, not a more accurate answer.
 	mag32 := make([]float32, len(a))
 	mag64 := make([]float64, len(a))
-	VCAbs(mag32, a)
-	VCAbs(mag64, a)
+	VAbs(mag32, a)
+	VAbs(mag64, a)
 	for i, v := range a {
 		want := cmplx.Abs(complex128(v))
 		if math.Abs(float64(mag32[i])-want) > 1e-6 {
-			t.Errorf("VCAbs[float32][%d] = %v, want %v", i, mag32[i], want)
+			t.Errorf("VAbs[float32][%d] = %v, want %v", i, mag32[i], want)
 		}
 		if math.Abs(mag64[i]-want) > 1e-6 {
-			t.Errorf("VCAbs[float64][%d] = %v, want %v", i, mag64[i], want)
+			t.Errorf("VAbs[float64][%d] = %v, want %v", i, mag64[i], want)
 		}
 		if float64(mag32[i]) != mag64[i] && isC64[C]() {
-			t.Errorf("VCAbs widths disagree at %d: %v vs %v", i, mag32[i], mag64[i])
+			t.Errorf("VAbs widths disagree at %d: %v vs %v", i, mag32[i], mag64[i])
 		}
 	}
 
-	// VCMagSq is VCAbs before the square root, at both destination widths.
+	// VMagSq is VAbs before the square root, at both destination widths.
 	sq32 := make([]float32, len(a))
 	sq64 := make([]float64, len(a))
-	VCMagSq(sq32, a)
-	VCMagSq(sq64, a)
+	VMagSq(sq32, a)
+	VMagSq(sq64, a)
 	for i, v := range a {
 		z := complex128(v)
 		want := real(z)*real(z) + imag(z)*imag(z)
 		if math.Abs(float64(sq32[i])-want) > 1e-4 {
-			t.Errorf("VCMagSq[float32][%d] = %v, want %v", i, sq32[i], want)
+			t.Errorf("VMagSq[float32][%d] = %v, want %v", i, sq32[i], want)
 		}
 		if math.Abs(sq64[i]-want) > 1e-9 {
-			t.Errorf("VCMagSq[float64][%d] = %v, want %v", i, sq64[i], want)
+			t.Errorf("VMagSq[float64][%d] = %v, want %v", i, sq64[i], want)
 		}
-		// VCAbs and VCMagSq describe the same quantity, so squaring one gives
+		// VAbs and VMagSq describe the same quantity, so squaring one gives
 		// the other -- to the precision of the width the arithmetic ran at,
 		// which for complex64 is float32 on both sides of the square root.
 		tol := 1e-12
@@ -148,21 +147,21 @@ func checkComplexFamily[C Complex](t *testing.T) {
 			tol = 1e-5
 		}
 		if got := float64(mag64[i] * mag64[i]); math.Abs(got-sq64[i]) > tol*math.Abs(sq64[i]) {
-			t.Errorf("VCAbs^2 [%d] = %v, VCMagSq = %v", i, got, sq64[i])
+			t.Errorf("VAbs^2 [%d] = %v, VMagSq = %v", i, got, sq64[i])
 		}
 	}
 
 	w32 := []float32{2, 3, 4}
 	w64 := []float64{2, 3, 4}
 	want := []C{complex(2, 4), complex(-9, 12), complex(20, -24)}
-	VCMulReal(dst, a, w32)
-	wantSlice(t, "VCMulReal float32 weights", dst, want)
-	VCMulReal(dst, a, w64)
-	wantSlice(t, "VCMulReal float64 weights", dst, want)
+	VMulReal(dst, a, w32)
+	wantSlice(t, "VMulReal float32 weights", dst, want)
+	VMulReal(dst, a, w64)
+	wantSlice(t, "VMulReal float64 weights", dst, want)
 }
 
 // isC64 reports whether C is complex64, which decides both the tolerance above
-// and whether the two VCAbs destination widths are defined to agree bit for bit.
+// and whether the two VAbs destination widths are defined to agree bit for bit.
 func isC64[C Complex]() bool {
 	var z C
 	_, ok := any(z).(complex64)
@@ -190,8 +189,8 @@ func TestVectorLengthAndAliasing(t *testing.T) {
 	wantSlice(t, "VAdd short", dst, []float64{11, 22, 33, 0, 0})
 
 	cdst := make([]complex128, 4)
-	VCAdd(cdst, []complex128{1, 2}, []complex128{10, 20, 30})
-	wantSlice(t, "VCAdd short", cdst, []complex128{11, 22, 0, 0})
+	VAdd(cdst, []complex128{1, 2}, []complex128{10, 20, 30})
+	wantSlice(t, "VAdd short", cdst, []complex128{11, 22, 0, 0})
 
 	// Scaling in place, dst aliasing src exactly.
 	x := []float32{1, 2, 3, 4}
@@ -199,8 +198,8 @@ func TestVectorLengthAndAliasing(t *testing.T) {
 	wantSlice(t, "VScale in place", x, []float32{2, 4, 6, 8})
 
 	c := []complex64{complex(1, 1), complex(2, 2)}
-	VCConj(c, c)
-	wantSlice(t, "VCConj in place", c, []complex64{complex(1, -1), complex(2, -2)})
+	VConj(c, c)
+	wantSlice(t, "VConj in place", c, []complex64{complex(1, -1), complex(2, -2)})
 }
 
 // TestVectorMatchesScalar checks every generic entry point against a scalar
@@ -284,13 +283,13 @@ func checkAgainstScalar[F Float, C Complex](t *testing.T) {
 		real2("VSub", VSub[F], func(x, y F) F { return x - y })
 		real2("VMul", VMul[F], func(x, y F) F { return x * y })
 
-		cplx1("VCConj", VCConj[C], func(v C) C { return C(complex(real(complex128(v)), -imag(complex128(v)))) })
-		cplx2("VCAdd", VCAdd[C], func(x, y C) C { return x + y })
-		cplx2("VCSub", VCSub[C], func(x, y C) C { return x - y })
-		cplx2("VCMul", VCMul[C], func(x, y C) C { return x * y })
-		cplx1("VCScale", func(dst, src []C) { VCScale(dst, src, C(complex(2, -3))) },
+		cplx1("VConj", VConj[C], func(v C) C { return C(complex(real(complex128(v)), -imag(complex128(v)))) })
+		cplx2("VAdd", VAdd[C], func(x, y C) C { return x + y })
+		cplx2("VSub", VSub[C], func(x, y C) C { return x - y })
+		cplx2("VMul", VMul[C], func(x, y C) C { return x * y })
+		cplx1("VScale", func(dst, src []C) { VScale(dst, src, C(complex(2, -3))) },
 			func(v C) C { return v * C(complex(2, -3)) })
-		cplx1("VCScaleReal", func(dst, src []C) { VCScaleReal(dst, src, F(k)) },
+		cplx1("VScaleReal", func(dst, src []C) { VScaleReal(dst, src, F(k)) },
 			func(v C) C {
 				z := complex128(v)
 				return C(complex(real(z)*k, imag(z)*k))
@@ -309,10 +308,10 @@ func checkAgainstScalar[F Float, C Complex](t *testing.T) {
 			wantSq[i] = F(sq)
 			wantMag[i] = F(math.Sqrt(sq))
 		}
-		VCAbs(mag, ca)
-		VCMagSq(magSq, ca)
-		wantSlice(t, at("VCAbs"), mag, wantMag)
-		wantSlice(t, at("VCMagSq"), magSq, wantSq)
+		VAbs(mag, ca)
+		VMagSq(magSq, ca)
+		wantSlice(t, at("VAbs"), mag, wantMag)
+		wantSlice(t, at("VMagSq"), magSq, wantSq)
 
 		wmul := make([]C, n)
 		wantMul := make([]C, n)
@@ -320,8 +319,8 @@ func checkAgainstScalar[F Float, C Complex](t *testing.T) {
 			z := complex128(v)
 			wantMul[i] = C(complex(real(z)*float64(b[i]), imag(z)*float64(b[i])))
 		}
-		VCMulReal(wmul, ca, b)
-		wantSlice(t, at("VCMulReal"), wmul, wantMul)
+		VMulReal(wmul, ca, b)
+		wantSlice(t, at("VMulReal"), wmul, wantMul)
 
 		if n > 0 {
 			var wantMax, wantMin, wantSum F = a[0], a[0], 0
@@ -394,22 +393,22 @@ func TestDispatchDoesNotAllocate(t *testing.T) {
 		{"VMax/f32", func() { _ = VMax(f32s) }},
 		{"VMax/f64", func() { _ = VMax(f64s) }},
 		{"VMin/f32", func() { _ = VMin(f32s) }},
-		{"VCMul/c64", func() { VCMul(c64, c64, c64) }},
-		{"VCMul/c128", func() { VCMul(c128, c128, c128) }},
-		{"VCScale/c64", func() { VCScale(c64, c64, 2) }},
-		{"VCScaleReal/c64", func() { VCScaleReal(c64, c64, 0.5) }},
-		{"VCScaleReal/c128", func() { VCScaleReal(c128, c128, 0.5) }},
-		{"VCConj/c64", func() { VCConj(c64, c64) }},
-		{"VCConj/c128", func() { VCConj(c128, c128) }},
-		{"VCAbs/c64->f32", func() { VCAbs(w32, c64) }},
-		{"VCAbs/c128->f64", func() { VCAbs(f64s, c128) }},
-		{"VCMulReal/c64", func() { VCMulReal(c64, c64, w32) }},
+		{"VMul/c64", func() { VMul(c64, c64, c64) }},
+		{"VMul/c128", func() { VMul(c128, c128, c128) }},
+		{"VScale/c64", func() { VScale(c64, c64, 2) }},
+		{"VScaleReal/c64", func() { VScaleReal(c64, c64, 0.5) }},
+		{"VScaleReal/c128", func() { VScaleReal(c128, c128, 0.5) }},
+		{"VConj/c64", func() { VConj(c64, c64) }},
+		{"VConj/c128", func() { VConj(c128, c128) }},
+		{"VAbs/c64->f32", func() { VAbs(w32, c64) }},
+		{"VAbs/c128->f64", func() { VAbs(f64s, c128) }},
+		{"VMulReal/c64", func() { VMulReal(c64, c64, w32) }},
 		{"VSum/f32", func() { _ = VSum(f32s) }},
 		{"VSum/f64", func() { _ = VSum(f64s) }},
 		{"VMaxIdx/f32", func() { _, _ = VMaxIdx(f32s) }},
 		{"VMaxIdx/f64", func() { _, _ = VMaxIdx(f64s) }},
-		{"VCMagSq/c64->f32", func() { VCMagSq(w32, c64) }},
-		{"VCMagSq/c128->f64", func() { VCMagSq(f64s, c128) }},
+		{"VMagSq/c64->f32", func() { VMagSq(w32, c64) }},
+		{"VMagSq/c128->f64", func() { VMagSq(f64s, c128) }},
 	}
 	for _, c := range cases {
 		if n := testing.AllocsPerRun(50, c.fn); n != 0 {

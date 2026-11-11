@@ -6,31 +6,31 @@ import (
 	"testing"
 )
 
-// TestBiQuadCutoff checks Freqz against the closed forms the cookbook
+// TestBiquadCutoff checks Freqz against the closed forms the cookbook
 // constructors are supposed to hit, rather than against another evaluation of
 // the same coefficients. A Butterworth low-pass is down exactly 3.0103 dB at
 // its cutoff, an all-pass is unity everywhere, and a notch is a true null.
-func TestBiQuadCutoff(t *testing.T) {
+func TestBiquadCutoff(t *testing.T) {
 	const rate, cutoff = 48000.0, 1000.0
 	f := cutoff / rate
 
-	lp := must(NewLowPassBiQuad[float64](rate, cutoff, math.Sqrt2/2))
-	b, a := lp.Coefficients()
+	lp := must(NewBiquadLowPass[float64](rate, cutoff, math.Sqrt2/2))
+	b, a := realBA(lp.RealCoefficients())
 	h := Freqz(b, a, []float64{f})
 	db := 20 * math.Log10(cmplx.Abs(h[0]))
 	if math.Abs(db-(-3.0102999566398)) > 1e-9 {
 		t.Errorf("low-pass at cutoff: %.12f dB, want -3.0103", db)
 	}
 
-	hp := must(NewHighPassBiQuad[float64](rate, cutoff, math.Sqrt2/2))
-	b, a = hp.Coefficients()
+	hp := must(NewBiquadHighPass[float64](rate, cutoff, math.Sqrt2/2))
+	b, a = realBA(hp.RealCoefficients())
 	h = Freqz(b, a, []float64{f})
 	if db = 20 * math.Log10(cmplx.Abs(h[0])); math.Abs(db-(-3.0102999566398)) > 1e-9 {
 		t.Errorf("high-pass at cutoff: %.12f dB, want -3.0103", db)
 	}
 
-	ap := must(NewAllPassBiQuad[float64](rate, cutoff, 0.5))
-	b, a = ap.Coefficients()
+	ap := must(NewBiquadAllPass[float64](rate, cutoff, 0.5))
+	b, a = realBA(ap.RealCoefficients())
 	grid := LinearGridFor(t, 0, 0.5, 257)
 	for i, hv := range Freqz(b, a, grid) {
 		if math.Abs(cmplx.Abs(hv)-1) > 1e-14 {
@@ -38,8 +38,8 @@ func TestBiQuadCutoff(t *testing.T) {
 		}
 	}
 
-	nf := must(NewNotchBiQuad[float64](rate, cutoff, 2))
-	b, a = nf.Coefficients()
+	nf := must(NewBiquadNotch[float64](rate, cutoff, 2))
+	b, a = realBA(nf.RealCoefficients())
 	h = Freqz(b, a, []float64{f})
 	// A true null, to the depth the cancellation in the numerator allows: this
 	// is the one limit Freqz's doc comment admits to, and -250 dB is far below
@@ -91,7 +91,7 @@ func TestFreqzAgreesWithImpulseFFT(t *testing.T) {
 
 	f, _ := NewFFT[complex128](n)
 	spec := make([]complex128, n)
-	ForwardReal(f, spec, taps)
+	f.ForwardReal(spec, taps)
 
 	freq := make([]float64, n/2+1)
 	for k := range freq {
@@ -128,8 +128,8 @@ func TestGroupDelayLinearPhase(t *testing.T) {
 // finite difference of the unwrapped phase, which is the only form available
 // when a filter is measured rather than described by coefficients.
 func TestGroupDelayMatchesPhaseSlope(t *testing.T) {
-	lp := must(NewLowPassBiQuad[float64](48000, 3000, 0.7071))
-	b, a := lp.Coefficients()
+	lp := must(NewBiquadLowPass[float64](48000, 3000, 0.7071))
+	b, a := realBA(lp.RealCoefficients())
 
 	const n = 20001
 	f := LinearGridFor(t, 0.0016, 0.4, n)
@@ -181,7 +181,7 @@ func TestDCFilterCoefficients(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, a := f.Coefficients()
+	b, a := realBA(f.RealCoefficients())
 
 	// A tone completing a whole number of cycles in the window the response is
 	// read from, so the correlation below sees no leakage and the comparison is

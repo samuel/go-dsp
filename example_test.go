@@ -28,10 +28,10 @@ func gainDB(filter func(dst, src []float32) int, rate, freq float64) float64 {
 // A 1 kHz Butterworth low-pass at 48 kHz passes a 100 Hz tone, is 3 dB down at
 // its cutoff, and is more than 40 dB down a decade above it, as a
 // second-order filter should be.
-func ExampleNewLowPassBiQuad() {
+func ExampleNewBiquadLowPass() {
 	const rate = 48000
 	for _, freq := range []float64{100, 1000, 10000} {
-		lp, err := dsp.NewLowPassBiQuad[float32](rate, 1000, math.Sqrt2/2)
+		lp, err := dsp.NewBiquadLowPass[float32](rate, 1000, math.Sqrt2/2)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -94,18 +94,24 @@ func ExampleFIRInterpolator() {
 
 // SincInterpolator.At reads a signal between its samples. Here a slow sine is
 // read halfway between samples 20 and 21, and lands within the passband
-// ripple of 16 windowed taps of the true value.
+// ripple of 16 windowed taps of the true value. The same table reads a complex
+// signal, the matching complex exponential, part by part.
 func ExampleSincInterpolator_At() {
 	const freq = 0.03 // cycles per sample
 	src := make([]float64, 64)
+	iq := make([]complex64, 64)
 	for i := range src {
-		src[i] = math.Sin(2 * math.Pi * freq * float64(i))
+		s, c := math.Sincos(2 * math.Pi * freq * float64(i))
+		src[i] = s
+		iq[i] = complex(float32(c), float32(s))
 	}
 	s, err := dsp.NewSincInterpolator[float64](16, 256, 0.45, 6)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("At(20.5) = %.4f, sine = %.4f\n", s.At(src, 20.5), math.Sin(2*math.Pi*freq*20.5))
+	fmt.Printf("complex At(20.5) = %.4f\n", s.At(iq, 20.5))
 	// Output:
 	// At(20.5) = -0.6611, sine = -0.6613
+	// complex At(20.5) = (-0.7498-0.6611i)
 }

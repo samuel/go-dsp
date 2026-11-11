@@ -20,16 +20,6 @@ type Sample interface {
 	Float | Complex
 }
 
-// rtoc widens real coefficients to complex ones, which is what a filter with a
-// real response needs to run over a complex signal.
-func rtoc[C Complex, F Float](r []F) []C {
-	c := make([]C, len(r))
-	for i, v := range r {
-		c[i] = C(complex(float64(v), 0))
-	}
-	return c
-}
-
 // setReal sets dst[k] to src[k]/div as a real value of T, for coefficients
 // designed in float64. dst must hold len(src) values.
 func setReal[T Sample](dst []T, src []float64, div float64) {

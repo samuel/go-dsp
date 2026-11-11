@@ -225,17 +225,28 @@ func TestFIRConstructorsValidate(t *testing.T) {
 	taps := []float64{1, 2, 3}
 	f, _ := NewFIRFilter(taps)
 	taps[0] = 99
-	if b, _ := f.Coefficients(); b[0] != 1 {
+	if b := f.Taps(); b[0] != 1 {
 		t.Errorf("taps were not copied: %v", b)
 	}
-	// Coefficients hands back a copy too.
-	b, a := f.Coefficients()
+	// Taps and RealCoefficients hand back copies too.
+	f.Taps()[0] = 42
+	b, a, ok := f.RealCoefficients()
+	if !ok {
+		t.Fatal("RealCoefficients: ok false for real taps")
+	}
 	b[0] = 42
-	if b2, _ := f.Coefficients(); b2[0] != 1 {
-		t.Errorf("Coefficients aliased the filter: %v", b2)
+	if b2 := f.Taps(); b2[0] != 1 {
+		t.Errorf("Taps or RealCoefficients aliased the filter: %v", b2)
 	}
 	if a != nil {
 		t.Errorf("a = %v, want nil for an FIR filter", a)
+	}
+	// Complex taps report by value.
+	if b, _, ok := must(NewFIRFilter([]complex64{1, -2})).RealCoefficients(); !ok || b[1] != -2 {
+		t.Errorf("complex type, real taps: RealCoefficients = (%v, %v), want ([1 -2], true)", b, ok)
+	}
+	if _, _, ok := must(NewFIRFilter([]complex64{1, 1i})).RealCoefficients(); ok {
+		t.Error("complex taps: RealCoefficients ok true")
 	}
 	// Len is what a caller sizing a measurement frame reads; a transform
 	// shorter than the tap count cannot hold the impulse response.
@@ -248,10 +259,7 @@ func TestFIRConstructorsValidate(t *testing.T) {
 // tap set: every frequency is delayed by the same (len(taps)-1)/2 samples.
 func TestFIRLinearPhase(t *testing.T) {
 	taps := []float64{0.1, 0.2, 0.4, 0.2, 0.1}
-	b, _ := func() ([]float64, []float64) {
-		f, _ := NewFIRFilter(taps)
-		return f.Coefficients()
-	}()
+	b := must(NewFIRFilter(taps)).Taps()
 	f := make([]float64, 64)
 	for i := range f {
 		f[i] = 0.5 * float64(i) / float64(len(f))
@@ -472,22 +480,27 @@ func TestFIRInterpolatorConstructorsValidate(t *testing.T) {
 	}
 }
 
-// TestRealCoefFIRInterpolator checks that real taps over complex samples give
-// the same output as the same taps written as complex.
+// TestRealCoefFIRInterpolator checks that real taps over complex samples run
+// the real filter over each part: the output is bit-identical to interpolating
+// the real and imaginary parts separately.
 func TestRealCoefFIRInterpolator(t *testing.T) {
 	src := make([]complex128, 50)
+	re := make([]float64, len(src))
+	im := make([]float64, len(src))
 	for i := range src {
-		src[i] = complex(math.Sin(float64(i)*0.3), math.Cos(float64(i)*0.7))
+		re[i], im[i] = math.Sin(float64(i)*0.3), math.Cos(float64(i)*0.7)
+		src[i] = complex(re[i], im[i])
 	}
 	rc := must(NewRealCoefFIRInterpolator[complex128](asymTaps, 3))
-	cplx := must(NewFIRInterpolator(rtoc[complex128](asymTaps), 3))
 	got := make([]complex128, 3*len(src))
-	want := make([]complex128, 3*len(src))
 	rc.Process(got, src)
-	cplx.Process(want, src)
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("[%d] = %v, want %v", i, got[i], want[i])
+	wantRe := make([]float64, 3*len(src))
+	wantIm := make([]float64, 3*len(src))
+	must(NewFIRInterpolator(asymTaps, 3)).Process(wantRe, re)
+	must(NewFIRInterpolator(asymTaps, 3)).Process(wantIm, im)
+	for i := range got {
+		if real(got[i]) != wantRe[i] || imag(got[i]) != wantIm[i] {
+			t.Fatalf("[%d] = %v, want (%v%+vi)", i, got[i], wantRe[i], wantIm[i])
 		}
 	}
 }

@@ -127,7 +127,7 @@ func TestBoxcarDecimatorResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := p.(Coefficients); ok {
+	if _, ok := p.(RealCoefficients); ok {
 		t.Error("a rate changer must not claim to have a transfer function")
 	}
 
@@ -275,7 +275,7 @@ func TestFIRInterpolatorResponse(t *testing.T) {
 			t.Errorf("%.0f Hz: gain %v, want 1", r.Freq[i], m)
 		}
 	}
-	if _, ok := p.(Coefficients); ok {
-		t.Error("a rate changer has no single transfer function, so it must not offer Coefficients")
+	if _, ok := p.(RealCoefficients); ok {
+		t.Error("a rate changer has no single transfer function, so it must not offer RealCoefficients")
 	}
 }

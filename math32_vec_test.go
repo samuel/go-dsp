@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// TestVCMulRealC64 exercises the windowing multiply and its length rules.
-func TestVCMulRealC64(t *testing.T) {
+// TestVMulRealC64 exercises the windowing multiply and its length rules.
+func TestVMulRealC64(t *testing.T) {
 	src := make([]complex64, 40)
 	mul := make([]float32, 40)
 	for i := range src {
@@ -18,7 +18,7 @@ func TestVCMulRealC64(t *testing.T) {
 	// Mismatched lengths: the shortest of the three wins.
 	for _, n := range []int{0, 1, 3, 4, 7, 16, 33, 40} {
 		got := make([]complex64, n+1)
-		VCMulReal(got[:n], src[:n], mul)
+		VMulReal(got[:n], src[:n], mul)
 		for i := range n {
 			want := complex(real(src[i])*mul[i], imag(src[i])*mul[i])
 			if got[i] != want {
@@ -32,7 +32,7 @@ func TestVCMulRealC64(t *testing.T) {
 
 	// A short multiplier truncates rather than overruns.
 	got := make([]complex64, len(src))
-	VCMulReal(got, src, mul[:5])
+	VMulReal(got, src, mul[:5])
 	for i, v := range got[5:] {
 		if v != 0 {
 			t.Fatalf("wrote past the multiplier at %d: %v", i+5, v)
@@ -40,14 +40,14 @@ func TestVCMulRealC64(t *testing.T) {
 	}
 }
 
-// TestVCMul checks the product against values computed here rather than
+// TestVMulComplex checks the product against values computed here rather than
 // against src re-read after the call.
-func TestVCMul(t *testing.T) {
+func TestVMulComplex(t *testing.T) {
 	src := []complex64{complex(1, 2), complex(-3, 4), complex(5, -6)}
 	mul := []complex64{complex(0, 1), complex(2, 0), complex(1, 1)}
 	want := []complex64{complex(-2, 1), complex(-6, 8), complex(11, -1)}
 	dst := make([]complex64, len(src)+1)
-	VCMul(dst, src, mul)
+	VMul(dst, src, mul)
 	for i, v := range want {
 		if dst[i] != v {
 			t.Errorf("[%d] = %v, want %v", i, dst[i], v)
@@ -63,14 +63,14 @@ func TestVCMul(t *testing.T) {
 
 	// The shortest of the three bounds the work.
 	short := make([]complex64, len(src))
-	VCMul(short, src, mul[:1])
+	VMul(short, src, mul[:1])
 	if short[1] != 0 {
 		t.Errorf("ignored a short multiplier: %v", short)
 	}
 
 	// Multiplying in place is the same operation with dst aliasing src.
 	inPlace := slices.Clone(src)
-	VCMul(inPlace, inPlace, mul)
+	VMul(inPlace, inPlace, mul)
 	if !slices.Equal(inPlace, want) {
 		t.Errorf("in place = %v, want %v", inPlace, want)
 	}
@@ -97,36 +97,36 @@ func TestVAdd(t *testing.T) {
 	VAdd(dst[:2], a, b)
 }
 
-func TestVCAdd(t *testing.T) {
+func TestVAddComplex(t *testing.T) {
 	a := []complex64{complex(1, 2), complex(3, 4)}
 	b := []complex64{complex(10, 20), complex(30, 40), complex(50, 60)}
 	dst := make([]complex64, len(b))
-	VCAdd(dst, a, b)
+	VAdd(dst, a, b)
 	want := []complex64{complex(11, 22), complex(33, 44), 0}
 	if !slices.Equal(dst, want) {
 		t.Errorf("= %v, want %v", dst, want)
 	}
 
 	acc := slices.Clone(b)
-	VCAdd(acc, acc, a)
+	VAdd(acc, acc, a)
 	if got := []complex64{complex(11, 22), complex(33, 44), complex(50, 60)}; !slices.Equal(acc, got) {
 		t.Errorf("in place = %v, want %v", acc, got)
 	}
 
-	VCAdd(dst[:1], a, b)
+	VAdd(dst[:1], a, b)
 }
 
 // TestVScaleC64 checks the reinterpretation of complex64 as float32 pairs that
 // lets vscaleF32 do the work, including for an empty slice, where taking the
 // address of element zero would not be safe.
-func TestVCScaleReal(t *testing.T) {
+func TestVScaleReal(t *testing.T) {
 	src := make([]complex64, 37)
 	for i := range src {
 		src[i] = complex(float32(i)-18, float32(3*i)-10)
 	}
 	for _, n := range []int{0, 1, 5, 37} {
 		dst := make([]complex64, n+1)
-		VCScaleReal(dst[:n], src[:n], 0.25)
+		VScaleReal(dst[:n], src[:n], 0.25)
 		for i := range n {
 			want := complex(real(src[i])*0.25, imag(src[i])*0.25)
 			if dst[i] != want {
@@ -137,7 +137,7 @@ func TestVCScaleReal(t *testing.T) {
 			t.Fatalf("n=%d wrote past the end: %v", n, dst[n])
 		}
 	}
-	VCScaleReal[complex64, float64](nil, nil, 2)
+	VScaleReal[complex64, float64](nil, nil, 2)
 }
 
 func TestConj(t *testing.T) {

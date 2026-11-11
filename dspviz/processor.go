@@ -3,7 +3,7 @@
 // Everything here works through Processor, a black box that turns samples at
 // one rate into samples at another, so a biquad, a set of FIR taps and a
 // decimator are all measured the same way. A processor that also implements
-// Coefficients is measured exactly from its transfer function instead, which is
+// RealCoefficients is measured exactly from its transfer function instead, which is
 // faster and resolves far more finely; MethodAuto picks between the two.
 //
 // Measurement is float64, whatever the device under test's width: a float32
@@ -31,15 +31,25 @@ type Processor interface {
 	Reset()
 }
 
-// Coefficients is implemented by a Processor that is a linear time-invariant
-// filter with a known transfer function B(z)/A(z), which lets the analysis
-// evaluate the response exactly instead of measuring it. The slices are copies,
-// and are the b and a dsp.Freqz takes.
+// RealCoefficients is implemented by a Processor that is a linear
+// time-invariant filter with a known transfer function B(z)/A(z), which lets
+// the analysis evaluate the response exactly instead of measuring it. The
+// slices are copies, and are the b and a dsp.Freqz takes. ok is false when the
+// coefficients are complex, and the analysis then measures instead.
 //
 // The decimators do not implement it, and cannot: a rate changer is
 // periodically time-varying, so it has no single transfer function.
-type Coefficients interface {
-	Coefficients() (b, a []float64)
+type RealCoefficients interface {
+	RealCoefficients() (b, a []float64, ok bool)
+}
+
+// realCoefficients returns p's transfer function, if it has a real one.
+func realCoefficients(p Processor) (b, a []float64, ok bool) {
+	c, ok := p.(RealCoefficients)
+	if !ok {
+		return nil, nil, false
+	}
+	return c.RealCoefficients()
 }
 
 // ratioRates returns the input and output rates of a rate changer whose input
@@ -56,17 +66,17 @@ func checkRate(rate float64) error {
 	return nil
 }
 
-// biquadProcessor adapts dsp.BiQuadFilter at any sample width.
+// biquadProcessor adapts dsp.Biquad at any sample width.
 type biquadProcessor[T dsp.Float] struct {
-	f    *dsp.BiQuadFilter[T]
+	f    *dsp.Biquad[T]
 	rate float64
 	buf  []T
 }
 
-// NewBiQuadProcessor measures a biquad running at sampleRate. A biquad keeps
+// NewBiquadProcessor measures a biquad running at sampleRate. A biquad keeps
 // float64 state at any sample width, so the width shows only in the rounding of
 // each output sample.
-func NewBiQuadProcessor[T dsp.Float](f *dsp.BiQuadFilter[T], sampleRate float64) (Processor, error) {
+func NewBiquadProcessor[T dsp.Float](f *dsp.Biquad[T], sampleRate float64) (Processor, error) {
 	if f == nil {
 		return nil, errors.New("dspviz: nil biquad")
 	}
@@ -85,7 +95,9 @@ func (p *biquadProcessor[T]) Process(dst, src []float64) []float64 {
 	return widenInto(dst, p.buf)
 }
 
-func (p *biquadProcessor[T]) Coefficients() (b, a []float64) { return p.f.Coefficients() }
+func (p *biquadProcessor[T]) RealCoefficients() (b, a []float64, ok bool) {
+	return p.f.RealCoefficients()
+}
 
 // iirProcessor adapts dsp.IIRFilter.
 type iirProcessor[T dsp.Float] struct {
@@ -119,9 +131,8 @@ func (p *iirProcessor[T]) Process(dst, src []float64) []float64 {
 	return widenInto(dst, p.buf)
 }
 
-func (p *iirProcessor[T]) Coefficients() (b, a []float64) {
-	bt, at := p.f.Coefficients()
-	return widenInto(nil, bt), widenInto(nil, at)
+func (p *iirProcessor[T]) RealCoefficients() (b, a []float64, ok bool) {
+	return p.f.RealCoefficients()
 }
 
 // firProcessor adapts dsp.FIRFilter.
@@ -151,15 +162,14 @@ func (p *firProcessor[T]) Process(dst, src []float64) []float64 {
 	return widenInto(dst, p.buf)
 }
 
-func (p *firProcessor[T]) Coefficients() (b, a []float64) {
-	bt, _ := p.f.Coefficients()
-	return widenInto(nil, bt), nil
+func (p *firProcessor[T]) RealCoefficients() (b, a []float64, ok bool) {
+	return p.f.RealCoefficients()
 }
 
 // firDecimatorProcessor adapts dsp.FIRDecimator: an anti-alias filter and the
 // rate change in one pass, which is what a real decimation stage looks like.
 //
-// It deliberately does not implement Coefficients, and neither do the other
+// It deliberately does not implement RealCoefficients, and neither do the other
 // rate changers. A rate changer is periodically time-varying rather than
 // time-invariant, so it has no single transfer function and has to be
 // measured by injecting tones -- which is the point of measuring it here
@@ -252,7 +262,9 @@ func (p *dcProcessor[T]) Process(dst, src []float64) []float64 {
 	return widenInto(dst, p.buf)
 }
 
-func (p *dcProcessor[T]) Coefficients() (b, a []float64) { return p.f.Coefficients() }
+func (p *dcProcessor[T]) RealCoefficients() (b, a []float64, ok bool) {
+	return p.f.RealCoefficients()
+}
 
 // boxcarDecimatorProcessor adapts dsp.BoxcarDecimator. A complex decimator is
 // fed the real signal on the real axis and read back off it.

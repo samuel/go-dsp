@@ -105,11 +105,11 @@ func TestToneMatchesFreqz(t *testing.T) {
 		make func() Processor
 	}{
 		{"lowpass", func() Processor {
-			p, _ := NewBiQuadProcessor(must(dsp.NewLowPassBiQuad[float64](rate, 1000, 0.7071)), rate)
+			p, _ := NewBiquadProcessor(must(dsp.NewBiquadLowPass[float64](rate, 1000, 0.7071)), rate)
 			return p
 		}},
 		{"peaking", func() Processor {
-			p, _ := NewBiQuadProcessor(must(dsp.NewPeakingEQBiQuad[float64](rate, 3000, 4, 12)), rate)
+			p, _ := NewBiquadProcessor(must(dsp.NewBiquadPeakingEQ[float64](rate, 3000, 4, 12)), rate)
 			return p
 		}},
 		{"fir", func() Processor {
@@ -297,12 +297,12 @@ func TestGroupDelayOfLinearPhaseFIR(t *testing.T) {
 	}
 }
 
-// TestBiQuadCutoffMetric checks that the reported cutoff is interpolated rather
+// TestBiquadCutoffMetric checks that the reported cutoff is interpolated rather
 // than snapped to a grid point, by asking for it on a grid far too coarse to
 // contain the answer.
-func TestBiQuadCutoffMetric(t *testing.T) {
+func TestBiquadCutoffMetric(t *testing.T) {
 	const rate, cutoff = 48000.0, 1000.0
-	p, err := NewBiQuadProcessor(must(dsp.NewLowPassBiQuad[float64](rate, cutoff, math.Sqrt2/2)), rate)
+	p, err := NewBiquadProcessor(must(dsp.NewBiquadLowPass[float64](rate, cutoff, math.Sqrt2/2)), rate)
 	if err != nil {
 		t.Fatal(err)
 	}

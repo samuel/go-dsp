@@ -94,19 +94,17 @@ func TestIIRFilter(t *testing.T) {
 	}
 }
 
-// TestIIRFilterNormalizesA0 checks that the stored aCoef[0] is 1, as the doc
-// says. It used to keep the caller's value, which then went unused for float64
-// but was widened into the complex variants' coefficient slices.
+// TestIIRFilterNormalizesA0 checks that the stored a[0] is 1, as the doc says.
 func TestIIRFilterNormalizesA0(t *testing.T) {
 	f, err := NewIIRFilter([]float64{1, 0.6}, []float64{2, -1.4})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f.aCoef[0] != 1 {
-		t.Errorf("aCoef[0] = %v, want 1", f.aCoef[0])
+	if f.a.native[0] != 1 {
+		t.Errorf("a[0] = %v, want 1", f.a.native[0])
 	}
-	if f.bCoef[0] != 0.5 {
-		t.Errorf("bCoef[0] = %v, want 0.5", f.bCoef[0])
+	if f.b.native[0] != 0.5 {
+		t.Errorf("b[0] = %v, want 0.5", f.b.native[0])
 	}
 }
 
@@ -140,6 +138,33 @@ func TestIIRFilterCoefficients(t *testing.T) {
 	cb, ca := cf.Coefficients()
 	wantSlice(t, "complex b", cb, []complex128{0.25, 0.125, -0.0625})
 	wantSlice(t, "complex a", ca, []complex128{1, 0.5, -0.25})
+	rb, ra, ok := cf.RealCoefficients()
+	if !ok {
+		t.Fatal("real-coefficient filter: RealCoefficients ok false")
+	}
+	wantSlice(t, "real b", rb, []float64{0.25, 0.125, -0.0625})
+	wantSlice(t, "real a", ra, []float64{1, 0.5, -0.25})
+
+	// The answer depends on the values: complex coefficients whose imaginary
+	// parts are all zero are real, and one non-zero part in a or b is not.
+	zf := must(NewIIRFilter([]complex64{1, 0.5}, []complex64{2, -1}))
+	zb, za, ok := zf.RealCoefficients()
+	if !ok {
+		t.Error("complex type, real values: RealCoefficients ok false")
+	}
+	wantSlice(t, "zero-imaginary b", zb, []float64{0.5, 0.25})
+	wantSlice(t, "zero-imaginary a", za, []float64{1, -0.5})
+	for _, c := range []struct {
+		name string
+		b, a []complex128
+	}{
+		{"complex a", []complex128{1, 0.5}, []complex128{1, -0.5i}},
+		{"complex b", []complex128{1, 0.5i}, []complex128{1, -0.5}},
+	} {
+		if b, a, ok := must(NewIIRFilter(c.b, c.a)).RealCoefficients(); ok || b != nil || a != nil {
+			t.Errorf("%s: RealCoefficients = (%v, %v, %v), want (nil, nil, false)", c.name, b, a, ok)
+		}
+	}
 }
 
 func TestNewIIRFilterRejects(t *testing.T) {

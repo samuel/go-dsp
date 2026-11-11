@@ -38,7 +38,7 @@ func FastPolarDiscriminator(a, b complex64) float32 {
 //	              └───┘     └───┘
 //
 // The arithmetic happens at C's width and the result is converted to F, as in
-// VCAbs. complex64 uses FastPolarDiscriminator and inherits FastAtan2's error
+// VAbs. complex64 uses FastPolarDiscriminator and inherits FastAtan2's error
 // bound; FMDemod[complex64, float32] runs the assembly. complex128 uses the
 // exact PolarDiscriminator.
 type FMDemod[C Complex, F Float] struct {

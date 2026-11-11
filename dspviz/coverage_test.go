@@ -284,7 +284,7 @@ func TestKindByNameCoversTheCatalog(t *testing.T) {
 
 // TestIIRProcessor covers the adapter for dsp.IIRFilter, which nothing else
 // reaches: the catalog has no entry that builds one, so the only thing standing
-// behind it is that its Coefficients pass through unchanged and its response
+// behind it is that its RealCoefficients pass through unchanged and its response
 // matches dsp.Freqz.
 func TestIIRProcessor(t *testing.T) {
 	const rate = 48000.0
@@ -296,12 +296,12 @@ func TestIIRProcessor(t *testing.T) {
 	if in, out := p.Rates(); in != rate || out != rate {
 		t.Errorf("rates (%v, %v), want (%v, %v)", in, out, rate, rate)
 	}
-	c, ok := p.(Coefficients)
+	c, ok := p.(RealCoefficients)
 	if !ok {
 		t.Fatal("an IIR processor does not report its coefficients, so it cannot be measured exactly")
 	}
-	b, a := c.Coefficients()
-	wantB, wantA := f.Coefficients()
+	b, a, _ := c.RealCoefficients()
+	wantB, wantA, _ := f.RealCoefficients()
 	if !slices.Equal(b, wantB) || !slices.Equal(a, wantA) {
 		t.Errorf("coefficients (%v, %v), want (%v, %v)", b, a, wantB, wantA)
 	}
@@ -335,7 +335,7 @@ func TestIIRProcessor(t *testing.T) {
 // row of zeros.
 func TestReportWriteSummary(t *testing.T) {
 	const rate = 48000.0
-	p, err := NewBiQuadProcessor(must(dsp.NewLowPassBiQuad[float64](rate, 1000, 0.7071)), rate)
+	p, err := NewBiquadProcessor(must(dsp.NewBiquadLowPass[float64](rate, 1000, 0.7071)), rate)
 	if err != nil {
 		t.Fatal(err)
 	}

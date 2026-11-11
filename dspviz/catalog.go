@@ -241,28 +241,28 @@ func Build(kind string, params map[string]float64, choices map[string]string) (P
 		freq = math.Min(freq, rate/2*0.999) // above Nyquist the cookbook formulas are meaningless
 		gain, slope := get("gain"), get("slope")
 		var (
-			f   *dsp.BiQuadFilter[float64]
+			f   *dsp.Biquad[float64]
 			err error
 		)
 		switch pick("type") {
 		case "lowpass":
-			f, err = dsp.NewLowPassBiQuad[float64](rate, freq, q)
+			f, err = dsp.NewBiquadLowPass[float64](rate, freq, q)
 		case "highpass":
-			f, err = dsp.NewHighPassBiQuad[float64](rate, freq, q)
+			f, err = dsp.NewBiquadHighPass[float64](rate, freq, q)
 		case "bandpass-skirt":
-			f, err = dsp.NewBandPassConstantSkirtGainBiQuad[float64](rate, freq, q)
+			f, err = dsp.NewBiquadBandPassConstantSkirtGain[float64](rate, freq, q)
 		case "bandpass-peak":
-			f, err = dsp.NewBandPassConstantPeakGainBiQuad[float64](rate, freq, q)
+			f, err = dsp.NewBiquadBandPassConstantPeakGain[float64](rate, freq, q)
 		case "notch":
-			f, err = dsp.NewNotchBiQuad[float64](rate, freq, q)
+			f, err = dsp.NewBiquadNotch[float64](rate, freq, q)
 		case "allpass":
-			f, err = dsp.NewAllPassBiQuad[float64](rate, freq, q)
+			f, err = dsp.NewBiquadAllPass[float64](rate, freq, q)
 		case "peaking":
-			f, err = dsp.NewPeakingEQBiQuad[float64](rate, freq, q, gain)
+			f, err = dsp.NewBiquadPeakingEQ[float64](rate, freq, q, gain)
 		case "lowshelf":
-			f, err = dsp.NewLowShelfBiQuad[float64](rate, freq, slope, gain)
+			f, err = dsp.NewBiquadLowShelf[float64](rate, freq, slope, gain)
 		case "highshelf":
-			f, err = dsp.NewHighShelfBiQuad[float64](rate, freq, slope, gain)
+			f, err = dsp.NewBiquadHighShelf[float64](rate, freq, slope, gain)
 		default:
 			// pick falls back to the choice's default, so this is reachable
 			// only if the catalog lists an option this switch does not build.
@@ -271,7 +271,7 @@ func Build(kind string, params map[string]float64, choices map[string]string) (P
 		if err != nil {
 			return nil, err
 		}
-		return NewBiQuadProcessor(f, rate)
+		return NewBiquadProcessor(f, rate)
 
 	case "firpm":
 		rate := get("rate")

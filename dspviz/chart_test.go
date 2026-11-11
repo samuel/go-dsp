@@ -85,7 +85,7 @@ func golden(t *testing.T, name string, c *Chart) {
 func testResponse(t *testing.T) *Response {
 	t.Helper()
 	const rate = 48000.0
-	p, err := NewBiQuadProcessor(must(dsp.NewLowPassBiQuad[float64](rate, 1000, 0.7071)), rate)
+	p, err := NewBiquadProcessor(must(dsp.NewBiquadLowPass[float64](rate, 1000, 0.7071)), rate)
 	if err != nil {
 		t.Fatal(err)
 	}

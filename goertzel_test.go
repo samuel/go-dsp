@@ -77,10 +77,10 @@ func TestGoertzelFloat32Samples(t *testing.T) {
 	}
 }
 
-// TestComplexGoertzelSignDiscrimination is the property ComplexGoertzel exists
+// TestGoertzelComplexSignDiscrimination is the property Goertzel exists
 // for: running the recursion over the real and imaginary parts separately tells
 // a positive frequency from its negative image, which a real Goertzel cannot.
-func TestComplexGoertzelSignDiscrimination(t *testing.T) {
+func TestGoertzelComplexSignDiscrimination(t *testing.T) {
 	const (
 		samplerate = 1024
 		blocksize  = 1024
@@ -98,7 +98,7 @@ func TestComplexGoertzelSignDiscrimination(t *testing.T) {
 	}
 
 	powerAt := func(samples []complex128) float64 {
-		g, err := NewComplexGoertzel[complex128]([]float64{freq}, samplerate, blocksize)
+		g, err := NewGoertzel[complex128]([]float64{freq}, samplerate, blocksize)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -125,7 +125,7 @@ func TestComplexGoertzelSignDiscrimination(t *testing.T) {
 	}
 
 	// Complex and Power have to agree.
-	gc, err := NewComplexGoertzel[complex128]([]float64{freq}, samplerate, blocksize)
+	gc, err := NewGoertzel[complex128]([]float64{freq}, samplerate, blocksize)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestGoertzelFeedProtocol(t *testing.T) {
 				t.Fatal("expected a panic")
 			}
 		}()
-		g, err := NewComplexGoertzel[complex128]([]float64{100}, 8000, 8)
+		g, err := NewGoertzel[complex128]([]float64{100}, 8000, 8)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -229,8 +229,8 @@ func TestNewGoertzelRejects(t *testing.T) {
 			}
 			// The two constructors share newGoertzelBins, so both have to
 			// reach it before allocating.
-			if _, err := NewComplexGoertzel[complex128]([]float64{100}, tc.rate, tc.block); err == nil {
-				t.Error("NewComplexGoertzel: expected an error")
+			if _, err := NewGoertzel[complex128]([]float64{100}, tc.rate, tc.block); err == nil {
+				t.Error("NewGoertzel: expected an error")
 			}
 		})
 	}
@@ -265,7 +265,7 @@ func TestGoertzelFractionalAndNegativeFreq(t *testing.T) {
 	for i := range neg {
 		neg[i] = cmplx.Exp(complex(0, -2*math.Pi*128*float64(i)/samplerate))
 	}
-	gc, err := NewComplexGoertzel[complex128]([]float64{-128}, samplerate, blocksize)
+	gc, err := NewGoertzel[complex128]([]float64{-128}, samplerate, blocksize)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +273,7 @@ func TestGoertzelFractionalAndNegativeFreq(t *testing.T) {
 	if e := float64(blocksize * blocksize); !approxEqual(gc.Power()[0], e, e*1e-8) {
 		t.Errorf("power at -128 Hz = %g, want %g", gc.Power()[0], e)
 	}
-	gcPos, err := NewComplexGoertzel[complex128]([]float64{128}, samplerate, blocksize)
+	gcPos, err := NewGoertzel[complex128]([]float64{128}, samplerate, blocksize)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,8 +283,8 @@ func TestGoertzelFractionalAndNegativeFreq(t *testing.T) {
 	}
 }
 
-// TestComplexGoertzel64 covers the complex64 instantiation.
-func TestComplexGoertzel64(t *testing.T) {
+// TestGoertzelComplex64 covers the complex64 instantiation.
+func TestGoertzelComplex64(t *testing.T) {
 	const (
 		samplerate = 1024
 		blocksize  = 1024
@@ -294,7 +294,7 @@ func TestComplexGoertzel64(t *testing.T) {
 	for i := range samples {
 		samples[i] = complex64(cmplx.Exp(complex(0, 2*math.Pi*freq*float64(i)/samplerate)))
 	}
-	g, err := NewComplexGoertzel[complex64]([]float64{freq}, samplerate, blocksize)
+	g, err := NewGoertzel[complex64]([]float64{freq}, samplerate, blocksize)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -63,8 +63,8 @@ func TestServerAnalyzeMatchesFreqz(t *testing.T) {
 	c := out["curves"].(map[string]any)["magnitude"].(map[string]any)
 	xs := c["x"].([]any)
 	ys := c["y"].([]any)
-	lp := must(dsp.NewLowPassBiQuad[float64](48000, 1000, 0.7071))
-	b, a := lp.Coefficients()
+	lp := must(dsp.NewBiquadLowPass[float64](48000, 1000, 0.7071))
+	b, a, _ := lp.RealCoefficients()
 	for i, xv := range xs {
 		f := xv.(float64)
 		if f < 900 || f > 1100 {

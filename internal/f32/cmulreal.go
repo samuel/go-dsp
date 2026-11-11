@@ -1,6 +1,6 @@
 package f32
 
-// CMulReal is the windowing kernel behind dsp.VCMulReal at complex64:
+// CMulReal is the windowing kernel behind dsp.VMulReal at complex64:
 //
 //	dst[i] = complex(real(src[i])*mul[i], imag(src[i])*mul[i])
 //

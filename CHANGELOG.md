@@ -16,7 +16,7 @@ Go 1.27.
 
 ### Added
 
-- `dsp`: generic vector operations (`VScale`, `VAdd`, `VCMul`, ...), FM
+- `dsp`: generic vector operations (`VScale`, `VAdd`, `VMul`, ...), FM
   demodulation, IIR, biquad and FIR filters, FIR and boxcar decimators, FIR
   interpolation, Goertzel tone detection, a sliding DFT, a fixed-size FFT,
   `Freqz` and `GroupDelay`, window functions, Kaiser-windowed sinc low-pass
@@ -27,6 +27,9 @@ Go 1.27.
   interpolator, `FMDemod`, `Rotator90` and `SDFT`. `Process(dst, src)`
   consumes all of `src`, returns `OutputLen(len(src))` and panics if `dst` is
   shorter; rate changers report `Ratio() (in, out int)`.
+- `NewRealCoef...` constructors for real coefficients over complex samples,
+  stored at the sample's component width so each tap costs two real
+  multiplies, and `RealCoefficients` on every linear time-invariant type.
 - Assembly for 386, amd64 (SSE2, SSE4.1 and AVX, chosen at run time), arm
   (NEON and VFP) and arm64, with a pure-Go implementation on every other
   architecture and an optional `GOEXPERIMENT=simd` path.

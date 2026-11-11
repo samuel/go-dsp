@@ -3,6 +3,8 @@ package dsp
 import (
 	"errors"
 	"math"
+
+	"samuelks.com/dsp/internal/view"
 )
 
 // The interpolators in this file all read a signal at a fractional position.
@@ -42,8 +44,8 @@ func sampleAt[T Sample](src []T, i int) T {
 	return src[i]
 }
 
-// Linear interpolates between the two src either side of x.
-func Linear[T Float](src []T, x T) T {
+// InterpLinear interpolates between the two src either side of x.
+func InterpLinear[T Float](src []T, x T) T {
 	xi, frac, ok := splitPos(len(src), x)
 	if !ok {
 		return 0
@@ -53,8 +55,8 @@ func Linear[T Float](src []T, x T) T {
 	return lo + frac*(hi-lo)
 }
 
-// Hermite4p3o interpolates using 4-point, 3rd-order Hermite (x-form).
-func Hermite4p3o[T Float](src []T, x T) T {
+// InterpHermite4p3o interpolates using 4-point, 3rd-order Hermite (x-form).
+func InterpHermite4p3o[T Float](src []T, x T) T {
 	xi, frac, ok := splitPos(len(src), x)
 	if !ok {
 		return 0
@@ -70,14 +72,14 @@ func Hermite4p3o[T Float](src []T, x T) T {
 	return ((c3*frac+c2)*frac+c1)*frac + c0
 }
 
-// Optimal2x4p4o interpolates using optimal 2x (4-point, 4th-order) (z-form).
+// InterpOptimal2x4p4o interpolates using optimal 2x (4-point, 4th-order) (z-form).
 //
 // The "2x" is a requirement, not a label: the coefficients minimize error over
 // the lower half of the band, assuming the signal is oversampled by at least
 // two. Fed a signal that uses its whole band, this is worse than the plainer
-// Lagrange and Hermite interpolators above. Optimal2x6p5o is the same
+// Lagrange and Hermite interpolators above. InterpOptimal2x6p5o is the same
 // assumption over six points.
-func Optimal2x4p4o[T Float](src []T, x T) T {
+func InterpOptimal2x4p4o[T Float](src []T, x T) T {
 	xi, frac, ok := splitPos(len(src), x)
 	if !ok {
 		return 0
@@ -103,9 +105,9 @@ func Optimal2x4p4o[T Float](src []T, x T) T {
 	return (((c4*z+c3)*z+c2)*z+c1)*z + c0
 }
 
-// Optimal2x6p5o interpolates using optimal 2x (6-point, 5th-order) (z-form).
-// It assumes a 2x oversampled input, as Optimal2x4p4o does; see the note there.
-func Optimal2x6p5o[T Float](src []T, x T) T {
+// InterpOptimal2x6p5o interpolates using optimal 2x (6-point, 5th-order) (z-form).
+// It assumes a 2x oversampled input, as InterpOptimal2x4p4o does; see the note there.
+func InterpOptimal2x6p5o[T Float](src []T, x T) T {
 	xi, frac, ok := splitPos(len(src), x)
 	if !ok {
 		return 0
@@ -141,26 +143,32 @@ func Optimal2x6p5o[T Float](src []T, x T) T {
 // phase's taps reach, so the phases together sample one prototype filter
 // whose window edges fall on its end taps, as LowPassFIR's do. The
 // coefficients are computed in float64, normalized per phase to a DC gain of
-// 1, and stored as T; complex samples get real coefficients, as with
-// NewRealCoefFIRFilter. Filtering accumulates in T.
+// 1, and stored as F.
+//
+// F is the coefficient width; the sample type is a type parameter of each
+// method, so one table serves real and complex signals at either width. A
+// complex sample is filtered as two real channels, with no complex multiply.
+// Filtering accumulates at the sample's component width.
 //
 // At reads src at a position, with the out-of-range policy of the functions
 // above. Interpolate and Apply instead read Len points the caller has
 // gathered, with point Len/2-1 the sample at or below the position, which is
 // where looping or another edge policy goes. Positions are float64 rather
-// than T, since T may be complex.
+// than a sample type, since the samples may be complex.
 //
 // It is immutable once built and safe for concurrent use.
-type SincInterpolator[T Sample] struct {
+type SincInterpolator[F Float] struct {
 	taps, phases int
-	table        []T       // phases rows of taps coefficients
+	table        []F       // phases rows of taps coefficients
 	window       []float64 // the Kaiser window behind each table entry
 }
 
 // NewSincInterpolator returns an interpolator of taps points, which must be
 // even and at least 2, and phases fractional steps. cutoff is in cycles per
-// sample, in (0, 0.5], and beta is the Kaiser window parameter.
-func NewSincInterpolator[T Sample](taps, phases int, cutoff, beta float64) (*SincInterpolator[T], error) {
+// sample, in (0, 0.5], and beta is the Kaiser window parameter. The coefficient
+// width cannot be inferred and has to be given, as in
+// NewSincInterpolator[float32](16, 256, 0.45, 6).
+func NewSincInterpolator[F Float](taps, phases int, cutoff, beta float64) (*SincInterpolator[F], error) {
 	switch {
 	case taps < 2 || taps%2 != 0:
 		return nil, errors.New("dsp: sinc interpolator needs an even number of taps, at least 2")
@@ -171,10 +179,10 @@ func NewSincInterpolator[T Sample](taps, phases int, cutoff, beta float64) (*Sin
 	case !(beta >= 0) || math.IsInf(beta, 1):
 		return nil, errors.New("dsp: sinc interpolator Kaiser beta must be finite and not negative")
 	}
-	s := &SincInterpolator[T]{
+	s := &SincInterpolator[F]{
 		taps:   taps,
 		phases: phases,
-		table:  make([]T, taps*phases),
+		table:  make([]F, taps*phases),
 		window: make([]float64, taps*phases),
 	}
 	halfLen := float64(taps / 2)
@@ -199,14 +207,14 @@ func NewSincInterpolator[T Sample](taps, phases int, cutoff, beta float64) (*Sin
 }
 
 // Len returns the number of points each interpolation reads.
-func (s *SincInterpolator[T]) Len() int { return s.taps }
+func (s *SincInterpolator[F]) Len() int { return s.taps }
 
 // Phases returns the number of fractional steps.
-func (s *SincInterpolator[T]) Phases() int { return s.phases }
+func (s *SincInterpolator[F]) Phases() int { return s.phases }
 
 // PhaseIndex returns the phase for a fraction in [0, 1). A fraction outside
 // that range, or NaN, selects the nearest end.
-func (s *SincInterpolator[T]) PhaseIndex(frac float64) int {
+func (s *SincInterpolator[F]) PhaseIndex(frac float64) int {
 	switch {
 	case !(frac > 0):
 		return 0
@@ -218,7 +226,7 @@ func (s *SincInterpolator[T]) PhaseIndex(frac float64) int {
 
 // PhaseCoeffs returns the coefficients for phase, which is in [0, Phases).
 // The slice is shared with the interpolator and must not be modified.
-func (s *SincInterpolator[T]) PhaseCoeffs(phase int) []T {
+func (s *SincInterpolator[F]) PhaseCoeffs(phase int) []F {
 	return s.table[phase*s.taps : (phase+1)*s.taps : (phase+1)*s.taps]
 }
 
@@ -228,7 +236,7 @@ func (s *SincInterpolator[T]) PhaseCoeffs(phase int) []T {
 // window as PhaseCoeffs and normalizes to a DC gain of 1; Apply reads with the
 // result. It panics if dst holds fewer than Len values or cutoff is out of
 // range.
-func (s *SincInterpolator[T]) DownsampleCoeffs(dst []T, phase int, cutoff float64) {
+func (s *SincInterpolator[F]) DownsampleCoeffs(dst []F, phase int, cutoff float64) {
 	switch {
 	case len(dst) < s.taps:
 		panic("dsp: sinc interpolator coefficient buffer is shorter than Len")
@@ -266,25 +274,20 @@ func (s *SincInterpolator[T]) DownsampleCoeffs(dst []T, phase int, cutoff float6
 // Apply returns the sum of buf[k]*coeffs[k], which reads the signal with
 // coefficients from PhaseCoeffs or DownsampleCoeffs. buf must hold
 // len(coeffs) points.
-func (s *SincInterpolator[T]) Apply(buf, coeffs []T) T {
-	buf = buf[:len(coeffs)]
-	var sum T
-	for k, c := range coeffs {
-		sum += buf[k] * c
-	}
-	return sum
+func (s *SincInterpolator[F]) Apply[T Sample](buf []T, coeffs []F) T {
+	return realDot(buf[:len(coeffs)], coeffs)
 }
 
 // Interpolate returns the signal at fraction frac past point Len/2-1 of buf,
 // which holds Len points.
-func (s *SincInterpolator[T]) Interpolate(buf []T, frac float64) T {
+func (s *SincInterpolator[F]) Interpolate[T Sample](buf []T, frac float64) T {
 	return s.Apply(buf, s.PhaseCoeffs(s.PhaseIndex(frac)))
 }
 
 // At returns src at position x, gathering the Len points around it with the
 // edges held as the interpolators above do. An empty src, or an x that is
 // NaN, gives zero.
-func (s *SincInterpolator[T]) At(src []T, x float64) T {
+func (s *SincInterpolator[F]) At[T Sample](src []T, x float64) T {
 	xi, frac, ok := splitPos(len(src), x)
 	if !ok {
 		return 0
@@ -294,9 +297,56 @@ func (s *SincInterpolator[T]) At(src []T, x float64) T {
 	if first >= 0 && first+s.taps <= len(src) {
 		return s.Apply(src[first:], coeffs)
 	}
-	var sum T
-	for k, c := range coeffs {
-		sum += sampleAt(src, first+k) * c
+	var stack [64]T
+	var buf []T
+	if s.taps <= len(stack) {
+		buf = stack[:s.taps]
+	} else {
+		buf = make([]T, s.taps)
 	}
-	return sum
+	for k := range buf {
+		buf[k] = sampleAt(src, first+k)
+	}
+	return s.Apply(buf, coeffs)
+}
+
+// realDot returns the sum of x[k]*c[k] over len(c) samples of x, multiplying a
+// complex sample by each real coefficient part by part. The sum accumulates at
+// the component width of T.
+func realDot[T Sample, F Float](x []T, c []F) T {
+	var z T
+	switch p := any(&z).(type) {
+	case *float32:
+		*p, _ = realDotInterleaved(any(x).([]float32), c, 1)
+	case *float64:
+		*p, _ = realDotInterleaved(any(x).([]float64), c, 1)
+	case *complex64:
+		re, im := realDotInterleaved(view.C64ToF32(any(x).([]complex64)), c, 2)
+		*p = complex(re, im)
+	case *complex128:
+		re, im := realDotInterleaved(view.C128ToF64(any(x).([]complex128)), c, 2)
+		*p = complex(re, im)
+	default:
+		panic("dsp: realDot: no case for this width")
+	}
+	return z
+}
+
+// realDotInterleaved returns the sums of x[lanes*k+l]*c[k] for lanes l of 0
+// and, when lanes is 2, 1: a real dot product over one real channel or the two
+// channels of an interleaved complex signal.
+func realDotInterleaved[E, F Float](x []E, c []F, lanes int) (re, im E) {
+	if lanes == 1 {
+		x = x[:len(c)]
+		for k, v := range c {
+			re += x[k] * E(v)
+		}
+		return re, 0
+	}
+	x = x[:2*len(c)]
+	for k, v := range c {
+		re += x[2*k] * E(v)
+		im += x[2*k+1] * E(v)
+	}
+	return re, im
 }

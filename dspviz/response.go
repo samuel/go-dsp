@@ -14,8 +14,8 @@ import (
 type Method int
 
 const (
-	// MethodAuto takes MethodExact when the Processor implements Coefficients
-	// and MethodTone otherwise.
+	// MethodAuto takes MethodExact when the Processor implements
+	// RealCoefficients with real coefficients, and MethodTone otherwise.
 	MethodAuto Method = iota
 
 	// MethodExact evaluates the transfer function with dsp.Freqz. It has no
@@ -111,7 +111,7 @@ func FreqResponse(p Processor, freq []float64, opt ResponseOptions) (*Response, 
 	inRate, outRate := p.Rates()
 
 	method := opt.Method
-	coef, hasCoef := p.(Coefficients)
+	b, a, hasCoef := realCoefficients(p)
 	if method == MethodAuto {
 		if hasCoef {
 			method = MethodExact
@@ -128,7 +128,7 @@ func FreqResponse(p Processor, freq []float64, opt ResponseOptions) (*Response, 
 	var err error
 	switch method {
 	case MethodExact:
-		r.b, r.a = coef.Coefficients()
+		r.b, r.a = b, a
 		r.H = dsp.Freqz(r.b, r.a, normalize(freq, inRate))
 	case MethodImpulse:
 		err = impulseResponse(r, p, opt)
@@ -276,11 +276,10 @@ func offBinAmplitude(x []float64, cycles float64) complex128 {
 // filter's slowest pole where that can be worked out and from a generous
 // multiple of the frame where it cannot.
 func settleFor(p Processor, frame int) int {
-	coef, ok := p.(Coefficients)
+	b, a, ok := realCoefficients(p)
 	if !ok {
 		return 8 * frame
 	}
-	b, a := coef.Coefficients()
 	r, ok := poleRadius(a)
 	if !ok || r <= 0 {
 		// No feedback, so the transient is over once the delay line has filled.

@@ -43,9 +43,9 @@ func TestProcessorContract(t *testing.T) {
 				return must(NewRealCoefIIRFilter[complex64]([]float32{0.2, 0.3, 0.2}, []float32{1, -0.4, 0.1}))
 			}, cplx64, -9999)
 		}},
-		{"BiQuadFilter/float32", func(t *testing.T) {
+		{"Biquad/float32", func(t *testing.T) {
 			checkProcessor(t, func() Processor[float32, float32] {
-				return must(NewLowPassBiQuad[float32](48000, 4000, 0.7071))
+				return must(NewBiquadLowPass[float32](48000, 4000, 0.7071))
 			}, real32, -9999)
 		}},
 		{"DCFilter/float64", func(t *testing.T) {

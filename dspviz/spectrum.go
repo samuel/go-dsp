@@ -102,7 +102,7 @@ func ToneSpectrum(p Processor, freq float64, opt SpectrumOptions) (*Spectrum, er
 		return nil, err
 	}
 	spec := make([]complex128, n)
-	dsp.ForwardReal(f, spec, buf)
+	f.ForwardReal(spec, buf)
 
 	// Half the bins, scaled so a sine at the drive amplitude reads 0 dB. The
 	// factor of two is the negative-frequency image, which a real signal puts

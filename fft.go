@@ -127,8 +127,8 @@ func (f *FFT[T]) transform(dst, src []T) {
 }
 
 // ForwardReal writes the transform of a real signal to dst, widening it into the
-// complex transform f. It is a function rather than a method so that both type
-// arguments are inferred: the complex width from f and the real width from src.
+// complex transform. The real width is inferred from src and need not match
+// the transform's.
 //
 // src shorter than f.Len is zero-padded, which is how a window's sidelobes
 // are resolved: pad by a factor of sixteen and the transform interpolates the
@@ -139,7 +139,7 @@ func (f *FFT[T]) transform(dst, src []T) {
 // It allocates a buffer of n complex values on its first call and keeps it, so
 // unlike Forward and Inverse it writes to f. Two goroutines must not share one
 // FFT because of it.
-func ForwardReal[F Float, C Complex](f *FFT[C], dst []C, src []F) {
+func (f *FFT[C]) ForwardReal[F Float](dst []C, src []F) {
 	n := f.n
 	if f.buf == nil {
 		f.buf = make([]C, n)

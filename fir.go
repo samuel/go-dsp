@@ -12,12 +12,12 @@ import (
 // can be filtered in blocks.
 //
 // The taps are the b coefficients of a transfer function whose a is 1, which is
-// what Coefficients returns. Unlike IIRFilter there is no
+// what RealCoefficients returns. Unlike IIRFilter there is no
 // feedback, which is why the response is finite and the phase can be exactly
 // linear: a symmetric tap set delays every frequency by the same (len(taps)-1)/2
 // samples.
 type FIRFilter[T Sample] struct {
-	taps []T
+	taps coefs[T]
 	// hist holds the len(taps)-1 samples before the next block, so that its
 	// first outputs see the same history a continuous stream would.
 	hist []T
@@ -36,7 +36,7 @@ func NewFIRFilter[T Sample](taps []T) (*FIRFilter[T], error) {
 		return nil, errors.New("dsp: FIR filter needs at least one tap")
 	}
 	return &FIRFilter[T]{
-		taps: slices.Clone(taps),
+		taps: coefs[T]{native: slices.Clone(taps)},
 		hist: make([]T, len(taps)-1),
 	}, nil
 }
@@ -45,11 +45,17 @@ func NewFIRFilter[T Sample](taps []T) (*FIRFilter[T], error) {
 // real taps, which is the usual case for radio: a filter with a real impulse
 // response has real taps whether or not the signal it filters does. The complex
 // sample type has to be given explicitly, as in
-// NewRealCoefFIRFilter[complex64](taps).
+// NewRealCoefFIRFilter[complex64](taps). The taps are stored at the sample's
+// component width, and each output costs two real multiplies per tap rather
+// than a complex one.
 func NewRealCoefFIRFilter[C Complex, F Float](taps []F) (*FIRFilter[C], error) {
-	// Widening is exact and changes no length, so NewFIRFilter's checks say
-	// everything there is to say about these taps too.
-	return NewFIRFilter(rtoc[C](taps))
+	if len(taps) == 0 {
+		return nil, errors.New("dsp: FIR filter needs at least one tap")
+	}
+	return &FIRFilter[C]{
+		taps: realCoefs[C](taps),
+		hist: make([]C, len(taps)-1),
+	}, nil
 }
 
 // OutputLen returns inputs: the filter writes one sample per input.
@@ -63,10 +69,7 @@ func (f *FIRFilter[T]) Process(dst, src []T) int {
 		return 0
 	}
 	w := f.stage(src)
-	h := len(f.hist)
-	for i := range src {
-		dst[i] = f.dot(w, h+i)
-	}
+	f.taps.fir(dst, 1, w, len(f.hist), 1, len(src))
 	f.save(w, len(src))
 	return len(src)
 }
@@ -80,16 +83,20 @@ func (f *FIRFilter[T]) ProcessOne(x T) T {
 	return buf[0]
 }
 
-// Coefficients returns the taps as the b of a transfer function, and a nil a:
-// an FIR filter has no feedback, so its denominator is 1. They are a copy.
-// Freqz takes float64 slices, so a filter at another width has to be converted
-// first, and it reads a nil a as the same 1.
-func (f *FIRFilter[T]) Coefficients() (b, a []T) {
-	return slices.Clone(f.taps), nil
+// Taps returns a copy of the taps at the sample type.
+func (f *FIRFilter[T]) Taps() []T { return f.taps.widen() }
+
+// RealCoefficients returns the taps in float64 as the b of a transfer function,
+// and a nil a: an FIR filter has no feedback, so its denominator is 1, and
+// Freqz reads a nil a as that 1. ok is false, and b nil, when any tap has a
+// non-zero imaginary part.
+func (f *FIRFilter[T]) RealCoefficients() (b, a []float64, ok bool) {
+	b, ok = f.taps.float64s()
+	return b, nil, ok
 }
 
 // Len returns the number of taps.
-func (f *FIRFilter[T]) Len() int { return len(f.taps) }
+func (f *FIRFilter[T]) Len() int { return f.taps.len() }
 
 // Reset clears the history, so the filter starts a new stream from silence.
 func (f *FIRFilter[T]) Reset() { clear(f.hist) }
@@ -106,20 +113,6 @@ func (f *FIRFilter[T]) stage(src []T) []T {
 	return w
 }
 
-// dot evaluates the filter at w[at], which must have at least len(taps)-1
-// samples of history in front of it.
-func (f *FIRFilter[T]) dot(w []T, at int) T { return firDot(f.taps, w, at) }
-
-// firDot returns the sum of taps[j]*w[at-j], which needs len(taps)-1 samples
-// of w in front of at.
-func firDot[T Sample](taps, w []T, at int) T {
-	var sum T
-	for j, c := range taps {
-		sum += c * w[at-j]
-	}
-	return sum
-}
-
 // save keeps the last len(hist) samples of the staged buffer for the next call.
 func (f *FIRFilter[T]) save(w []T, consumed int) {
 	copy(f.hist, w[consumed:])
@@ -130,7 +123,7 @@ func (f *FIRFilter[T]) save(w []T, consumed int) {
 // be thrown away are never computed, so the work is a factor smaller than
 // filtering and then discarding.
 //
-// It does not implement Coefficients, and cannot. A rate changer is
+// It does not implement RealCoefficients, and cannot. A rate changer is
 // periodically time-varying rather than time-invariant, so it has no single
 // transfer function; measure the FIRFilter with the same taps instead.
 type FIRDecimator[T Sample] struct {
@@ -158,8 +151,14 @@ func NewFIRDecimator[T Sample](taps []T, factor int) (*FIRDecimator[T], error) {
 // NewRealCoefFIRDecimator is NewFIRDecimator with real taps over complex
 // samples; see NewRealCoefFIRFilter.
 func NewRealCoefFIRDecimator[C Complex, F Float](taps []F, factor int) (*FIRDecimator[C], error) {
-	// See NewRealCoefFIRFilter.
-	return NewFIRDecimator(rtoc[C](taps), factor)
+	if factor < 1 {
+		return nil, errors.New("dsp: FIR decimator needs a factor of at least 1")
+	}
+	f, err := NewRealCoefFIRFilter[C](taps)
+	if err != nil {
+		return nil, err
+	}
+	return &FIRDecimator[C]{f: *f, factor: factor}, nil
 }
 
 // Ratio returns the input rate to the output rate, (factor, 1).
@@ -185,12 +184,8 @@ func (d *FIRDecimator[T]) Process(dst, src []T) int {
 		return 0
 	}
 	w := d.f.stage(src)
-	h := len(d.f.hist)
-	out := 0
-	for i := d.phase; i < len(src); i += d.factor {
-		dst[out] = d.f.dot(w, h+i)
-		out++
-	}
+	out := d.OutputLen(len(src))
+	d.f.taps.fir(dst, 1, w, len(d.f.hist)+d.phase, d.factor, out)
 	d.advance(len(src))
 	d.f.save(w, len(src))
 	return out
@@ -227,7 +222,7 @@ func (d *FIRDecimator[T]) advance(n int) {
 // LowPassFIR followed by NormalizeTaps(taps, factor). As with FIRFilter, a
 // symmetric tap set delays the output by (len(taps)-1)/2 output samples.
 //
-// Like FIRDecimator it does not implement Coefficients; measure the FIRFilter
+// Like FIRDecimator it does not implement RealCoefficients; measure the FIRFilter
 // with the same taps at the output rate instead.
 type FIRInterpolator[T Sample] struct {
 	// f carries the input history and staging; its taps are unused, since
@@ -235,7 +230,7 @@ type FIRInterpolator[T Sample] struct {
 	f FIRFilter[T]
 	// branches[p] holds taps p, p+factor, p+2*factor, ..., zero-padded to a
 	// common length, which is what output phase p applies to the inputs.
-	branches [][]T
+	branches []coefs[T]
 }
 
 // NewFIRInterpolator returns an interpolator that raises the rate by factor
@@ -248,28 +243,27 @@ func NewFIRInterpolator[T Sample](taps []T, factor int) (*FIRInterpolator[T], er
 	case len(taps) == 0:
 		return nil, errors.New("dsp: FIR interpolator needs at least one tap")
 	}
-	n := (len(taps) + factor - 1) / factor
-	coef := make([]T, n*factor)
-	branches := make([][]T, factor)
-	for p := range branches {
-		b := coef[p*n : (p+1)*n : (p+1)*n]
-		for k := range b {
-			if j := p + k*factor; j < len(taps) {
-				b[k] = taps[j]
-			}
-		}
-		branches[p] = b
-	}
+	return newFIRInterpolator(coefs[T]{native: taps}, factor), nil
+}
+
+func newFIRInterpolator[T Sample](taps coefs[T], factor int) *FIRInterpolator[T] {
+	n := (taps.len() + factor - 1) / factor
 	return &FIRInterpolator[T]{
 		f:        FIRFilter[T]{hist: make([]T, n-1)},
-		branches: branches,
-	}, nil
+		branches: taps.polyphase(factor),
+	}
 }
 
 // NewRealCoefFIRInterpolator is NewFIRInterpolator with real taps over complex
 // samples; see NewRealCoefFIRFilter.
 func NewRealCoefFIRInterpolator[C Complex, F Float](taps []F, factor int) (*FIRInterpolator[C], error) {
-	return NewFIRInterpolator(rtoc[C](taps), factor)
+	switch {
+	case factor < 1:
+		return nil, errors.New("dsp: FIR interpolator needs a factor of at least 1")
+	case len(taps) == 0:
+		return nil, errors.New("dsp: FIR interpolator needs at least one tap")
+	}
+	return newFIRInterpolator(realCoefs[C](taps), factor), nil
 }
 
 // Ratio returns the input rate to the output rate, (1, factor).
@@ -296,12 +290,8 @@ func (it *FIRInterpolator[T]) Process(dst, src []T) int {
 		return 0
 	}
 	w := it.f.stage(src)
-	h := len(it.f.hist)
-	for i := range src {
-		out := dst[i*factor : (i+1)*factor]
-		for p, b := range it.branches {
-			out[p] = firDot(b, w, h+i)
-		}
+	for p := range it.branches {
+		it.branches[p].fir(dst[p:], factor, w, len(it.f.hist), 1, len(src))
 	}
 	it.f.save(w, len(src))
 	return len(src) * factor

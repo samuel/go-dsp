@@ -181,7 +181,7 @@ func sidelobeDB(fill func([]float64)) float64 {
 		panic(err)
 	}
 	spec := make([]complex128, n*pad)
-	ForwardReal(f, spec, w)
+	f.ForwardReal(spec, w)
 
 	mag := make([]float64, n*pad/2)
 	for i := range mag {

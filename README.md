@@ -58,7 +58,7 @@ inferred from the arguments; constructors whose arguments are `float64` need it
 written out.
 
 ```go
-lp, err := dsp.NewLowPassBiQuad[float32](48000, 1000, 0.7071)
+lp, err := dsp.NewBiquadLowPass[float32](48000, 1000, 0.7071)
 if err != nil {
     return err
 }
@@ -80,6 +80,9 @@ A direct-form IIR filter, widths generic across `Sample`:
 f, err := dsp.NewIIRFilter(b, a) // b, a inferred []float32 or []float64
 f.ProcessOne(x)                  // single-sample form
 f.Reset()
+
+// Real coefficients over a complex signal: two real multiplies per tap.
+c, err := dsp.NewRealCoefIIRFilter[complex64](b, a)
 ```
 
 ### Vector operations
@@ -91,6 +94,19 @@ so `VAdd(x, x, y)` accumulates in place. Reductions return a value.
 dsp.VScale(dst, src, 0.5)
 dsp.VAdd(dst, a, b)
 peak := dsp.VMax(src)
+dsp.VMulReal(iq, iq, window) // real window over complex samples
+```
+
+### Fractional positions
+
+`InterpLinear`, `InterpHermite4p3o`, `InterpOptimal2x4p4o` and
+`InterpOptimal2x6p5o` read a real signal between samples. `SincInterpolator`
+is a polyphase windowed sinc whose type parameter is the coefficient width;
+its methods take real or complex samples at either width.
+
+```go
+s, err := dsp.NewSincInterpolator[float32](16, 256, 0.45, 6)
+y := s.At(iq, 10.25) // iq is []complex64
 ```
 
 ### FM demodulation
@@ -104,7 +120,8 @@ fmd.Process(out, iq)
 ### Tone detection
 
 `dsp.Goertzel` measures a fixed set of frequencies per block; `dtmf`
-builds a DTMF decoder on top of it.
+builds a DTMF decoder on top of it. Over complex samples it tells a positive
+frequency from its negative image.
 
 ```go
 g, err := dsp.NewGoertzel[float32]([]float64{697, 770, 852, 941, 1209, 1336, 1477, 1633}, 8000, 205)
@@ -230,9 +247,19 @@ go run ./examples/ax25 -rate 11025 -baud 300 radio-paket300-11025.raw
 - **Destination before source** (`io.Copy` order): `f(dst, src, ...)` everywhere,
   down to the assembly argument offsets.
 - **`V` prefix** marks elementwise slice arithmetic, generic over the sample
-  width with no width in the name: `VScale`, `VAdd`, ..., and `VC` for the
-  complex family (`VCAdd`, `VCMulReal`). A width survives in a name only when
-  it is part of the contract: `FastAtan2` carries a float32 error bound.
+  type with no width or domain in the name: `VScale`, `VAdd`, `VSub` and
+  `VMul` take real or complex samples, and the complex-only operations
+  (`VConj`, `VAbs`, `VMagSq`, `VMulReal`, `VScaleReal`) are named the same
+  way. A width survives in a name only when it is part of the contract:
+  `FastAtan2` carries a float32 error bound.
+- **Real coefficients over a complex signal** come from the `NewRealCoef...`
+  constructors, which store the coefficients at the sample's component width
+  and run two real multiplies per coefficient instead of a complex one.
+  `RealCoefficients() (b, a []float64, ok bool)` is the transfer function of
+  every linear time-invariant type, normalized so `a[0]` is 1 (an FIR
+  filter's `a` is nil), with `ok` false when any coefficient has a non-zero
+  imaginary part; `FIRFilter.Taps` and `IIRFilter.Coefficients` return them
+  at the sample type.
 - **Conversions never scale**; a `LE` suffix means the byte slice holds
   little-endian values.
 - **Stateless 1:1 operations process `min(dst, src)`** and return nothing:

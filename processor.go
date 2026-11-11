@@ -28,7 +28,7 @@ func _[T Sample, F Float, C Complex]() {
 		_ Processor[T, T] = (*FIRInterpolator[T])(nil)
 		_ Processor[T, T] = (*BoxcarDecimator[T])(nil)
 		_ Processor[T, T] = (*RationalBoxcarDecimator[T])(nil)
-		_ Processor[F, F] = (*BiQuadFilter[F])(nil)
+		_ Processor[F, F] = (*Biquad[F])(nil)
 		_ Processor[F, F] = (*DCFilter[F])(nil)
 		_ Processor[C, F] = (*FMDemod[C, F])(nil)
 		_ Processor[C, C] = (*Rotator90[C])(nil)

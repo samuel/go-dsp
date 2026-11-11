@@ -17,19 +17,27 @@ func must[T any](v T, err error) T {
 	return v
 }
 
+// realBA drops the ok of a RealCoefficients call on a filter known to be real.
+func realBA(b, a []float64, ok bool) ([]float64, []float64) {
+	if !ok {
+		panic("coefficients are complex")
+	}
+	return b, a
+}
+
 // response returns |H(w)| for the filter, evaluated on the unit circle at the
 // normalized angular frequency w.
-func response(f *BiQuadFilter[float64], w float64) float64 {
-	b, a := f.Coefficients()
+func response(f *Biquad[float64], w float64) float64 {
+	b, a := realBA(f.RealCoefficients())
 	return cmplx.Abs(Freqz(b, a, []float64{w / (2 * math.Pi)})[0])
 }
 
-// TestBiQuadResponses checks each constructor against the gain the Audio EQ
+// TestBiquadResponses checks each constructor against the gain the Audio EQ
 // Cookbook promises at DC, at the corner frequency and at Nyquist. That is
 // independent of how the coefficients are written, so it catches a transcribed
 // sign or a swapped term, which comparing the coefficients against the same
 // formulas would not.
-func TestBiQuadResponses(t *testing.T) {
+func TestBiquadResponses(t *testing.T) {
 	const (
 		sampleRate = 48000
 		freq       = 1000
@@ -42,28 +50,28 @@ func TestBiQuadResponses(t *testing.T) {
 
 	for _, tc := range []struct {
 		name   string
-		filter *BiQuadFilter[float64]
+		filter *Biquad[float64]
 		at     []float64 // frequencies in radians per sample
 		want   []float64
 	}{
-		{"lowpass", must(NewLowPassBiQuad[float64](sampleRate, freq, q)),
+		{"lowpass", must(NewBiquadLowPass[float64](sampleRate, freq, q)),
 			[]float64{0, math.Pi}, []float64{1, 0}},
-		{"highpass", must(NewHighPassBiQuad[float64](sampleRate, freq, q)),
+		{"highpass", must(NewBiquadHighPass[float64](sampleRate, freq, q)),
 			[]float64{0, math.Pi}, []float64{0, 1}},
 		// Constant skirt gain makes the peak gain equal to q.
-		{"bandpass-skirt", must(NewBandPassConstantSkirtGainBiQuad[float64](sampleRate, freq, q)),
+		{"bandpass-skirt", must(NewBiquadBandPassConstantSkirtGain[float64](sampleRate, freq, q)),
 			[]float64{0, w0, math.Pi}, []float64{0, q, 0}},
-		{"bandpass-peak", must(NewBandPassConstantPeakGainBiQuad[float64](sampleRate, freq, q)),
+		{"bandpass-peak", must(NewBiquadBandPassConstantPeakGain[float64](sampleRate, freq, q)),
 			[]float64{0, w0, math.Pi}, []float64{0, 1, 0}},
-		{"notch", must(NewNotchBiQuad[float64](sampleRate, freq, q)),
+		{"notch", must(NewBiquadNotch[float64](sampleRate, freq, q)),
 			[]float64{0, w0, math.Pi}, []float64{1, 0, 1}},
-		{"allpass", must(NewAllPassBiQuad[float64](sampleRate, freq, q)),
+		{"allpass", must(NewBiquadAllPass[float64](sampleRate, freq, q)),
 			[]float64{0, w0 / 2, w0, 2 * w0, math.Pi}, []float64{1, 1, 1, 1, 1}},
-		{"peakingeq", must(NewPeakingEQBiQuad[float64](sampleRate, freq, q, dbGain)),
+		{"peakingeq", must(NewBiquadPeakingEQ[float64](sampleRate, freq, q, dbGain)),
 			[]float64{0, w0, math.Pi}, []float64{1, gain, 1}},
-		{"lowshelf", must(NewLowShelfBiQuad[float64](sampleRate, freq, slope, dbGain)),
+		{"lowshelf", must(NewBiquadLowShelf[float64](sampleRate, freq, slope, dbGain)),
 			[]float64{0, math.Pi}, []float64{gain, 1}},
-		{"highshelf", must(NewHighShelfBiQuad[float64](sampleRate, freq, slope, dbGain)),
+		{"highshelf", must(NewBiquadHighShelf[float64](sampleRate, freq, slope, dbGain)),
 			[]float64{0, math.Pi}, []float64{1, gain}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -77,37 +85,34 @@ func TestBiQuadResponses(t *testing.T) {
 	}
 }
 
-// TestBiQuadFilterZeroValuePanics pins the zero value's behavior. Every
-// coefficient is divided by A0, so A0 == 0 used to turn the whole stream into
-// NaN without a word.
-func TestBiQuadFilterZeroValuePanics(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		run  func()
-	}{
-		{"float64", func() {
-			var f BiQuadFilter[float64]
-			f.Process(make([]float64, 4), make([]float64, 4))
-		}},
-		{"float32", func() {
-			var f BiQuadFilter[float32]
-			f.Process(make([]float32, 4), make([]float32, 4))
-		}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			defer func() {
-				if recover() == nil {
-					t.Fatal("expected a panic")
-				}
-			}()
-			tc.run()
-		})
+// TestBiquadZeroValueIsSilent pins the zero value's behavior: every
+// coefficient is zero, so it outputs silence rather than NaN.
+func TestBiquadZeroValueIsSilent(t *testing.T) {
+	var f Biquad[float64]
+	out := []float64{9, 9, 9, 9}
+	f.Process(out, []float64{1, -2, 3, -4})
+	for i, v := range out {
+		if v != 0 {
+			t.Errorf("[%d] = %v, want 0", i, v)
+		}
 	}
 }
 
-// TestBiQuadFilterWidthsAgree checks that the two instantiations agree, since
+// TestBiquadRealCoefficientsNormalized checks that the coefficients come back
+// divided by a0, with a[0] exactly 1, as IIRFilter's do.
+func TestBiquadRealCoefficientsNormalized(t *testing.T) {
+	f := must(NewBiquad[float64](1, 0.5, -0.25, 4, 2, -1))
+	b, a, ok := f.RealCoefficients()
+	if !ok {
+		t.Fatal("ok false")
+	}
+	wantSlice(t, "b", b, []float64{0.25, 0.125, -0.0625})
+	wantSlice(t, "a", a, []float64{1, 0.5, -0.25})
+}
+
+// TestBiquadFilterWidthsAgree checks that the two instantiations agree, since
 // both keep float64 delay lines and only the samples differ in width.
-func TestBiQuadFilterWidthsAgree(t *testing.T) {
+func TestBiquadFilterWidthsAgree(t *testing.T) {
 	src := rampAndTone(64)
 	in32 := make([]float32, len(src))
 	for i, v := range src {
@@ -115,9 +120,9 @@ func TestBiQuadFilterWidthsAgree(t *testing.T) {
 	}
 
 	out := make([]float64, len(src))
-	must(NewLowPassBiQuad[float64](48000, 1000, 0.7071)).Process(out, src)
+	must(NewBiquadLowPass[float64](48000, 1000, 0.7071)).Process(out, src)
 	out32 := make([]float32, len(src))
-	must(NewLowPassBiQuad[float32](48000, 1000, 0.7071)).Process(out32, in32)
+	must(NewBiquadLowPass[float32](48000, 1000, 0.7071)).Process(out32, in32)
 
 	for i := range out {
 		if math.Abs(float64(out32[i])-out[i]) > 1e-5 {
@@ -126,25 +131,25 @@ func TestBiQuadFilterWidthsAgree(t *testing.T) {
 	}
 }
 
-// TestBiQuadFilterDCBlocked checks a high-pass actually removes a constant, as
+// TestBiquadFilterDCBlocked checks a high-pass actually removes a constant, as
 // a plain end-to-end check that Process runs the recursion the right way round.
-func TestBiQuadFilterDCBlocked(t *testing.T) {
+func TestBiquadFilterDCBlocked(t *testing.T) {
 	src := make([]float64, 4096)
 	for i := range src {
 		src[i] = 1
 	}
 	dst := make([]float64, len(src))
-	must(NewHighPassBiQuad[float64](48000, 1000, 0.7071)).Process(dst, src)
+	must(NewBiquadHighPass[float64](48000, 1000, 0.7071)).Process(dst, src)
 	if tail := dst[len(dst)-1]; math.Abs(tail) > 1e-6 {
 		t.Errorf("high-pass settled at %v on a constant src, want 0", tail)
 	}
 }
 
-// TestNewBiQuad covers the general constructor, which is the escape hatch for a
+// TestNewBiquad covers the general constructor, which is the escape hatch for a
 // response none of the named ones cover, and its one validation.
-func TestNewBiQuad(t *testing.T) {
+func TestNewBiquad(t *testing.T) {
 	// A two-sample moving average: y[n] = (x[n] + x[n-1])/2.
-	f, err := NewBiQuad[float64](0.5, 0.5, 0, 1, 0, 0)
+	f, err := NewBiquad[float64](0.5, 0.5, 0, 1, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +161,7 @@ func TestNewBiQuad(t *testing.T) {
 		}
 	}
 
-	_, err = NewBiQuad[float64](1, 0, 0, 0, 0, 0)
+	_, err = NewBiquad[float64](1, 0, 0, 0, 0, 0)
 	if err == nil {
 		t.Fatal("expected an error for a zero A0")
 	}
@@ -173,7 +178,7 @@ func TestNewBiQuad(t *testing.T) {
 		{"NaN denominator", 1, 0, 0, math.NaN(), 0, 0},
 		{"overflows on divide", math.MaxFloat64, 0, 0, math.SmallestNonzeroFloat64, 0, 0},
 	} {
-		if _, err := NewBiQuad[float64](tc.b0, tc.b1, tc.b2, tc.a0, tc.a1, tc.a2); err == nil {
+		if _, err := NewBiquad[float64](tc.b0, tc.b1, tc.b2, tc.a0, tc.a1, tc.a2); err == nil {
 			t.Errorf("%s: expected an error", tc.name)
 		}
 	}
@@ -185,38 +190,38 @@ func TestNewBiQuad(t *testing.T) {
 // EQ take is fixed, since it is the one argument none of them validates.
 type biquadCtor struct {
 	name string
-	new  func(sampleRate, freq, shape float64) (*BiQuadFilter[float64], error)
+	new  func(sampleRate, freq, shape float64) (*Biquad[float64], error)
 }
 
 func biquadCtors() []biquadCtor {
 	return []biquadCtor{
-		{"lowpass", NewLowPassBiQuad[float64]},
-		{"highpass", NewHighPassBiQuad[float64]},
-		{"bandpass-skirt", NewBandPassConstantSkirtGainBiQuad[float64]},
-		{"bandpass-peak", NewBandPassConstantPeakGainBiQuad[float64]},
-		{"notch", NewNotchBiQuad[float64]},
-		{"allpass", NewAllPassBiQuad[float64]},
-		{"peakingeq", func(rate, freq, q float64) (*BiQuadFilter[float64], error) {
-			return NewPeakingEQBiQuad[float64](rate, freq, q, 6)
+		{"lowpass", NewBiquadLowPass[float64]},
+		{"highpass", NewBiquadHighPass[float64]},
+		{"bandpass-skirt", NewBiquadBandPassConstantSkirtGain[float64]},
+		{"bandpass-peak", NewBiquadBandPassConstantPeakGain[float64]},
+		{"notch", NewBiquadNotch[float64]},
+		{"allpass", NewBiquadAllPass[float64]},
+		{"peakingeq", func(rate, freq, q float64) (*Biquad[float64], error) {
+			return NewBiquadPeakingEQ[float64](rate, freq, q, 6)
 		}},
-		{"lowshelf", func(rate, freq, slope float64) (*BiQuadFilter[float64], error) {
-			return NewLowShelfBiQuad[float64](rate, freq, slope, 6)
+		{"lowshelf", func(rate, freq, slope float64) (*Biquad[float64], error) {
+			return NewBiquadLowShelf[float64](rate, freq, slope, 6)
 		}},
-		{"highshelf", func(rate, freq, slope float64) (*BiQuadFilter[float64], error) {
-			return NewHighShelfBiQuad[float64](rate, freq, slope, 6)
+		{"highshelf", func(rate, freq, slope float64) (*Biquad[float64], error) {
+			return NewBiquadHighShelf[float64](rate, freq, slope, 6)
 		}},
 	}
 }
 
-// TestBiQuadConstructorsReject sweeps every response constructor over the
-// arguments checkBiQuadArgs exists to catch. Each one used to return a filter
+// TestBiquadConstructorsReject sweeps every response constructor over the
+// arguments checkBiquadArgs exists to catch. Each one used to return a filter
 // full of NaNs or a response other than the one asked for, and the sweep is
 // over all nine because the checks live in a shared helper each of them has to
 // remember to call.
 //
 // The valid case runs first, so a constructor that rejects everything cannot
 // pass this test by accident.
-func TestBiQuadConstructorsReject(t *testing.T) {
+func TestBiquadConstructorsReject(t *testing.T) {
 	const rate = 48000
 	bad := []struct {
 		name              string
@@ -249,23 +254,23 @@ func TestBiQuadConstructorsReject(t *testing.T) {
 }
 
 // TestShelfSlopeAboveOneRejected covers the failure the shelf doc comment
-// warns about, which checkBiQuadArgs cannot see: a slope past 1 drives the
-// square root in alpha negative, so the coefficients come out NaN and NewBiQuad
+// warns about, which checkBiquadArgs cannot see: a slope past 1 drives the
+// square root in alpha negative, so the coefficients come out NaN and NewBiquad
 // is what catches it.
 func TestShelfSlopeAboveOneRejected(t *testing.T) {
-	if _, err := NewLowShelfBiQuad[float64](48000, 1000, 100, 6); err == nil {
-		t.Error("NewLowShelfBiQuad accepted a shelf slope of 100")
+	if _, err := NewBiquadLowShelf[float64](48000, 1000, 100, 6); err == nil {
+		t.Error("NewBiquadLowShelf accepted a shelf slope of 100")
 	}
-	if _, err := NewHighShelfBiQuad[float64](48000, 1000, 100, 6); err == nil {
-		t.Error("NewHighShelfBiQuad accepted a shelf slope of 100")
+	if _, err := NewBiquadHighShelf[float64](48000, 1000, 100, 6); err == nil {
+		t.Error("NewBiquadHighShelf accepted a shelf slope of 100")
 	}
 }
 
-// TestBiQuadFilterReset checks that a reset filter reproduces its first output,
+// TestBiquadFilterReset checks that a reset filter reproduces its first output,
 // which is the only way to reuse one on a new stream.
-func TestBiQuadFilterReset(t *testing.T) {
+func TestBiquadFilterReset(t *testing.T) {
 	src := rampAndTone(32)
-	f := must(NewLowPassBiQuad[float64](48000, 1000, 0.7071))
+	f := must(NewBiquadLowPass[float64](48000, 1000, 0.7071))
 	first := make([]float64, len(src))
 	f.Process(first, src)
 	again := make([]float64, len(src))
@@ -278,28 +283,26 @@ func TestBiQuadFilterReset(t *testing.T) {
 	}
 }
 
-// TestBiQuadProcessOneMatchesProcess requires the two entry points to agree bit
-// for bit, not merely closely. Dividing the coefficients by A0 and dividing the
-// accumulated sum by it are different roundings, and because the delay lines
-// feed back, a one-ulp difference compounds. The two share norm and step, which
-// is what makes an exact comparison the right one.
-func TestBiQuadProcessOneMatchesProcess(t *testing.T) {
+// TestBiquadProcessOneMatchesProcess requires the two entry points to agree bit
+// for bit, not merely closely: the delay lines feed back, so a one-ulp
+// difference would compound. The two share step, which is what makes an exact
+// comparison the right one.
+func TestBiquadProcessOneMatchesProcess(t *testing.T) {
 	src := rampAndTone(256)
 
 	for _, tc := range []struct {
 		name  string
-		build func() (*BiQuadFilter[float64], error)
+		build func() (*Biquad[float64], error)
 	}{
-		{"lowpass", func() (*BiQuadFilter[float64], error) {
-			return NewLowPassBiQuad[float64](48000, 1000, 0.7071)
+		{"lowpass", func() (*Biquad[float64], error) {
+			return NewBiquadLowPass[float64](48000, 1000, 0.7071)
 		}},
-		{"peakingeq", func() (*BiQuadFilter[float64], error) {
-			return NewPeakingEQBiQuad[float64](48000, 3000, 4, 12)
+		{"peakingeq", func() (*Biquad[float64], error) {
+			return NewBiquadPeakingEQ[float64](48000, 3000, 4, 12)
 		}},
-		// A0 far from 1, so dividing the sum and dividing the coefficients
-		// round differently enough to see.
-		{"unnormalized", func() (*BiQuadFilter[float64], error) {
-			return NewBiQuad[float64](0.3, 0.7, 0.11, 3.7, -1.3, 0.29)
+		// a0 far from 1.
+		{"unnormalized", func() (*Biquad[float64], error) {
+			return NewBiquad[float64](0.3, 0.7, 0.11, 3.7, -1.3, 0.29)
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

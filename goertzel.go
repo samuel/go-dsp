@@ -5,26 +5,19 @@ import (
 	"math"
 )
 
-// Goertzel detects the power at a set of frequencies in a block of real
-// samples. It is equivalent to evaluating a DFT at only the bins of interest,
-// which is much cheaper than a full FFT for a handful of frequencies.
+// Goertzel detects the power at a set of frequencies in a block of samples. It
+// is equivalent to evaluating a DFT at only the bins of interest, which is much
+// cheaper than a full FFT for a handful of frequencies.
 //
-// The recursion and the results are float64 whatever the sample width is; the
-// type parameter only says what Feed accepts, and it is inferred from the slice
-// passed to it.
-type Goertzel[T Float] struct {
-	freq      []*goertzel
-	blockSize int
-	fed       int
-	pow       []float64
-	cplx      []complex128
-}
-
-// ComplexGoertzel is Goertzel for complex samples. It runs the recursion
-// separately over the real and imaginary parts and combines the two, so unlike
-// Goertzel it tells a positive frequency from its negative image -- which also
-// makes a negative target frequency meaningful here.
-type ComplexGoertzel[T Complex] struct {
+// Over complex samples it runs the recursion separately over the real and
+// imaginary parts and combines the two, so it tells a positive frequency from
+// its negative image, which also makes a negative target frequency meaningful.
+// Over real samples the two are the same bin.
+//
+// The recursion and the results are float64 whatever the sample width is. The
+// sample type cannot be inferred from the constructor's arguments and has to be
+// given, as in NewGoertzel[float32](freqs, 8000, 205).
+type Goertzel[T Sample] struct {
 	freq      []*goertzel
 	blockSize int
 	fed       int
@@ -39,8 +32,7 @@ type goertzel struct {
 	q1i, q2i float64
 }
 
-// newGoertzelBins builds the per-frequency state shared by both detectors. Each
-// target is rounded to the nearest of the blockSize bins at sampleRate; a
+// newGoertzelBins builds the per-frequency state. Each target is rounded to the nearest of the blockSize bins at sampleRate; a
 // frequency that is not a bin center leaks into its neighbors.
 func newGoertzelBins(targetFreqs []float64, sampleRate float64, blockSize int) ([]*goertzel, error) {
 	if !(sampleRate > 0) {
@@ -90,10 +82,10 @@ func (g *goertzel) reset() {
 }
 
 // NewGoertzel returns a Goertzel for the given frequencies in Hz, which need not
-// be whole numbers. Feed blockSize samples, read Power or Complex, then Reset
+// be whole numbers and, over complex samples, may be negative. Feed blockSize samples, read Power or Complex, then Reset
 // before the next block. sampleRate is a float64 like the biquad constructors
 // take, so a rate that is not a whole number of Hz need not be rounded first.
-func NewGoertzel[T Float](targetFreqs []float64, sampleRate float64, blockSize int) (*Goertzel[T], error) {
+func NewGoertzel[T Sample](targetFreqs []float64, sampleRate float64, blockSize int) (*Goertzel[T], error) {
 	bins, err := newGoertzelBins(targetFreqs, sampleRate, blockSize)
 	if err != nil {
 		return nil, err
@@ -120,9 +112,24 @@ func (g *Goertzel[T]) Reset() {
 // be silently wrong.
 func (g *Goertzel[T]) Feed(src []T) {
 	g.fed = checkGoertzelFed(g.fed, len(src), g.blockSize)
+	switch s := any(src).(type) {
+	case []float32:
+		feedReal(g.freq, s)
+	case []float64:
+		feedReal(g.freq, s)
+	case []complex64:
+		feedComplex(g.freq, s)
+	case []complex128:
+		feedComplex(g.freq, s)
+	default:
+		panic("dsp: Goertzel: no case for this width")
+	}
+}
+
+func feedReal[F Float](freqs []*goertzel, src []F) {
 	for _, samp := range src {
 		s := float64(samp)
-		for _, freq := range g.freq {
+		for _, freq := range freqs {
 			q0 := freq.coeff*freq.q1 - freq.q2 + s
 			freq.q2 = freq.q1
 			freq.q1 = q0
@@ -130,10 +137,39 @@ func (g *Goertzel[T]) Feed(src []T) {
 	}
 }
 
+func feedComplex[C Complex](freqs []*goertzel, src []C) {
+	for _, samp := range src {
+		s := complex128(samp)
+		for _, freq := range freqs {
+			q0 := freq.coeff*freq.q1 - freq.q2 + real(s)
+			freq.q2 = freq.q1
+			freq.q1 = q0
+			q0 = freq.coeff*freq.q1i - freq.q2i + imag(s)
+			freq.q2i = freq.q1i
+			freq.q1i = q0
+		}
+	}
+}
+
+// isComplex reports whether T is a complex sample type.
+func isComplex[T Sample]() bool {
+	switch any(*new(T)).(type) {
+	case complex64, complex128:
+		return true
+	}
+	return false
+}
+
 // Power returns the squared magnitude at each target frequency, in the order
 // the frequencies were given to NewGoertzel. The returned slice is reused by
 // every call. It panics unless a whole block has been fed.
 func (g *Goertzel[T]) Power() []float64 {
+	if isComplex[T]() {
+		for i, c := range g.Complex() {
+			g.pow[i] = real(c)*real(c) + imag(c)*imag(c)
+		}
+		return g.pow
+	}
 	checkGoertzelBlock(g.fed, g.blockSize)
 	for i, freq := range g.freq {
 		g.pow[i] = freq.power()
@@ -146,70 +182,13 @@ func (g *Goertzel[T]) Power() []float64 {
 // call. It panics unless a whole block has been fed.
 func (g *Goertzel[T]) Complex() []complex128 {
 	checkGoertzelBlock(g.fed, g.blockSize)
+	cplx := isComplex[T]()
 	for i, freq := range g.freq {
-		g.cplx[i] = freq.value()
-	}
-	return g.cplx
-}
-
-// NewComplexGoertzel returns a ComplexGoertzel for the given frequencies in Hz,
-// which may be negative. See NewGoertzel for how the frequencies and blockSize
-// are used.
-func NewComplexGoertzel[T Complex](targetFreqs []float64, sampleRate float64, blockSize int) (*ComplexGoertzel[T], error) {
-	bins, err := newGoertzelBins(targetFreqs, sampleRate, blockSize)
-	if err != nil {
-		return nil, err
-	}
-	return &ComplexGoertzel[T]{
-		freq:      bins,
-		blockSize: blockSize,
-		pow:       make([]float64, len(targetFreqs)),
-		cplx:      make([]complex128, len(targetFreqs)),
-	}, nil
-}
-
-// Reset clears the filter state so the next block starts fresh.
-func (g *ComplexGoertzel[T]) Reset() {
-	for _, freq := range g.freq {
-		freq.reset()
-	}
-	g.fed = 0
-}
-
-// Feed accumulates samples into the filter state, under the same rules as
-// Goertzel.Feed.
-func (g *ComplexGoertzel[T]) Feed(src []T) {
-	g.fed = checkGoertzelFed(g.fed, len(src), g.blockSize)
-	for _, samp := range src {
-		s := complex128(samp)
-		for _, freq := range g.freq {
-			q0 := freq.coeff*freq.q1 - freq.q2 + real(s)
-			freq.q2 = freq.q1
-			freq.q1 = q0
-			q0 = freq.coeff*freq.q1i - freq.q2i + imag(s)
-			freq.q2i = freq.q1i
-			freq.q1i = q0
+		if cplx {
+			g.cplx[i] = freq.complexValue()
+		} else {
+			g.cplx[i] = freq.value()
 		}
-	}
-}
-
-// Power returns the squared magnitude at each target frequency, in the order
-// the frequencies were given to NewComplexGoertzel. The returned slice is
-// reused by every call. It panics unless a whole block has been fed.
-func (g *ComplexGoertzel[T]) Power() []float64 {
-	for i, c := range g.Complex() {
-		g.pow[i] = real(c)*real(c) + imag(c)*imag(c)
-	}
-	return g.pow
-}
-
-// Complex returns the complex value at each target frequency, in the order the
-// frequencies were given to NewComplexGoertzel. The returned slice is reused
-// by every call. It panics unless a whole block has been fed.
-func (g *ComplexGoertzel[T]) Complex() []complex128 {
-	checkGoertzelBlock(g.fed, g.blockSize)
-	for i, freq := range g.freq {
-		g.cplx[i] = freq.complexValue()
 	}
 	return g.cplx
 }

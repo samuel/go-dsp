@@ -9,17 +9,17 @@ var interpolators = []struct {
 	name string
 	f64  func([]float64, float64) float64
 	f32  func([]float32, float32) float32
-	// tol is the absolute error allowed on a signal spanning 0 to 70. Linear
+	// tol is the absolute error allowed on a signal spanning 0 to 70. InterpLinear
 	// and Hermite reproduce a straight line exactly; the optimal 2x kernels are
 	// least-squares fits meant for 2x-oversampled input, so they only come
 	// close, and the 6-point one trades interpolation error for stopband
 	// rejection more aggressively than the 4-point one.
 	tol float64
 }{
-	{"Linear", Linear[float64], Linear[float32], 1e-12},
-	{"Hermite4p3o", Hermite4p3o[float64], Hermite4p3o[float32], 1e-9},
-	{"Optimal2x4p4o", Optimal2x4p4o[float64], Optimal2x4p4o[float32], 0.02},
-	{"Optimal2x6p5o", Optimal2x6p5o[float64], Optimal2x6p5o[float32], 0.25},
+	{"Linear", InterpLinear[float64], InterpLinear[float32], 1e-12},
+	{"Hermite4p3o", InterpHermite4p3o[float64], InterpHermite4p3o[float32], 1e-9},
+	{"Optimal2x4p4o", InterpOptimal2x4p4o[float64], InterpOptimal2x4p4o[float32], 0.02},
+	{"Optimal2x6p5o", InterpOptimal2x6p5o[float64], InterpOptimal2x6p5o[float32], 0.25},
 }
 
 func ramp(n int) []float64 {
@@ -40,9 +40,7 @@ func toF32(s []float64) []float32 {
 
 // TestInterpolateFinite checks that no interpolator returns NaN or Inf, and
 // that none of them panics, anywhere from well before the buffer to well after
-// it. Linear used to panic for a negative x while LinearF32 returned zero, and
-// the other six read the wrong sample for a negative x because they truncated
-// toward zero for the index but floored for the fraction.
+// it, including a negative x, where the index and the fraction must both floor.
 func TestInterpolateFinite(t *testing.T) {
 	for _, in := range interpolators {
 		t.Run(in.name, func(t *testing.T) {
@@ -110,7 +108,7 @@ func TestInterpolateEdgeHold(t *testing.T) {
 	}
 }
 
-// TestInterpolateAtIntegerX checks that Linear and Hermite4p3o agree with each
+// TestInterpolateAtIntegerX checks that InterpLinear and InterpHermite4p3o agree with each
 // other, and with the samples themselves, at integer positions, at both widths.
 // The optimal 2x kernels are excluded: they are designed for 2x-oversampled
 // input and do not pass through the sample values.
@@ -119,16 +117,16 @@ func TestInterpolateAtIntegerX(t *testing.T) {
 	s32 := toF32(s)
 	for i, want := range s {
 		x := float64(i)
-		if got := Linear(s, x); got != want {
+		if got := InterpLinear(s, x); got != want {
 			t.Errorf("Linear(%v) = %v, want %v", x, got, want)
 		}
-		if got := Hermite4p3o(s, x); math.Abs(got-want) > 1e-12 {
+		if got := InterpHermite4p3o(s, x); math.Abs(got-want) > 1e-12 {
 			t.Errorf("Hermite4p3o(%v) = %v, want %v", x, got, want)
 		}
-		if got := Linear(s32, float32(x)); got != float32(want) {
+		if got := InterpLinear(s32, float32(x)); got != float32(want) {
 			t.Errorf("Linear[float32](%v) = %v, want %v", x, got, want)
 		}
-		if got := Hermite4p3o(s32, float32(x)); math.Abs(float64(got-float32(want))) > 1e-5 {
+		if got := InterpHermite4p3o(s32, float32(x)); math.Abs(float64(got-float32(want))) > 1e-5 {
 			t.Errorf("Hermite4p3o[float32](%v) = %v, want %v", x, got, want)
 		}
 	}
@@ -137,7 +135,7 @@ func TestInterpolateAtIntegerX(t *testing.T) {
 // TestInterpolateSymmetricAboutNegativeX is the regression test for the index
 // bug: int(x) truncates toward zero while math.Floor rounds down, so for a
 // negative x the sample window and the fraction disagreed by one and
-// Hermite4p3o(s, -0.5) returned the value belonging to +0.5.
+// InterpHermite4p3o(s, -0.5) returned the value belonging to +0.5.
 func TestInterpolateSymmetricAboutNegativeX(t *testing.T) {
 	s := []float64{0, 10, 20, 30}
 	for _, in := range interpolators {
@@ -287,8 +285,8 @@ func TestNewSincInterpolatorErrors(t *testing.T) {
 		if _, err := NewSincInterpolator[float32](c.taps, c.phases, c.cutoff, c.beta); err == nil {
 			t.Errorf("NewSincInterpolator[float32](%d, %d, %v, %v): no error", c.taps, c.phases, c.cutoff, c.beta)
 		}
-		if _, err := NewSincInterpolator[complex128](c.taps, c.phases, c.cutoff, c.beta); err == nil {
-			t.Errorf("NewSincInterpolator[complex128](%d, %d, %v, %v): no error", c.taps, c.phases, c.cutoff, c.beta)
+		if _, err := NewSincInterpolator[float64](c.taps, c.phases, c.cutoff, c.beta); err == nil {
+			t.Errorf("NewSincInterpolator[float64](%d, %d, %v, %v): no error", c.taps, c.phases, c.cutoff, c.beta)
 		}
 	}
 }
@@ -396,7 +394,7 @@ func testSincInterpolatorBehavior[T Float](t *testing.T) {
 			t.Errorf("At(flat, %v) = %v, want 0.75", x, got)
 		}
 	}
-	if got := s.At(nil, 1); got != 0 {
+	if got := s.At([]T(nil), 1); got != 0 {
 		t.Errorf("At(nil) = %v, want 0", got)
 	}
 	if got := s.At(flat, math.NaN()); got != 0 {
@@ -409,13 +407,9 @@ func TestSincInterpolatorBehavior(t *testing.T) {
 	t.Run("float64", testSincInterpolatorBehavior[float64])
 }
 
-// testSincInterpolatorComplex checks that a complex interpolator reads the
-// real and imaginary parts as the real interpolator of the same width does.
+// testSincInterpolatorComplex checks that one table reads a complex signal's
+// real and imaginary parts exactly as it reads each of them alone.
 func testSincInterpolatorComplex[C Complex, F Float](t *testing.T) {
-	sc, err := NewSincInterpolator[C](8, 32, 0.45, 6)
-	if err != nil {
-		t.Fatal(err)
-	}
 	sf, err := NewSincInterpolator[F](8, 32, 0.45, 6)
 	if err != nil {
 		t.Fatal(err)
@@ -429,10 +423,37 @@ func testSincInterpolatorComplex[C Complex, F Float](t *testing.T) {
 		src[i] = C(complex(float64(re[i]), float64(im[i])))
 	}
 	for _, x := range []float64{-2, 0, 3.25, 17.5, 30.9, 39, 45} {
-		got := complex128(sc.At(src, x))
+		got := complex128(sf.At(src, x))
 		wantRe, wantIm := float64(sf.At(re, x)), float64(sf.At(im, x))
-		if math.Abs(real(got)-wantRe) > 1e-6 || math.Abs(imag(got)-wantIm) > 1e-6 {
+		if real(got) != wantRe || imag(got) != wantIm {
 			t.Errorf("x=%v: %v, want (%v%+vi)", x, got, wantRe, wantIm)
+		}
+	}
+}
+
+// TestSincInterpolatorMixedWidths reads float32 samples through a float64
+// table and the reverse. The sum accumulates at the sample's width, so the
+// result is the sample-width table's answer to within that width's rounding.
+func TestSincInterpolatorMixedWidths(t *testing.T) {
+	s32 := must(NewSincInterpolator[float32](8, 32, 0.45, 6))
+	s64 := must(NewSincInterpolator[float64](8, 32, 0.45, 6))
+	src32 := make([]float32, 40)
+	src64 := make([]float64, 40)
+	c64 := make([]complex64, 40)
+	for i := range src64 {
+		src64[i] = math.Sin(0.2 * float64(i))
+		src32[i] = float32(src64[i])
+		c64[i] = complex(src32[i], -src32[i])
+	}
+	for _, x := range []float64{-2, 0, 3.25, 17.5, 30.9, 39, 45} {
+		if got, want := s64.At(src32, x), s32.At(src32, x); math.Abs(float64(got-want)) > 1e-6 {
+			t.Errorf("float32 samples, float64 table, x=%v: %v, want %v", x, got, want)
+		}
+		if got, want := s32.At(src64, x), s64.At(src64, x); math.Abs(got-want) > 1e-6 {
+			t.Errorf("float64 samples, float32 table, x=%v: %v, want %v", x, got, want)
+		}
+		if got, want := s64.At(c64, x), s64.At(src32, x); real(got) != want || imag(got) != -want {
+			t.Errorf("complex64 samples, float64 table, x=%v: %v, want %v%+vi", x, got, want, -want)
 		}
 	}
 }
