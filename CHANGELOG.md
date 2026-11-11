@@ -43,9 +43,13 @@ Go 1.27.
 - `firpm`: Parks-McClellan equiripple FIR design.
 - `sampleio`: reading WAV, RF64 and headerless captures, including rtl-sdr
   `cu8`, as normalized samples.
-- `dspviz`: measuring filters and recordings and drawing them as SVG or PNG,
-  with no dependencies outside the standard library.
-- `cmd/dspviz` and `cmd/sigviz`: command lines over the two halves of
-  `dspviz`, including a local interactive page.
+- `analysis`: measuring a `dsp.Processor[float64, float64]` at a given input
+  rate, exactly from its transfer function where it has a real one, and
+  analyzing recordings in one pass. `Adapt` measures a filter at any sample
+  width and forwards `RealCoefficients` and `Ratio`.
+- `plot`: charts over `analysis` results, written as SVG or PNG with no
+  dependencies outside the standard library.
+- `cmd/dspviz`: one command line over both analyses, with `filter` and
+  `signal` subcommand groups and a local interactive page.
 
 [Unreleased]: https://github.com/samuel/go-dsp/commits/main

@@ -39,7 +39,7 @@ const (
 func tone(n int) []float64 {
 	x := make([]float64, n)
 	for i := range x {
-		// The phase argument is reduced in integers, the way dspviz.Tone does
+		// The phase argument is reduced in integers, the way analysis.Tone does
 		// it, so it stays exact.
 		x[i] = amp * math.Cos(2*math.Pi*float64((bin*i)%n)/float64(n))
 	}

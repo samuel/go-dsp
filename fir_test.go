@@ -295,7 +295,7 @@ func BenchmarkFIRFilter(b *testing.B) {
 // TestRealCoefFIRDecimator checks the complex-over-real-taps decimator against
 // the same taps run as an ordinary FIRDecimator over the real part, which is
 // the only claim the constructor makes: it widens the taps and changes nothing
-// else. Ratio is checked here because nothing else reads it -- dspviz derives
+// else. Ratio is checked here because nothing else reads it -- the analysis package derives
 // an output rate from it, and a wrong one would only show as a mislabelled
 // axis.
 func TestRealCoefFIRDecimator(t *testing.T) {

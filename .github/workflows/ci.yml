@@ -275,8 +275,8 @@ jobs:
           - { pkg: ./firpm, target: FuzzDesign }
           - { pkg: ./ax25, target: FuzzFeed }
           - { pkg: ./encoding, target: FuzzI16LEToF32 }
-          - { pkg: ./dspviz, target: FuzzWriteSVG }
-          - { pkg: ./dspviz, target: FuzzHandleAnalyze }
+          - { pkg: ./plot, target: FuzzWriteSVG }
+          - { pkg: ./internal/viz, target: FuzzHandleAnalyze }
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6

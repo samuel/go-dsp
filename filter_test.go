@@ -108,8 +108,8 @@ func TestIIRFilterNormalizesA0(t *testing.T) {
 	}
 }
 
-// TestIIRFilterCoefficients covers the accessor dspviz measures a filter
-// through. It hands back the normalized coefficients, and it has to hand back
+// TestIIRFilterCoefficients covers the accessor the analysis package measures a
+// filter through. It hands back the normalized coefficients, and it has to hand back
 // copies: the same filter is asked for them once per frequency grid, so an
 // aliased slice would let one caller's scaling reach the next.
 func TestIIRFilterCoefficients(t *testing.T) {

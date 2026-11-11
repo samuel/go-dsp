@@ -244,7 +244,7 @@ func TestDFTBin(t *testing.T) {
 // TestDFTBinReal checks the scaling that is the whole difference between the
 // two: a real cosine splits evenly between bins k and n-k, so the bin carries
 // half of it and DFTBinReal doubles it back. The test is that a cosine of a
-// known amplitude reads that amplitude, which is what dspviz measures every
+// known amplitude reads that amplitude, which is what the analysis package measures every
 // level against.
 func TestDFTBinReal(t *testing.T) {
 	// Not a power of two, and an odd bin, so nothing lines up conveniently.
