@@ -87,11 +87,11 @@ func TestBiQuadFilterZeroValuePanics(t *testing.T) {
 	}{
 		{"float64", func() {
 			var f BiQuadFilter[float64]
-			f.Filter(make([]float64, 4), make([]float64, 4))
+			f.Process(make([]float64, 4), make([]float64, 4))
 		}},
 		{"float32", func() {
 			var f BiQuadFilter[float32]
-			f.Filter(make([]float32, 4), make([]float32, 4))
+			f.Process(make([]float32, 4), make([]float32, 4))
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -115,9 +115,9 @@ func TestBiQuadFilterWidthsAgree(t *testing.T) {
 	}
 
 	out := make([]float64, len(src))
-	must(NewLowPassBiQuad[float64](48000, 1000, 0.7071)).Filter(out, src)
+	must(NewLowPassBiQuad[float64](48000, 1000, 0.7071)).Process(out, src)
 	out32 := make([]float32, len(src))
-	must(NewLowPassBiQuad[float32](48000, 1000, 0.7071)).Filter(out32, in32)
+	must(NewLowPassBiQuad[float32](48000, 1000, 0.7071)).Process(out32, in32)
 
 	for i := range out {
 		if math.Abs(float64(out32[i])-out[i]) > 1e-5 {
@@ -127,14 +127,14 @@ func TestBiQuadFilterWidthsAgree(t *testing.T) {
 }
 
 // TestBiQuadFilterDCBlocked checks a high-pass actually removes a constant, as
-// a plain end-to-end check that Filter runs the recursion the right way round.
+// a plain end-to-end check that Process runs the recursion the right way round.
 func TestBiQuadFilterDCBlocked(t *testing.T) {
 	src := make([]float64, 4096)
 	for i := range src {
 		src[i] = 1
 	}
 	dst := make([]float64, len(src))
-	must(NewHighPassBiQuad[float64](48000, 1000, 0.7071)).Filter(dst, src)
+	must(NewHighPassBiQuad[float64](48000, 1000, 0.7071)).Process(dst, src)
 	if tail := dst[len(dst)-1]; math.Abs(tail) > 1e-6 {
 		t.Errorf("high-pass settled at %v on a constant src, want 0", tail)
 	}
@@ -149,7 +149,7 @@ func TestNewBiQuad(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := make([]float64, 4)
-	f.Filter(out, []float64{1, 1, 1, 1})
+	f.Process(out, []float64{1, 1, 1, 1})
 	for i, want := range []float64{0.5, 1, 1, 1} {
 		if out[i] != want {
 			t.Errorf("[%d] = %v, want %v", i, out[i], want)
@@ -267,13 +267,59 @@ func TestBiQuadFilterReset(t *testing.T) {
 	src := rampAndTone(32)
 	f := must(NewLowPassBiQuad[float64](48000, 1000, 0.7071))
 	first := make([]float64, len(src))
-	f.Filter(first, src)
+	f.Process(first, src)
 	again := make([]float64, len(src))
 	f.Reset()
-	f.Filter(again, src)
+	f.Process(again, src)
 	for i := range first {
 		if again[i] != first[i] {
 			t.Fatalf("sample %d after Reset: %v, want %v", i, again[i], first[i])
 		}
+	}
+}
+
+// TestBiQuadProcessOneMatchesProcess requires the two entry points to agree bit
+// for bit, not merely closely. Dividing the coefficients by A0 and dividing the
+// accumulated sum by it are different roundings, and because the delay lines
+// feed back, a one-ulp difference compounds. The two share norm and step, which
+// is what makes an exact comparison the right one.
+func TestBiQuadProcessOneMatchesProcess(t *testing.T) {
+	src := rampAndTone(256)
+
+	for _, tc := range []struct {
+		name  string
+		build func() (*BiQuadFilter[float64], error)
+	}{
+		{"lowpass", func() (*BiQuadFilter[float64], error) {
+			return NewLowPassBiQuad[float64](48000, 1000, 0.7071)
+		}},
+		{"peakingeq", func() (*BiQuadFilter[float64], error) {
+			return NewPeakingEQBiQuad[float64](48000, 3000, 4, 12)
+		}},
+		// A0 far from 1, so dividing the sum and dividing the coefficients
+		// round differently enough to see.
+		{"unnormalized", func() (*BiQuadFilter[float64], error) {
+			return NewBiQuad[float64](0.3, 0.7, 0.11, 3.7, -1.3, 0.29)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			block, err := tc.build()
+			if err != nil {
+				t.Fatal(err)
+			}
+			single, err := tc.build()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			dst := make([]float64, len(src))
+			block.Process(dst, src)
+			for i, s := range src {
+				if got := single.ProcessOne(s); got != dst[i] {
+					t.Fatalf("sample %d: ProcessOne %v, Process %v (differ by %g)",
+						i, got, dst[i], math.Abs(got-dst[i]))
+				}
+			}
+		})
 	}
 }

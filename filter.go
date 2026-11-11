@@ -59,17 +59,21 @@ func NewRealCoefIIRFilter[C Complex, F Float](bCoef, aCoef []F) (*IIRFilter[C], 
 	return NewIIRFilter(rtoc[C](bCoef), rtoc[C](aCoef))
 }
 
-// Filter writes one output sample per input sample, over
-// min(len(dst), len(src)) of them. The slices may be the same. Samples past
-// that count are not consumed, so the delay lines match what was written.
-func (f *IIRFilter[T]) Filter(dst, src []T) {
-	for i, s := range src[:min(len(dst), len(src))] {
+// OutputLen returns inputs: the filter writes one sample per input.
+func (f *IIRFilter[T]) OutputLen(inputs int) int { return inputs }
+
+// Process writes one output sample per input sample and returns len(src). It
+// panics if dst is shorter than src. The slices may be the same.
+func (f *IIRFilter[T]) Process(dst, src []T) int {
+	checkDst("IIRFilter", len(dst), len(src))
+	for i, s := range src {
 		dst[i] = f.step(s)
 	}
+	return len(src)
 }
 
-// FilterOne filters a single sample.
-func (f *IIRFilter[T]) FilterOne(s T) T { return f.step(s) }
+// ProcessOne filters a single sample.
+func (f *IIRFilter[T]) ProcessOne(s T) T { return f.step(s) }
 
 // step advances the recursion by one sample and returns the output. Both entry
 // points go through it, so the two cannot drift apart: they are the same
@@ -125,20 +129,25 @@ func NewDCFilter[T Float](a float64) (*DCFilter[T], error) {
 	return &DCFilter[T]{a: a}, nil
 }
 
-// Filter writes one output sample per input sample, over
-// min(len(dst), len(src)) of them. The slices may be the same.
-func (f *DCFilter[T]) Filter(dst, src []T) {
+// OutputLen returns inputs: the filter writes one sample per input.
+func (f *DCFilter[T]) OutputLen(inputs int) int { return inputs }
+
+// Process writes one output sample per input sample and returns len(src). It
+// panics if dst is shorter than src. The slices may be the same.
+func (f *DCFilter[T]) Process(dst, src []T) int {
+	checkDst("DCFilter", len(dst), len(src))
 	lw := f.w
-	for i, x := range src[:min(len(dst), len(src))] {
+	for i, x := range src {
 		w := float64(x) + f.a*lw
 		dst[i] = T(w - lw)
 		lw = w
 	}
 	f.w = lw
+	return len(src)
 }
 
-// FilterOne filters a single sample.
-func (f *DCFilter[T]) FilterOne(x T) T {
+// ProcessOne filters a single sample.
+func (f *DCFilter[T]) ProcessOne(x T) T {
 	w := float64(x) + f.a*f.w
 	y := w - f.w
 	f.w = w

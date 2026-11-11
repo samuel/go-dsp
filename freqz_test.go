@@ -195,7 +195,7 @@ func TestDCFilterCoefficients(t *testing.T) {
 	for i := range in {
 		in[i] = math.Cos(2 * math.Pi * float64(k*i%frame) / frame)
 	}
-	f.Filter(out, in)
+	f.Process(out, in)
 
 	var re, im float64
 	for i, v := range out[settle:] {

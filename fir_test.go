@@ -20,7 +20,7 @@ func TestFIRImpulseResponseIsTheTaps(t *testing.T) {
 	src := make([]float64, 2*len(asymTaps))
 	src[0] = 1
 	dst := make([]float64, len(src))
-	f.Filter(dst, src)
+	f.Process(dst, src)
 	for i := range src {
 		var want float64
 		if i < len(asymTaps) {
@@ -56,7 +56,7 @@ func TestFIRMatchesFreqz(t *testing.T) {
 			src[i] = complex(c, s)
 		}
 		dst := make([]complex128, n)
-		f.Filter(dst, src)
+		f.Process(dst, src)
 
 		// Skip the transient: the first len(taps)-1 outputs see zeros.
 		for i := len(asymTaps) - 1; i < n; i++ {
@@ -82,14 +82,14 @@ func TestFIRStreamingMatchesWholeSignal(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := make([]float64, len(src))
-	f.Filter(want, src)
+	f.Process(want, src)
 
 	for _, block := range []int{1, 2, 3, len(asymTaps) - 1, len(asymTaps), len(asymTaps) + 1, 64, 1000} {
 		f.Reset()
 		got := make([]float64, len(src))
 		for i := 0; i < len(src); i += block {
 			end := min(i+block, len(src))
-			f.Filter(got[i:end], src[i:end])
+			f.Process(got[i:end], src[i:end])
 		}
 		for i := range want {
 			if got[i] != want[i] {
@@ -99,18 +99,18 @@ func TestFIRStreamingMatchesWholeSignal(t *testing.T) {
 	}
 }
 
-func TestFIRFilterOneMatchesBlock(t *testing.T) {
+func TestFIRProcessOneMatchesBlock(t *testing.T) {
 	src := make([]float64, 100)
 	for i := range src {
 		src[i] = math.Sin(float64(i) * 0.11)
 	}
 	f, _ := NewFIRFilter(asymTaps)
 	want := make([]float64, len(src))
-	f.Filter(want, src)
+	f.Process(want, src)
 
 	f.Reset()
 	for i, v := range src {
-		if got := f.FilterOne(v); got != want[i] {
+		if got := f.ProcessOne(v); got != want[i] {
 			t.Fatalf("[%d] = %v, want %v", i, got, want[i])
 		}
 	}
@@ -120,11 +120,11 @@ func TestFIRInPlace(t *testing.T) {
 	src := []float64{1, 2, 3, 4, 5, 6, 7, 8}
 	f, _ := NewFIRFilter(asymTaps)
 	want := make([]float64, len(src))
-	f.Filter(want, src)
+	f.Process(want, src)
 
 	f.Reset()
 	got := append([]float64(nil), src...)
-	f.Filter(got, got)
+	f.Process(got, got)
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("[%d] = %v, want %v", i, got[i], want[i])
@@ -144,7 +144,7 @@ func TestFIRDecimatorMatchesEveryNth(t *testing.T) {
 	for _, factor := range []int{1, 2, 3, 4, 7, 16} {
 		f, _ := NewFIRFilter(asymTaps)
 		full := make([]float64, len(src))
-		f.Filter(full, src)
+		f.Process(full, src)
 
 		d, err := NewFIRDecimator(asymTaps, factor)
 		if err != nil {
@@ -160,7 +160,7 @@ func TestFIRDecimatorMatchesEveryNth(t *testing.T) {
 				end := min(i+block, len(src))
 				in := src[i:end]
 				out := make([]float64, d.OutputLen(len(in)))
-				if n := d.Filter(out, in); n != len(out) {
+				if n := d.Process(out, in); n != len(out) {
 					t.Fatalf("factor=%d block=%d: wrote %d, OutputLen said %d", factor, block, n, len(out))
 				}
 				got = append(got, out...)
@@ -187,14 +187,14 @@ func TestFIRDecimatorInPlace(t *testing.T) {
 		src[i] = float64(i)
 	}
 	d, _ := NewFIRDecimator(asymTaps, 4)
-	out := d.FilterInPlace(append([]float64(nil), src...))
+	out := inPlace(d, append([]float64(nil), src...))
 	if len(out) != 16 {
 		t.Fatalf("got %d outputs, want 16", len(out))
 	}
 	d.Reset()
 	f, _ := NewFIRFilter(asymTaps)
 	full := make([]float64, len(src))
-	f.Filter(full, src)
+	f.Process(full, src)
 	for i, v := range out {
 		if v != full[i*4] {
 			t.Errorf("[%d] = %v, want %v", i, v, full[i*4])
@@ -278,7 +278,7 @@ func BenchmarkFIRFilter(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
-				f.Filter(dst, src)
+				f.Process(dst, src)
 			}
 		})
 	}
@@ -287,7 +287,7 @@ func BenchmarkFIRFilter(b *testing.B) {
 // TestRealCoefFIRDecimator checks the complex-over-real-taps decimator against
 // the same taps run as an ordinary FIRDecimator over the real part, which is
 // the only claim the constructor makes: it widens the taps and changes nothing
-// else. Factor is checked here because nothing else reads it -- dspviz derives
+// else. Ratio is checked here because nothing else reads it -- dspviz derives
 // an output rate from it, and a wrong one would only show as a mislabelled
 // axis.
 func TestRealCoefFIRDecimator(t *testing.T) {
@@ -302,8 +302,8 @@ func TestRealCoefFIRDecimator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cd.Factor() != factor {
-		t.Errorf("Factor = %d, want %d", cd.Factor(), factor)
+	if in, out := cd.Ratio(); in != factor || out != 1 {
+		t.Errorf("Ratio = (%d, %d), want (%d, 1)", in, out, factor)
 	}
 	rd, err := NewFIRDecimator(taps, factor)
 	if err != nil {
@@ -324,8 +324,8 @@ func TestRealCoefFIRDecimator(t *testing.T) {
 	}
 	cdst := make([]complex128, cd.OutputLen(len(csrc)))
 	rdst := make([]float64, rd.OutputLen(len(src)))
-	if n, want := cd.Filter(cdst, csrc), rd.Filter(rdst, src); n != want {
-		t.Fatalf("Filter wrote %d, want %d", n, want)
+	if n, want := cd.Process(cdst, csrc), rd.Process(rdst, src); n != want {
+		t.Fatalf("Process wrote %d, want %d", n, want)
 	}
 	for i := range rdst {
 		if real(cdst[i]) != rdst[i] || imag(cdst[i]) != -2*rdst[i] {
@@ -386,18 +386,18 @@ func testFIRInterpolatorMatchesStuffedFIR[T Sample](t *testing.T) {
 				stuffed[i*factor] = v
 			}
 			want := make([]T, len(stuffed))
-			ref.Filter(want, stuffed)
+			ref.Process(want, stuffed)
 
 			it := must(NewFIRInterpolator(taps, factor))
-			if it.Factor() != factor || it.OutputLen(7) != 7*factor {
-				t.Fatalf("Factor %d, OutputLen(7) %d", it.Factor(), it.OutputLen(7))
+			if in, out := it.Ratio(); in != 1 || out != factor || it.OutputLen(7) != 7*factor {
+				t.Fatalf("Ratio (%d, %d), OutputLen(7) %d", in, out, it.OutputLen(7))
 			}
 			for _, block := range []int{1, 2, 7, 64, len(src)} {
 				it.Reset()
 				got := make([]T, len(want))
 				for i := 0; i < len(src); i += block {
 					end := min(i+block, len(src))
-					if n := it.Filter(got[i*factor:], src[i:end]); n != (end-i)*factor {
+					if n := it.Process(got[i*factor:], src[i:end]); n != (end-i)*factor {
 						t.Fatalf("wrote %d, want %d", n, (end-i)*factor)
 					}
 				}
@@ -425,12 +425,12 @@ func TestFIRInterpolatorSharedBuffer(t *testing.T) {
 	src := []float64{1, 2, 3, 4, 5, 6, 7, 8}
 	it := must(NewFIRInterpolator(asymTaps, 3))
 	want := make([]float64, 3*len(src))
-	it.Filter(want, src)
+	it.Process(want, src)
 
 	it.Reset()
 	buf := make([]float64, 3*len(src))
 	copy(buf, src)
-	it.Filter(buf, buf[:len(src)])
+	it.Process(buf, buf[:len(src)])
 	for i := range want {
 		if buf[i] != want[i] {
 			t.Fatalf("[%d] = %v, want %v", i, buf[i], want[i])
@@ -445,7 +445,7 @@ func TestFIRInterpolatorShortDstPanics(t *testing.T) {
 			t.Error("no panic")
 		}
 	}()
-	it.Filter(make([]float64, 7), make([]float64, 4))
+	it.Process(make([]float64, 7), make([]float64, 4))
 }
 
 func TestFIRInterpolatorConstructorsValidate(t *testing.T) {
@@ -466,7 +466,7 @@ func TestFIRInterpolatorConstructorsValidate(t *testing.T) {
 	it := must(NewFIRInterpolator(taps, 2))
 	taps[0] = 99
 	dst := make([]float64, 2)
-	it.Filter(dst, []float64{1})
+	it.Process(dst, []float64{1})
 	if dst[0] != 1 {
 		t.Errorf("taps were not copied: first output %v", dst[0])
 	}
@@ -483,8 +483,8 @@ func TestRealCoefFIRInterpolator(t *testing.T) {
 	cplx := must(NewFIRInterpolator(rtoc[complex128](asymTaps), 3))
 	got := make([]complex128, 3*len(src))
 	want := make([]complex128, 3*len(src))
-	rc.Filter(got, src)
-	cplx.Filter(want, src)
+	rc.Process(got, src)
+	cplx.Process(want, src)
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("[%d] = %v, want %v", i, got[i], want[i])

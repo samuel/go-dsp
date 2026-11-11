@@ -26,7 +26,7 @@ func TestSDFTMatchesDFT(t *testing.T) {
 		}
 		var got complex128
 		for _, v := range x {
-			got = sd.FilterOne(v)
+			got = sd.ProcessOne(v)
 		}
 		want := DFTBin(x, k)
 		if cmplx.Abs(got-want) > 1e-9 {
@@ -50,7 +50,7 @@ func TestSDFTWindowed(t *testing.T) {
 			}
 			var got complex128
 			for _, v := range x {
-				got = sd.FilterOne(v)
+				got = sd.ProcessOne(v)
 			}
 			var want complex128
 			for i, c := range w {
@@ -76,7 +76,7 @@ func TestSDFTBinWraps(t *testing.T) {
 		}
 		var got complex128
 		for _, v := range x {
-			got = sd.FilterOne(v)
+			got = sd.ProcessOne(v)
 		}
 		want := DFTBin(x, sdftBin(k, n))
 		if cmplx.Abs(got-want) > 1e-9 {
@@ -99,8 +99,8 @@ func TestSDFTWidthsAgree(t *testing.T) {
 	var got complex128
 	var got32 complex64
 	for _, v := range x {
-		got = sd.FilterOne(v)
-		got32 = sd32.FilterOne(complex64(v))
+		got = sd.ProcessOne(v)
+		got32 = sd32.ProcessOne(complex64(v))
 	}
 	if cmplx.Abs(complex128(got32)-got) > 1e-4 {
 		t.Errorf("float32 %v, float64 %v", got32, got)
@@ -108,7 +108,7 @@ func TestSDFTWidthsAgree(t *testing.T) {
 }
 
 // TestNewSDFTRejects covers the sizes that used to leave a filter that could
-// not run: n of zero made the first FilterOne divide by len(sd.x), and a window
+// not run: n of zero made the first ProcessOne divide by len(sd.x), and a window
 // wider than the transform combines bins that do not exist.
 func TestNewSDFTRejects(t *testing.T) {
 	for _, tc := range []struct {
@@ -141,12 +141,12 @@ func TestSDFTReset(t *testing.T) {
 	}
 	var first complex128
 	for _, v := range x {
-		first = sd.FilterOne(v)
+		first = sd.ProcessOne(v)
 	}
 	sd.Reset()
 	var again complex128
 	for _, v := range x {
-		again = sd.FilterOne(v)
+		again = sd.ProcessOne(v)
 	}
 	if again != first {
 		t.Errorf("after Reset got %v, want %v", again, first)

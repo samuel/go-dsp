@@ -63,9 +63,8 @@ func BenchmarkFMDemodulation_Go(b *testing.B) {
 	}
 }
 
-// TestFMDemodulateShortOutput checks that a short output truncates rather than
-// overruns. Demodulate used to write len(src) samples whatever the output
-// length was.
+// TestFMDemodulateShortOutput checks that the kernel processes
+// min(len(dst), len(src)) samples and never writes past dst.
 func TestFMDemodulateShortOutput(t *testing.T) {
 	src := []complex64{complex(0, 2), complex(1, 2), complex(-3, 7), complex(4, -9), complex(1, 1)}
 	for n := range len(src) + 2 {
@@ -92,10 +91,10 @@ func TestFMDemodReset(t *testing.T) {
 	src := []complex64{complex(0, 2), complex(1, 2), complex(-3, 7), complex(4, -9)}
 	f := NewFMDemod[complex64, float32]()
 	first := make([]float32, len(src))
-	f.Demodulate(first, src)
+	f.Process(first, src)
 	f.Reset()
 	again := make([]float32, len(src))
-	f.Demodulate(again, src)
+	f.Process(again, src)
 	for i := range first {
 		if again[i] != first[i] {
 			t.Fatalf("sample %d after Reset: %v, want %v", i, again[i], first[i])
@@ -116,7 +115,7 @@ func TestFMDemodWidths(t *testing.T) {
 	}
 
 	got := make([]float64, len(src128))
-	NewFMDemod[complex128, float64]().Demodulate(got, src128)
+	NewFMDemod[complex128, float64]().Process(got, src128)
 	var pre complex128
 	for i, v := range src128 {
 		if want := PolarDiscriminator(v, pre); got[i] != want {
@@ -126,9 +125,9 @@ func TestFMDemodWidths(t *testing.T) {
 	}
 
 	single := make([]float32, len(src64))
-	NewFMDemod[complex64, float32]().Demodulate(single, src64)
+	NewFMDemod[complex64, float32]().Process(single, src64)
 	widened := make([]float64, len(src64))
-	NewFMDemod[complex64, float64]().Demodulate(widened, src64)
+	NewFMDemod[complex64, float64]().Process(widened, src64)
 	for i := range single {
 		if widened[i] != float64(single[i]) {
 			t.Fatalf("complex64 to float64 [%d] = %v, want %v", i, widened[i], single[i])

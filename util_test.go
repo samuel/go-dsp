@@ -65,14 +65,15 @@ func TestRotator90CarriesThePhase(t *testing.T) {
 	}
 
 	want := slices.Clone(src)
-	NewRotator90[complex64]().Rotate(want)
+	NewRotator90[complex64]().Process(want, want)
 
 	for _, block := range []int{1, 2, 3, 4, 5, 7, 8, 16, n - 1, n, n + 1} {
 		t.Run(strconv.Itoa(block), func(t *testing.T) {
 			got := slices.Clone(src)
 			r := NewRotator90[complex64]()
 			for i := 0; i < len(got); i += block {
-				r.Rotate(got[i:min(i+block, len(got))])
+				blk := got[i:min(i+block, len(got))]
+				r.Process(blk, blk)
 			}
 			if !slices.Equal(got, want) {
 				t.Fatalf("in blocks of %d: %v, want %v", block, got, want)
@@ -83,10 +84,10 @@ func TestRotator90CarriesThePhase(t *testing.T) {
 	// Reset restarts the sequence, so a rotator reused for a second stream
 	// behaves like a fresh one.
 	r := NewRotator90[complex64]()
-	r.Rotate(make([]complex64, 3))
+	r.Process(make([]complex64, 3), make([]complex64, 3))
 	r.Reset()
 	got := slices.Clone(src)
-	r.Rotate(got)
+	r.Process(got, got)
 	if !slices.Equal(got, want) {
 		t.Fatalf("after Reset: %v, want %v", got, want)
 	}
@@ -103,8 +104,8 @@ func TestRotator90Widths(t *testing.T) {
 		c64[i] = complex(float32(i+1), float32(-(i + 1)))
 		c128[i] = complex(float64(i+1), float64(-(i + 1)))
 	}
-	NewRotator90[complex64]().Rotate(c64)
-	NewRotator90[complex128]().Rotate(c128)
+	NewRotator90[complex64]().Process(c64, c64)
+	NewRotator90[complex128]().Process(c128, c128)
 	for i := range c64 {
 		if complex128(c64[i]) != c128[i] {
 			t.Fatalf("[%d]: complex64 %v, complex128 %v", i, c64[i], c128[i])
@@ -113,7 +114,7 @@ func TestRotator90Widths(t *testing.T) {
 }
 
 // TestRotator90FourfoldMatchesTheAssembly pins the fast path against the
-// generic one: whole groups of four from phase zero are what Rotate hands to
+// generic one: whole groups of four from phase zero are what Process hands to
 // the assembly, and it has to agree with the loop that would otherwise have
 // run.
 func TestRotator90FourfoldMatchesTheAssembly(t *testing.T) {
@@ -123,7 +124,7 @@ func TestRotator90FourfoldMatchesTheAssembly(t *testing.T) {
 			src[i] = complex(float32(i)-128, -(float32(i) - 128))
 		}
 		viaAsm := slices.Clone(src)
-		NewRotator90[complex64]().Rotate(viaAsm)
+		NewRotator90[complex64]().Process(viaAsm, viaAsm)
 		viaGo := slices.Clone(src)
 		rotate90From(0, viaGo)
 		if !slices.Equal(viaAsm, viaGo) {

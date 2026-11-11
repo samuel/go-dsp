@@ -6,9 +6,11 @@
 //
 // Functions are generic over the sample width (float32 | float64, and the
 // complex families); elementwise binary operations are three-operand
-// f(dst, a, b), reductions return a value, and 1:1 operations process
-// min(dst, src). Stateful types have a validating constructor and a Reset,
-// and none are safe for concurrent use.
+// f(dst, a, b), reductions return a value, and stateless 1:1 operations
+// process min(dst, src). Stateful block processors implement Processor:
+// Process consumes all of src and panics if dst is shorter than OutputLen.
+// Stateful types have a validating constructor and a Reset, and none are safe
+// for concurrent use.
 //
 // The performance-critical kernels are vectorized for 386, amd64, arm and
 // arm64 with a pure-Go fallback on every other architecture, so the same

@@ -7,7 +7,7 @@ import (
 )
 
 // df1Ref is a direct form 1 IIR filter written out longhand, with no delay
-// lines to shift, as the reference for IIRFilter.Filter. Samples before the
+// lines to shift, as the reference for IIRFilter.Process. Samples before the
 // start of the input are zero.
 func df1Ref(bCoef, aCoef, src []float64) []float64 {
 	b := make([]float64, len(bCoef))
@@ -51,7 +51,7 @@ func TestIIRFilter(t *testing.T) {
 		order int
 	}{
 		// Order 1 used to panic: the delay lines were len(b)-1 long, so a
-		// two-coefficient filter got empty ones and Filter indexed pIn[0].
+		// two-coefficient filter got empty ones and Process indexed pIn[0].
 		{"order1", []float64{0.5, 0.3}, []float64{1, -0.7}, 1},
 		// A non-unity a[0], to exercise the normalization.
 		{"order1-unnormalized", []float64{1, 0.6}, []float64{2, -1.4}, 1},
@@ -67,7 +67,7 @@ func TestIIRFilter(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			f.Filter(got, src)
+			f.Process(got, src)
 			for i := range want {
 				if math.Abs(got[i]-want[i]) > 1e-12 {
 					t.Fatalf("sample %d: got %v, want %v", i, got[i], want[i])
@@ -83,7 +83,7 @@ func TestIIRFilter(t *testing.T) {
 			}
 			for off := 0; off < len(src); off += 7 {
 				end := min(off+7, len(src))
-				f.Filter(blocked[off:end], src[off:end])
+				f.Process(blocked[off:end], src[off:end])
 			}
 			for i := range want {
 				if blocked[i] != got[i] {
@@ -150,7 +150,7 @@ func TestNewIIRFilterRejects(t *testing.T) {
 		{"empty", nil, nil},
 		{"mismatched", []float64{1, 2}, []float64{1}},
 		// One coefficient each is a gain, not a filter, and leaves no delay
-		// line for Filter to write into.
+		// line for Process to write into.
 		{"single", []float64{1}, []float64{1}},
 		// a[0] divides every coefficient, so a zero there makes the whole
 		// filter 0/0 rather than a filter with a zero coefficient.
@@ -191,13 +191,13 @@ func TestComplexIIRFilterMatchesReal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.Filter(c128out, c128in)
+	f.Process(c128out, c128in)
 	c64out := make([]complex64, len(src))
 	f2, err := NewRealCoefIIRFilter[complex64](b32, a32)
 	if err != nil {
 		t.Fatal(err)
 	}
-	f2.Filter(c64out, c64in)
+	f2.Process(c64out, c64in)
 
 	for i := range want {
 		if math.Abs(real(c128out[i])-want[i]) > 1e-12 || imag(c128out[i]) != 0 {
@@ -223,7 +223,7 @@ func TestDCFilterStepResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.Filter(dst, src)
+	f.Process(dst, src)
 	for n := range dst {
 		want := math.Pow(a, float64(n))
 		if math.Abs(dst[n]-want) > 1e-12 {
@@ -231,14 +231,14 @@ func TestDCFilterStepResponse(t *testing.T) {
 		}
 	}
 
-	// FilterOne has to walk the same trajectory.
+	// ProcessOne has to walk the same trajectory.
 	f, err = NewDCFilter[float64](a)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for n := range dst {
-		if got := f.FilterOne(src[n]); got != dst[n] {
-			t.Fatalf("FilterOne sample %d: got %v, want %v", n, got, dst[n])
+		if got := f.ProcessOne(src[n]); got != dst[n] {
+			t.Fatalf("ProcessOne sample %d: got %v, want %v", n, got, dst[n])
 		}
 	}
 
@@ -251,7 +251,7 @@ func TestDCFilterStepResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f32.Filter(out32, in32)
+	f32.Process(out32, in32)
 	f32, err = NewDCFilter[float32](a)
 	if err != nil {
 		t.Fatal(err)
@@ -261,8 +261,8 @@ func TestDCFilterStepResponse(t *testing.T) {
 		if math.Abs(float64(out32[n]-want)) > 1e-5 {
 			t.Fatalf("float32 sample %d: got %v, want %v", n, out32[n], want)
 		}
-		if got := f32.FilterOne(in32[n]); got != out32[n] {
-			t.Fatalf("FilterOne32 sample %d: got %v, want %v", n, got, out32[n])
+		if got := f32.ProcessOne(in32[n]); got != out32[n] {
+			t.Fatalf("ProcessOne32 sample %d: got %v, want %v", n, got, out32[n])
 		}
 	}
 }
@@ -281,7 +281,7 @@ func TestIIRFilterOverComplexCoefficients(t *testing.T) {
 	src := make([]complex128, 8)
 	src[0] = 1
 	dst := make([]complex128, len(src))
-	f.Filter(dst, src)
+	f.Process(dst, src)
 
 	// y[n] = x[n] - a1*y[n-1], so the impulse response is (-a1)^n.
 	want := complex128(1)
@@ -303,10 +303,10 @@ func TestIIRFilterReset(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := make([]float64, len(src))
-	f.Filter(first, src)
+	f.Process(first, src)
 	f.Reset()
 	again := make([]float64, len(src))
-	f.Filter(again, src)
+	f.Process(again, src)
 	for i := range first {
 		if again[i] != first[i] {
 			t.Fatalf("sample %d after Reset: %v, want %v", i, again[i], first[i])
@@ -319,9 +319,9 @@ func TestDCFilterReset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first := f.FilterOne(1)
+	first := f.ProcessOne(1)
 	f.Reset()
-	if again := f.FilterOne(1); again != first {
+	if again := f.ProcessOne(1); again != first {
 		t.Errorf("after Reset got %v, want %v", again, first)
 	}
 }
@@ -344,23 +344,23 @@ func TestNewRealCoefIIRFilterRejects(t *testing.T) {
 	}
 }
 
-// TestIIRFilterOneMatchesFilter is the claim the shared step exists for: the
+// TestIIRProcessOneMatchesProcess is the claim the shared step exists for: the
 // block form and the single-sample form are the same arithmetic in the same
 // order, so filtering a stream either way gives bit-identical output. Nothing
-// else compares them, and they used to be two copies of the recursion.
-func TestIIRFilterOneMatchesFilter(t *testing.T) {
+// else compares them.
+func TestIIRProcessOneMatchesProcess(t *testing.T) {
 	src := rampAndTone(64)
 	b := []float64{0.25, 0.5, 0.25}
 	a := []float64{1, -0.3, 0.1}
 
 	block := must(NewIIRFilter(b, a))
 	dst := make([]float64, len(src))
-	block.Filter(dst, src)
+	block.Process(dst, src)
 
 	single := must(NewIIRFilter(b, a))
 	for i, v := range src {
-		if got := single.FilterOne(v); got != dst[i] {
-			t.Fatalf("sample %d: FilterOne %v, Filter %v (differ by %g)", i, got, dst[i], got-dst[i])
+		if got := single.ProcessOne(v); got != dst[i] {
+			t.Fatalf("sample %d: ProcessOne %v, Process %v (differ by %g)", i, got, dst[i], got-dst[i])
 		}
 	}
 
@@ -371,11 +371,11 @@ func TestIIRFilterOneMatchesFilter(t *testing.T) {
 	}
 	cblock := must(NewRealCoefIIRFilter[complex128](b, a))
 	cdst := make([]complex128, len(csrc))
-	cblock.Filter(cdst, csrc)
+	cblock.Process(cdst, csrc)
 	csingle := must(NewRealCoefIIRFilter[complex128](b, a))
 	for i, v := range csrc {
-		if got := csingle.FilterOne(v); got != cdst[i] {
-			t.Fatalf("complex sample %d: FilterOne %v, Filter %v", i, got, cdst[i])
+		if got := csingle.ProcessOne(v); got != cdst[i] {
+			t.Fatalf("complex sample %d: ProcessOne %v, Process %v", i, got, cdst[i])
 		}
 	}
 }

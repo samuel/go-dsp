@@ -27,35 +27,29 @@ func NewBoxcarDecimator[T Sample](factor int) (*BoxcarDecimator[T], error) {
 	return &BoxcarDecimator[T]{factor: factor}, nil
 }
 
-// FilterInPlace decimates samples in place and returns the prefix of the same
-// slice holding the output, so the caller must not go on using what it passed
-// in. Samples left over from a group that is not yet complete are carried into
-// the next call, so a stream can be filtered in blocks.
-func (f *BoxcarDecimator[T]) FilterInPlace(dst []T) []T {
-	return dst[:f.Filter(dst, dst)]
-}
-
-// OutputLen returns how many samples Filter will write for that many inputs,
+// OutputLen returns how many samples Process will write for that many inputs,
 // which is what dst has to have room for. It depends on how far into the
 // current group the filter is, so ask it rather than dividing by the factor.
 func (f *BoxcarDecimator[T]) OutputLen(inputs int) int {
 	return (f.prevIndex + inputs) / f.factor
 }
 
-// Filter writes the decimated output to a separate slice and returns how many
-// samples it wrote, which is OutputLen(len(src)). dst must have room for that
-// many, and may be the same slice as src: the output index never runs ahead of
-// the input index, so filtering in place overwrites only samples already read.
-func (f *BoxcarDecimator[T]) Filter(dst, src []T) int {
+// Process writes the decimated output and returns how many samples it wrote,
+// which is OutputLen(len(src)). It panics if dst is shorter than that. dst may
+// be the same slice as src: the output index never runs ahead of the input
+// index, so filtering in place overwrites only samples already read. Samples
+// left over from a group that is not yet complete are carried into the next
+// call.
+func (f *BoxcarDecimator[T]) Process(dst, src []T) int {
+	checkDst("BoxcarDecimator", len(dst), f.OutputLen(len(src)))
 	if c, ok := any(f).(*BoxcarDecimator[complex64]); ok {
 		return boxcarDecimateAsm(c, any(dst).([]complex64), any(src).([]complex64))
 	}
 	return boxcarDecimateGeneric(f, dst, src)
 }
 
-// Factor returns the decimation factor, so a caller measuring the filter can
-// work out the output rate.
-func (f *BoxcarDecimator[T]) Factor() int { return f.factor }
+// Ratio returns the input rate to the output rate, (factor, 1).
+func (f *BoxcarDecimator[T]) Ratio() (in, out int) { return f.factor, 1 }
 
 // Reset drops the partial group and the accumulator, so the filter starts a new
 // stream from silence and in phase.
@@ -116,15 +110,7 @@ func NewRationalBoxcarDecimator[T Sample](fast, slow int) (*RationalBoxcarDecima
 	return &RationalBoxcarDecimator[T]{fast: fast, slow: slow}, nil
 }
 
-// FilterInPlace decimates samples in place and returns the prefix of the same
-// slice holding the output, so the caller must not go on using what it passed
-// in. The accumulator and the phase carry across calls, so a stream can be
-// filtered in blocks.
-func (f *RationalBoxcarDecimator[T]) FilterInPlace(dst []T) []T {
-	return dst[:f.Filter(dst, dst)]
-}
-
-// OutputLen returns how many samples Filter will write for that many inputs,
+// OutputLen returns how many samples Process will write for that many inputs,
 // which is what dst has to have room for. The phase advances by slow per input
 // and emits every time it reaches fast, so this is not len(src)*slow/fast.
 func (f *RationalBoxcarDecimator[T]) OutputLen(inputs int) int {
@@ -132,20 +118,21 @@ func (f *RationalBoxcarDecimator[T]) OutputLen(inputs int) int {
 	return int((int64(f.prevIndex) + int64(inputs)*int64(f.slow)) / int64(f.fast))
 }
 
-// Filter writes the decimated output to a separate slice and returns how many
-// samples it wrote, which is OutputLen(len(src)). dst must have room for that
-// many, and may be the same slice as src, for the reason BoxcarDecimator.Filter
-// gives.
-func (f *RationalBoxcarDecimator[T]) Filter(dst, src []T) int {
+// Process writes the decimated output and returns how many samples it wrote,
+// which is OutputLen(len(src)). It panics if dst is shorter than that. dst may
+// be the same slice as src, for the reason BoxcarDecimator.Process gives. The
+// accumulator and the phase carry across calls.
+func (f *RationalBoxcarDecimator[T]) Process(dst, src []T) int {
+	checkDst("RationalBoxcarDecimator", len(dst), f.OutputLen(len(src)))
 	if r, ok := any(f).(*RationalBoxcarDecimator[float32]); ok {
 		return rationalBoxcarDecimateAsm(r, any(dst).([]float32), any(src).([]float32))
 	}
 	return rationalBoxcarDecimateGeneric(f, dst, src)
 }
 
-// Rates returns the input and output rates the filter was built with. They are
-// whatever units the constructor was given; only their ratio matters.
-func (f *RationalBoxcarDecimator[T]) Rates() (fast, slow int) {
+// Ratio returns the input rate to the output rate, (fast, slow) as the
+// constructor was given them and not reduced.
+func (f *RationalBoxcarDecimator[T]) Ratio() (in, out int) {
 	return f.fast, f.slow
 }
 

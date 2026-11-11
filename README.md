@@ -63,14 +63,22 @@ if err != nil {
     return err
 }
 out := make([]float32, len(in))
-lp.Filter(out, in)
+lp.Process(out, in)
 ```
+
+Every filter, rate changer, `FMDemod`, `Rotator90` and `SDFT` implements
+`dsp.Processor`: `Process(dst, src)` consumes all of `src` and returns the
+count it wrote, which is `OutputLen(len(src))`, and panics if `dst` is shorter.
+`dst` may alias `src` wherever the output is no longer than the input, so
+`x = x[:d.Process(x, x)]` decimates in place. Rate changers report
+`Ratio() (in, out int)`: a decimator by 4 is `(4, 1)`, an interpolator by 4 is
+`(1, 4)`.
 
 A direct-form IIR filter, widths generic across `Sample`:
 
 ```go
 f, err := dsp.NewIIRFilter(b, a) // b, a inferred []float32 or []float64
-f.FilterOne(x)                   // single-sample form
+f.ProcessOne(x)                  // single-sample form
 f.Reset()
 ```
 
@@ -90,7 +98,7 @@ peak := dsp.VMax(src)
 ```go
 fmd := dsp.NewFMDemod[complex64, float32]() // complex64 runs the assembly
 out := make([]float32, len(iq))
-fmd.Demodulate(out, iq)
+fmd.Process(out, iq)
 ```
 
 ### Tone detection
@@ -164,7 +172,7 @@ whole buffer at zero phase.
 h, err := dsp.LowPassFIR[float32](143, 0.25, 9) // cutoff in cycles per sample
 dsp.NormalizeTaps(h, 2)
 it, err := dsp.NewFIRInterpolator(h, 2)
-n := it.Filter(dst, src) // n == it.OutputLen(len(src)) == 2*len(src)
+n := it.Process(dst, src) // n == it.OutputLen(len(src)) == 2*len(src)
 ```
 
 Parks-McClellan equiripple design:
@@ -227,9 +235,12 @@ go run ./examples/ax25 -rate 11025 -baud 300 radio-paket300-11025.raw
   it is part of the contract: `FastAtan2` carries a float32 error bound.
 - **Conversions never scale**; a `LE` suffix means the byte slice holds
   little-endian values.
-- **1:1 operations process `min(dst, src)`** and return nothing; only
-  operations whose output count differs (the decimators and
-  `FIRInterpolator`) return one.
+- **Stateless 1:1 operations process `min(dst, src)`** and return nothing:
+  the `V` functions and the conversions.
+- **Stateful block processors implement `Processor`**: `Process` consumes all
+  of `src`, returns `OutputLen(len(src))` and panics if `dst` is shorter.
+  Rate changers report `Ratio() (in, out int)`, input rate to output rate.
+  Accumulators (`Goertzel`, `dtmf.Decoder`, `ax25.Decoder`) take `Feed`.
 - **Stateful types** have a validating constructor and a `Reset`; none are safe
   for concurrent use.
 - **Normalized frequency is cycles per sample**, so 0.5 is the Nyquist

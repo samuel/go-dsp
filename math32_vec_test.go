@@ -187,7 +187,7 @@ func TestFMDemodMethod(t *testing.T) {
 	src := []complex64{complex(0, 2), complex(1, 2), complex(-3, 7), complex(4, -9)}
 	dst := make([]float32, len(src)+1)
 	var f FMDemod[complex64, float32]
-	f.Demodulate(dst, src)
+	f.Process(dst, src)
 	if dst[len(src)] != 0 {
 		t.Errorf("wrote past the shorter slice: %v", dst[len(src)])
 	}
@@ -209,16 +209,16 @@ func TestExportedWrappers(t *testing.T) {
 	}
 	want := slices.Clone(cplx)
 	rotate90(want)
-	NewRotator90[complex64]().Rotate(cplx)
+	NewRotator90[complex64]().Process(cplx, cplx)
 	if !slices.Equal(cplx, want) {
-		t.Errorf("Rotator90.Rotate gave %v, want %v", cplx, want)
+		t.Errorf("Rotator90.Process gave %v, want %v", cplx, want)
 	}
 	f, err := NewBoxcarDecimator[complex64](2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := f.FilterInPlace(cplx); len(got) != len(cplx)/2 {
-		t.Errorf("BoxcarDecimator.FilterInPlace returned %d samples, want %d", len(got), len(cplx)/2)
+	if got := inPlace(f, cplx); len(got) != len(cplx)/2 {
+		t.Errorf("BoxcarDecimator in place returned %d samples, want %d", len(got), len(cplx)/2)
 	}
 }
 

@@ -42,6 +42,13 @@ type Coefficients interface {
 	Coefficients() (b, a []float64)
 }
 
+// ratioRates returns the input and output rates of a rate changer whose input
+// runs at rate.
+func ratioRates(rate float64, r interface{ Ratio() (in, out int) }) (in, out float64) {
+	i, o := r.Ratio()
+	return rate, rate * float64(o) / float64(i)
+}
+
 func checkRate(rate float64) error {
 	if !(rate > 0) {
 		return errors.New("dspviz: sample rate must be positive")
@@ -74,7 +81,7 @@ func (p *biquadProcessor[T]) Reset()                   { p.f.Reset() }
 
 func (p *biquadProcessor[T]) Process(dst, src []float64) []float64 {
 	p.buf = narrowInto(p.buf, src)
-	p.f.Filter(p.buf, p.buf)
+	p.f.Process(p.buf, p.buf)
 	return widenInto(dst, p.buf)
 }
 
@@ -108,7 +115,7 @@ func (p *iirProcessor[T]) Reset()                   { p.f.Reset() }
 
 func (p *iirProcessor[T]) Process(dst, src []float64) []float64 {
 	p.buf = narrowInto(p.buf, src)
-	p.f.Filter(p.buf, p.buf)
+	p.f.Process(p.buf, p.buf)
 	return widenInto(dst, p.buf)
 }
 
@@ -140,7 +147,7 @@ func (p *firProcessor[T]) Reset()                   { p.f.Reset() }
 
 func (p *firProcessor[T]) Process(dst, src []float64) []float64 {
 	p.buf = narrowInto(p.buf, src)
-	p.f.Filter(p.buf, p.buf)
+	p.f.Process(p.buf, p.buf)
 	return widenInto(dst, p.buf)
 }
 
@@ -176,14 +183,14 @@ func NewFIRDecimatorProcessor[T dsp.Float](f *dsp.FIRDecimator[T], sampleRate fl
 }
 
 func (p *firDecimatorProcessor[T]) Rates() (in, out float64) {
-	return p.rate, p.rate / float64(p.f.Factor())
+	return ratioRates(p.rate, p.f)
 }
 
 func (p *firDecimatorProcessor[T]) Reset() { p.f.Reset() }
 
 func (p *firDecimatorProcessor[T]) Process(dst, src []float64) []float64 {
 	p.buf = narrowInto(p.buf, src)
-	return widenInto(dst, p.f.FilterInPlace(p.buf))
+	return widenInto(dst, p.buf[:p.f.Process(p.buf, p.buf)])
 }
 
 // firInterpolatorProcessor adapts dsp.FIRInterpolator.
@@ -206,7 +213,7 @@ func NewFIRInterpolatorProcessor[T dsp.Float](f *dsp.FIRInterpolator[T], sampleR
 }
 
 func (p *firInterpolatorProcessor[T]) Rates() (in, out float64) {
-	return p.rate, p.rate * float64(p.f.Factor())
+	return ratioRates(p.rate, p.f)
 }
 
 func (p *firInterpolatorProcessor[T]) Reset() { p.f.Reset() }
@@ -214,7 +221,7 @@ func (p *firInterpolatorProcessor[T]) Reset() { p.f.Reset() }
 func (p *firInterpolatorProcessor[T]) Process(dst, src []float64) []float64 {
 	p.in = narrowInto(p.in, src)
 	p.outs = resize(p.outs, p.f.OutputLen(len(src)))
-	n := p.f.Filter(p.outs, p.in)
+	n := p.f.Process(p.outs, p.in)
 	return widenInto(dst, p.outs[:n])
 }
 
@@ -241,7 +248,7 @@ func (p *dcProcessor[T]) Reset()                   { p.f.Reset() }
 
 func (p *dcProcessor[T]) Process(dst, src []float64) []float64 {
 	p.buf = narrowInto(p.buf, src)
-	p.f.Filter(p.buf, p.buf)
+	p.f.Process(p.buf, p.buf)
 	return widenInto(dst, p.buf)
 }
 
@@ -272,14 +279,14 @@ func NewBoxcarDecimatorProcessor[T dsp.Sample](f *dsp.BoxcarDecimator[T], sample
 }
 
 func (p *boxcarDecimatorProcessor[T]) Rates() (in, out float64) {
-	return p.rate, p.rate / float64(p.f.Factor())
+	return ratioRates(p.rate, p.f)
 }
 
 func (p *boxcarDecimatorProcessor[T]) Reset() { p.f.Reset() }
 
 func (p *boxcarDecimatorProcessor[T]) Process(dst, src []float64) []float64 {
 	p.buf = narrowInto(p.buf, src)
-	return widenInto(dst, p.f.FilterInPlace(p.buf))
+	return widenInto(dst, p.buf[:p.f.Process(p.buf, p.buf)])
 }
 
 // rationalBoxcarDecimatorProcessor adapts dsp.RationalBoxcarDecimator.
@@ -303,7 +310,7 @@ func NewRationalBoxcarDecimatorProcessor[T dsp.Sample](f *dsp.RationalBoxcarDeci
 }
 
 func (p *rationalBoxcarDecimatorProcessor[T]) Rates() (in, out float64) {
-	fast, slow := p.f.Rates()
+	fast, slow := p.f.Ratio()
 	return float64(fast), float64(slow)
 }
 
@@ -311,7 +318,7 @@ func (p *rationalBoxcarDecimatorProcessor[T]) Reset() { p.f.Reset() }
 
 func (p *rationalBoxcarDecimatorProcessor[T]) Process(dst, src []float64) []float64 {
 	p.buf = narrowInto(p.buf, src)
-	return widenInto(dst, p.f.FilterInPlace(p.buf))
+	return widenInto(dst, p.buf[:p.f.Process(p.buf, p.buf)])
 }
 
 // funcProcessor wraps a plain function.

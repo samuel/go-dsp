@@ -52,13 +52,15 @@ func NewRealCoefFIRFilter[C Complex, F Float](taps []F) (*FIRFilter[C], error) {
 	return NewFIRFilter(rtoc[C](taps))
 }
 
-// Filter writes one output sample per input sample, over
-// min(len(dst), len(src)) of them. The slices may be the same. Samples past
-// that count are not consumed, so the history matches what was written.
-func (f *FIRFilter[T]) Filter(dst, src []T) {
-	src = src[:min(len(dst), len(src))]
+// OutputLen returns inputs: the filter writes one sample per input.
+func (f *FIRFilter[T]) OutputLen(inputs int) int { return inputs }
+
+// Process writes one output sample per input sample and returns len(src). It
+// panics if dst is shorter than src. The slices may be the same.
+func (f *FIRFilter[T]) Process(dst, src []T) int {
+	checkDst("FIRFilter", len(dst), len(src))
 	if len(src) == 0 {
-		return
+		return 0
 	}
 	w := f.stage(src)
 	h := len(f.hist)
@@ -66,14 +68,15 @@ func (f *FIRFilter[T]) Filter(dst, src []T) {
 		dst[i] = f.dot(w, h+i)
 	}
 	f.save(w, len(src))
+	return len(src)
 }
 
-// FilterOne filters a single sample. Filter stages a whole block at once, so
+// ProcessOne filters a single sample. Process stages a whole block at once, so
 // prefer it when there is a block to filter.
-func (f *FIRFilter[T]) FilterOne(x T) T {
+func (f *FIRFilter[T]) ProcessOne(x T) T {
 	var buf [1]T
 	buf[0] = x
-	f.Filter(buf[:], buf[:])
+	f.Process(buf[:], buf[:])
 	return buf[0]
 }
 
@@ -159,11 +162,10 @@ func NewRealCoefFIRDecimator[C Complex, F Float](taps []F, factor int) (*FIRDeci
 	return NewFIRDecimator(rtoc[C](taps), factor)
 }
 
-// Factor returns the decimation factor, so a caller measuring the filter can
-// work out the output rate without being told it twice.
-func (d *FIRDecimator[T]) Factor() int { return d.factor }
+// Ratio returns the input rate to the output rate, (factor, 1).
+func (d *FIRDecimator[T]) Ratio() (in, out int) { return d.factor, 1 }
 
-// OutputLen returns how many samples Filter will write for that many inputs,
+// OutputLen returns how many samples Process will write for that many inputs,
 // which is what dst has to have room for. It depends on the phase the filter is
 // currently at, so ask it rather than dividing by the factor.
 func (d *FIRDecimator[T]) OutputLen(inputs int) int {
@@ -173,10 +175,12 @@ func (d *FIRDecimator[T]) OutputLen(inputs int) int {
 	return (inputs - d.phase + d.factor - 1) / d.factor
 }
 
-// Filter writes the decimated output and returns how many samples it wrote,
-// which is OutputLen(len(src)). dst must have room for that many, and may be
-// the same slice as src.
-func (d *FIRDecimator[T]) Filter(dst, src []T) int {
+// Process writes the decimated output and returns how many samples it wrote,
+// which is OutputLen(len(src)). It panics if dst is shorter than that. dst may
+// be the same slice as src. Samples that do not complete an output period are
+// carried into the next call.
+func (d *FIRDecimator[T]) Process(dst, src []T) int {
+	checkDst("FIRDecimator", len(dst), d.OutputLen(len(src)))
 	if len(src) == 0 {
 		return 0
 	}
@@ -190,14 +194,6 @@ func (d *FIRDecimator[T]) Filter(dst, src []T) int {
 	d.advance(len(src))
 	d.f.save(w, len(src))
 	return out
-}
-
-// FilterInPlace decimates samples in place and returns the prefix of the same
-// slice holding the output, so the caller must not go on using what it passed
-// in. Samples that do not complete an output period are carried into the next
-// call, so a stream can be filtered in blocks.
-func (d *FIRDecimator[T]) FilterInPlace(dst []T) []T {
-	return dst[:d.Filter(dst, dst)]
 }
 
 // Reset drops the history and the phase, so the filter starts a new stream from
@@ -276,12 +272,11 @@ func NewRealCoefFIRInterpolator[C Complex, F Float](taps []F, factor int) (*FIRI
 	return NewFIRInterpolator(rtoc[C](taps), factor)
 }
 
-// Factor returns the interpolation factor, so a caller measuring the filter
-// can work out the output rate without being told it twice.
-func (it *FIRInterpolator[T]) Factor() int { return len(it.branches) }
+// Ratio returns the input rate to the output rate, (1, factor).
+func (it *FIRInterpolator[T]) Ratio() (in, out int) { return 1, len(it.branches) }
 
-// OutputLen returns how many samples Filter will write for that many inputs,
-// which is inputs*Factor. It panics if that does not fit in an int, which a
+// OutputLen returns how many samples Process will write for that many inputs,
+// which is inputs*factor. It panics if that does not fit in an int, which a
 // 32-bit platform reaches at realistic sizes.
 func (it *FIRInterpolator[T]) OutputLen(inputs int) int {
 	if inputs > math.MaxInt/len(it.branches) {
@@ -290,14 +285,13 @@ func (it *FIRInterpolator[T]) OutputLen(inputs int) int {
 	return inputs * len(it.branches)
 }
 
-// Filter writes the interpolated output and returns how many samples it wrote,
-// which is OutputLen(len(src)). It panics if dst is shorter than that. dst may
-// share memory with src, since src is copied before any output is written.
-func (it *FIRInterpolator[T]) Filter(dst, src []T) int {
+// Process writes the interpolated output and returns how many samples it
+// wrote, which is OutputLen(len(src)). It panics if dst is shorter than that.
+// dst may share memory with src, since src is copied before any output is
+// written.
+func (it *FIRInterpolator[T]) Process(dst, src []T) int {
 	factor := len(it.branches)
-	if len(src) > len(dst)/factor { // len(src)*factor could overflow
-		panic("dsp: FIR interpolator dst is shorter than OutputLen")
-	}
+	checkDst("FIRInterpolator", len(dst)/factor, len(src)) // len(src)*factor could overflow
 	if len(src) == 0 {
 		return 0
 	}
@@ -335,7 +329,7 @@ func Upsample[T Sample](dst, src []T, factor int, taps []T) error {
 	in := make([]T, len(src)+(center+factor-1)/factor)
 	copy(in, src)
 	out := make([]T, it.OutputLen(len(in)))
-	it.Filter(out, in)
+	it.Process(out, in)
 	copy(dst, out[center:center+len(src)*factor])
 	return nil
 }

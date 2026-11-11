@@ -23,6 +23,10 @@ Go 1.27.
   design, fractional-position interpolators including a polyphase
   `SincInterpolator`, interleaving and `FastAtan2`. Everything is generic over
   `float32`, `float64`, `complex64` and `complex128`.
+- `dsp.Processor`: one block contract for every filter, decimator and
+  interpolator, `FMDemod`, `Rotator90` and `SDFT`. `Process(dst, src)`
+  consumes all of `src`, returns `OutputLen(len(src))` and panics if `dst` is
+  shorter; rate changers report `Ratio() (in, out int)`.
 - Assembly for 386, amd64 (SSE2, SSE4.1 and AVX, chosen at run time), arm
   (NEON and VFP) and arm64, with a pure-Go implementation on every other
   architecture and an optional `GOEXPERIMENT=simd` path.

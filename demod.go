@@ -55,18 +55,22 @@ func NewFMDemod[C Complex, F Float]() *FMDemod[C, F] {
 	return &FMDemod[C, F]{}
 }
 
-// Demodulate writes one output sample per input sample, over
-// min(len(src), len(dst)) of them. The filter carries the previous sample
+// OutputLen returns inputs: the demodulator writes one sample per input.
+func (f *FMDemod[C, F]) OutputLen(inputs int) int { return inputs }
+
+// Process writes one output sample per input sample and returns len(src). It
+// panics if dst is shorter than src. The filter carries the previous sample
 // across calls, so a stream can be demodulated in blocks.
-func (f *FMDemod[C, F]) Demodulate(dst []F, src []C) {
+func (f *FMDemod[C, F]) Process(dst []F, src []C) int {
+	checkDst("FMDemod", len(dst), len(src))
+	dst = dst[:len(src)]
 	if g, ok := any(f).(*FMDemod[complex64, float32]); ok {
 		fmDemodulateAsm(g, any(dst).([]float32), any(src).([]complex64))
-		return
+		return len(src)
 	}
-	n := min(len(src), len(dst))
 	_, single := any(src).([]complex64)
 	pre := f.pre
-	for i, inp := range src[:n] {
+	for i, inp := range src {
 		var d float64
 		if single {
 			d = float64(FastPolarDiscriminator(complex64(inp), complex64(pre)))
@@ -77,6 +81,7 @@ func (f *FMDemod[C, F]) Demodulate(dst []F, src []C) {
 		pre = inp
 	}
 	f.pre = pre
+	return len(src)
 }
 
 // Reset drops the carried sample, so the demodulator starts a new stream

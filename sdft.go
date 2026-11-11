@@ -60,10 +60,24 @@ func sdftBin(j, n int) int {
 	return ((j % n) + n) % n
 }
 
-// FilterOne feeds one sample and returns bin k over the n most recent samples.
+// OutputLen returns inputs: the transform writes one bin value per input.
+func (sd *SDFT[T]) OutputLen(inputs int) int { return inputs }
+
+// Process feeds every sample of src and writes bin k after each one, so dst[i]
+// is the bin over the n samples ending at src[i]. It returns len(src) and
+// panics if dst is shorter than src. The slices may be the same.
+func (sd *SDFT[T]) Process(dst, src []T) int {
+	checkDst("SDFT", len(dst), len(src))
+	for i, x := range src {
+		dst[i] = sd.ProcessOne(x)
+	}
+	return len(src)
+}
+
+// ProcessOne feeds one sample and returns bin k over the n most recent samples.
 // The recursion runs on the unit circle with no damping, so rounding error
 // accumulates over a long stream -- faster at complex64 than at complex128.
-func (sd *SDFT[T]) FilterOne(x T) T {
+func (sd *SDFT[T]) ProcessOne(x T) T {
 	i := (sd.i + 1) % len(sd.x)
 	x0 := sd.x[i]
 	sd.x[i] = x

@@ -87,9 +87,9 @@ func (f *BiQuadFilter[T]) check() error {
 	return nil
 }
 
-// step advances the recursion by one sample and returns the output. Filter and
-// FilterOne share it, and share norm, so the two produce bit-identical results
-// for the same stream -- FilterOne pays the five divisions per sample, which is
+// step advances the recursion by one sample and returns the output. Process and
+// ProcessOne share it, and share norm, so the two produce bit-identical results
+// for the same stream -- ProcessOne pays the five divisions per sample, which is
 // the price of that rather than an oversight.
 func (f *BiQuadFilter[T]) step(c biquadCoef, x float64) float64 {
 	y := c.b0*x + c.b1*f.prevIn[0] + c.b2*f.prevIn[1] - c.a1*f.prevOut[0] - c.a2*f.prevOut[1]
@@ -100,19 +100,24 @@ func (f *BiQuadFilter[T]) step(c biquadCoef, x float64) float64 {
 	return y
 }
 
-// Filter writes one output sample per input sample, over
-// min(len(dst), len(src)) of them. The slices may be the same.
-func (f *BiQuadFilter[T]) Filter(dst, src []T) {
+// OutputLen returns inputs: the filter writes one sample per input.
+func (f *BiQuadFilter[T]) OutputLen(inputs int) int { return inputs }
+
+// Process writes one output sample per input sample and returns len(src). It
+// panics if dst is shorter than src. The slices may be the same.
+func (f *BiQuadFilter[T]) Process(dst, src []T) int {
+	checkDst("BiQuadFilter", len(dst), len(src))
 	c := f.mustNorm()
-	for i, s := range src[:min(len(dst), len(src))] {
+	for i, s := range src {
 		dst[i] = T(f.step(c, float64(s)))
 	}
+	return len(src)
 }
 
-// FilterOne filters a single sample. Filter hoists the division by A0 out of
+// ProcessOne filters a single sample. Process hoists the division by A0 out of
 // its loop, so prefer it when there is a block to filter; the two agree bit for
 // bit either way.
-func (f *BiQuadFilter[T]) FilterOne(s T) T {
+func (f *BiQuadFilter[T]) ProcessOne(s T) T {
 	return T(f.step(f.mustNorm(), float64(s)))
 }
 

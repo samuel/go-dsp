@@ -82,7 +82,7 @@ func TestRationalBoxcarDecimatorRipple(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := f.FilterInPlace(src)
+	out := inPlace(f, src)
 	if len(out) < 100 {
 		t.Fatalf("expected around 200 outputs, got %d", len(out))
 	}
@@ -163,10 +163,10 @@ func TestDownsampleReset(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := append([]float32(nil), src...)
-	first = f.FilterInPlace(first)
+	first = inPlace(f, first)
 	f.Reset()
 	again := append([]float32(nil), src...)
-	again = f.FilterInPlace(again)
+	again = inPlace(f, again)
 	if len(again) != len(first) {
 		t.Fatalf("after Reset got %d outputs, want %d", len(again), len(first))
 	}
@@ -184,10 +184,10 @@ func TestDownsampleReset(t *testing.T) {
 	for i := range cin {
 		cin[i] = complex(float32(i), float32(-i))
 	}
-	cFirst := c.FilterInPlace(append([]complex64(nil), cin...))
+	cFirst := inPlace(c, append([]complex64(nil), cin...))
 	want := append([]complex64(nil), cFirst...)
 	c.Reset()
-	cAgain := c.FilterInPlace(append([]complex64(nil), cin...))
+	cAgain := inPlace(c, append([]complex64(nil), cin...))
 	if len(cAgain) != len(want) {
 		t.Fatalf("after Reset got %d outputs, want %d", len(cAgain), len(want))
 	}
@@ -234,10 +234,10 @@ func TestDecimatorFilterMatchesInPlace(t *testing.T) {
 			var want, got []complex64
 			for i := 0; i < len(src); i += block {
 				in := src[i:min(i+block, len(src))]
-				want = append(want, a.FilterInPlace(append([]complex64(nil), in...))...)
+				want = append(want, inPlace(a, append([]complex64(nil), in...))...)
 
 				out := make([]complex64, b.OutputLen(len(in))+1)
-				n := b.Filter(out, in)
+				n := b.Process(out, in)
 				if n != len(out)-1 {
 					t.Fatalf("factor=%d block=%d: wrote %d, OutputLen said %d", factor, block, n, len(out)-1)
 				}
@@ -270,10 +270,10 @@ func TestRationalDecimatorFilterMatchesInPlace(t *testing.T) {
 			var want, got []float32
 			for i := 0; i < len(src); i += block {
 				in := src[i:min(i+block, len(src))]
-				want = append(want, a.FilterInPlace(append([]float32(nil), in...))...)
+				want = append(want, inPlace(a, append([]float32(nil), in...))...)
 
 				out := make([]float32, b.OutputLen(len(in))+1)
-				n := b.Filter(out, in)
+				n := b.Process(out, in)
 				if n != len(out)-1 {
 					t.Fatalf("%v block=%d: wrote %d, OutputLen said %d", r, block, n, len(out)-1)
 				}
@@ -291,17 +291,18 @@ func TestRationalDecimatorFilterMatchesInPlace(t *testing.T) {
 	}
 }
 
-// Filter with dst aliasing src is the in-place form, and has to agree with it.
-func TestDecimatorFilterInPlaceAliasing(t *testing.T) {
+// Process with dst aliasing src has to agree with a separate dst.
+func TestDecimatorInPlaceAliasing(t *testing.T) {
 	src := make([]complex64, 64)
 	for i := range src {
 		src[i] = complex(float32(i), 0)
 	}
 	a, _ := NewBoxcarDecimator[complex64](4)
-	want := a.FilterInPlace(append([]complex64(nil), src...))
+	want := make([]complex64, a.OutputLen(len(src)))
+	a.Process(want, src)
 	b, _ := NewBoxcarDecimator[complex64](4)
 	got := append([]complex64(nil), src...)
-	n := b.Filter(got, got)
+	n := b.Process(got, got)
 	if n != len(want) {
 		t.Fatalf("wrote %d, want %d", n, len(want))
 	}
@@ -317,7 +318,7 @@ func TestDecimatorFilterInPlaceAliasing(t *testing.T) {
 //
 // It can only fail on a 32-bit target -- 386 and arm here -- where the old
 // int arithmetic wrapped to a negative number, OutputLen returned a short
-// answer, and a caller sizing dst from it watched Filter run off the end. Run
+// answer, and a caller sizing dst from it watched Process run off the end. Run
 // it with qemu-test -arch arm .
 func TestRationalOutputLenDoesNotOverflow(t *testing.T) {
 	f, err := NewRationalBoxcarDecimator[float32](44100, 8000)
@@ -331,15 +332,15 @@ func TestRationalOutputLenDoesNotOverflow(t *testing.T) {
 		t.Fatalf("OutputLen(%d) = %d, want %d", inputs, got, want)
 	}
 
-	// And the count is what Filter actually writes.
+	// And the count is what Process actually writes.
 	src := make([]float32, inputs)
 	dst := make([]float32, want+1)
 	dst[want] = -12345.5
-	if n := f.Filter(dst, src); n != want {
-		t.Fatalf("Filter wrote %d samples, OutputLen said %d", n, want)
+	if n := f.Process(dst, src); n != want {
+		t.Fatalf("Process wrote %d samples, OutputLen said %d", n, want)
 	}
 	if dst[want] != -12345.5 {
-		t.Fatal("Filter wrote past the length OutputLen reported")
+		t.Fatal("Process wrote past the length OutputLen reported")
 	}
 }
 
@@ -351,25 +352,25 @@ func TestDecimatorRatesAreWhatWasAsked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := d.Factor(); got != 5 {
-		t.Errorf("Factor = %d, want 5", got)
+	if in, out := d.Ratio(); in != 5 || out != 1 {
+		t.Errorf("Ratio = (%d, %d), want (5, 1)", in, out)
 	}
 	// The factor is fixed at construction, so filtering must not move it.
-	d.Filter(make([]complex64, 4), make([]complex64, 17))
-	if got := d.Factor(); got != 5 {
-		t.Errorf("Factor after Filter = %d, want 5", got)
+	d.Process(make([]complex64, 4), make([]complex64, 17))
+	if in, out := d.Ratio(); in != 5 || out != 1 {
+		t.Errorf("Ratio after Process = (%d, %d), want (5, 1)", in, out)
 	}
 
 	r, err := NewRationalBoxcarDecimator[float32](48, 11)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fast, slow := r.Rates(); fast != 48 || slow != 11 {
-		t.Errorf("Rates = (%d, %d), want (48, 11)", fast, slow)
+	if in, out := r.Ratio(); in != 48 || out != 11 {
+		t.Errorf("Ratio = (%d, %d), want (48, 11)", in, out)
 	}
-	r.Filter(make([]float32, r.OutputLen(100)), make([]float32, 100))
-	if fast, slow := r.Rates(); fast != 48 || slow != 11 {
-		t.Errorf("Rates after Filter = (%d, %d), want (48, 11)", fast, slow)
+	r.Process(make([]float32, r.OutputLen(100)), make([]float32, 100))
+	if in, out := r.Ratio(); in != 48 || out != 11 {
+		t.Errorf("Ratio after Process = (%d, %d), want (48, 11)", in, out)
 	}
 }
 
@@ -444,9 +445,9 @@ func testBoxcarWidth[T Sample](t *testing.T, want, wantRational []complex128, sr
 		}
 	}
 	b := must(NewBoxcarDecimator[T](3))
-	check("boxcar", decimateBlocks(b.Filter, in), want)
+	check("boxcar", decimateBlocks(b.Process, in), want)
 	r := must(NewRationalBoxcarDecimator[T](48, 11))
-	check("rational", decimateBlocks(r.Filter, in), wantRational)
+	check("rational", decimateBlocks(r.Process, in), wantRational)
 }
 
 func TestBoxcarDecimatorsEveryWidth(t *testing.T) {
@@ -454,8 +455,8 @@ func TestBoxcarDecimatorsEveryWidth(t *testing.T) {
 	for i := range src {
 		src[i] = complex(float64(i%13-6), float64(i%5-2))
 	}
-	want := decimateBlocks(must(NewBoxcarDecimator[complex128](3)).Filter, src)
-	wantRational := decimateBlocks(must(NewRationalBoxcarDecimator[complex128](48, 11)).Filter, src)
+	want := decimateBlocks(must(NewBoxcarDecimator[complex128](3)).Process, src)
+	wantRational := decimateBlocks(must(NewRationalBoxcarDecimator[complex128](48, 11)).Process, src)
 	t.Run("float32", func(t *testing.T) { testBoxcarWidth[float32](t, want, wantRational, src, 1e-6) })
 	t.Run("float64", func(t *testing.T) { testBoxcarWidth[float64](t, want, wantRational, src, 1e-15) })
 	t.Run("complex64", func(t *testing.T) { testBoxcarWidth[complex64](t, want, wantRational, src, 1e-6) })

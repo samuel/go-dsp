@@ -18,9 +18,16 @@ func NewRotator90[C Complex]() *Rotator90[C] {
 	return &Rotator90[C]{}
 }
 
-// Rotate rotates samples in place and advances the phase, so consecutive calls
-// continue one stream whatever the block lengths are.
-func (r *Rotator90[C]) Rotate(samples []C) {
+// OutputLen returns inputs: the rotator writes one sample per input.
+func (r *Rotator90[C]) OutputLen(inputs int) int { return inputs }
+
+// Process writes the rotated src to dst, returns len(src) and advances the
+// phase, so consecutive calls continue one stream whatever the block lengths
+// are. It panics if dst is shorter than src. The slices may be the same.
+func (r *Rotator90[C]) Process(dst, src []C) int {
+	checkDst("Rotator90", len(dst), len(src))
+	samples := dst[:len(src)]
+	copy(samples, src)
 	// The assembly only handles complex64 from the start of the sequence over
 	// whole groups of four. Bring the phase back to zero with the generic loop,
 	// hand the assembly every whole group that follows, and finish the tail the
@@ -28,19 +35,20 @@ func (r *Rotator90[C]) Rotate(samples []C) {
 	s, ok := any(samples).([]complex64)
 	if !ok {
 		r.phase = rotate90From(r.phase, samples)
-		return
+		return len(src)
 	}
 	if r.phase != 0 {
 		head := min(4-r.phase, len(s))
 		r.phase = rotate90From(r.phase, s[:head])
 		s = s[head:]
 		if r.phase != 0 {
-			return
+			return len(src)
 		}
 	}
 	n := len(s) &^ 3
 	rotate90Asm(s[:n])
 	r.phase = rotate90From(0, s[n:])
+	return len(src)
 }
 
 // Reset restarts the sequence at 1, so the next block begins a new stream.

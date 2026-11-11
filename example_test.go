@@ -10,7 +10,7 @@ import (
 
 // gainDB returns the steady-state gain of a filter for a tone, from the peak of
 // the second half of its output.
-func gainDB(filter func(dst, src []float32), rate, freq float64) float64 {
+func gainDB(filter func(dst, src []float32) int, rate, freq float64) float64 {
 	in := make([]float32, int(rate)/10)
 	for i := range in {
 		in[i] = float32(math.Sin(2 * math.Pi * freq * float64(i) / rate))
@@ -35,7 +35,7 @@ func ExampleNewLowPassBiQuad() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Printf("%.0f Hz: %.1f dB\n", freq, gainDB(lp.Filter, rate, freq))
+		fmt.Printf("%.0f Hz: %.1f dB\n", freq, gainDB(lp.Process, rate, freq))
 	}
 	// Output:
 	// 100 Hz: 0.0 dB
@@ -59,7 +59,7 @@ func ExampleFMDemod() {
 	}
 	fmd := dsp.NewFMDemod[complex128, float64]()
 	out := make([]float64, len(iq))
-	fmd.Demodulate(out, iq)
+	fmd.Process(out, iq)
 
 	// The first output compares against the silence before the stream.
 	fmt.Printf("%.4f rad/sample = %.0f Hz\n", out[10], out[10]*rate/(2*math.Pi))
@@ -86,7 +86,7 @@ func ExampleFIRInterpolator() {
 
 	src := []float32{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
 	dst := make([]float32, it.OutputLen(len(src)))
-	n := it.Filter(dst, src)
+	n := it.Process(dst, src)
 	fmt.Printf("%d inputs, %d outputs, last four %.3f\n", len(src), n, dst[n-4:n])
 	// Output:
 	// 20 inputs, 40 outputs, last four [1.000 1.000 1.000 1.000]
