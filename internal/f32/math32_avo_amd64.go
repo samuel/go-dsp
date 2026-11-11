@@ -154,6 +154,7 @@ func scaleBody(vecs, lanes int, bcast func(src Mem, dst VecVirtual), mul func(sr
 
 func scaleAVX() {
 	TEXT("vscaleF32AVX", NOSPLIT, "func(dst, src []float32, scale float32)")
+	Pragma("noescape")
 	Doc("vscaleF32AVX calculates dst[i] = src[i] * scale using AVX.")
 	scaleBody(4, 8,
 		avxBroadcast,
@@ -163,6 +164,7 @@ func scaleAVX() {
 
 func scaleSSE2() {
 	TEXT("vscaleF32SSE2", NOSPLIT, "func(dst, src []float32, scale float32)")
+	Pragma("noescape")
 	Doc("vscaleF32SSE2 calculates dst[i] = src[i] * scale using SSE2.")
 	scaleBody(4, 4,
 		sseBroadcast,
@@ -253,6 +255,7 @@ func reduceBody(op reduceOp, accs, lanes int, bcast func(src Mem, dst VecVirtual
 
 func reduceAVX(op reduceOp) {
 	TEXT("v"+op.name+"F32AVX", NOSPLIT, "func(src []float32) float32")
+	Pragma("noescape")
 	Doc(fmt.Sprintf("v%sF32AVX returns the %s value of src using AVX.", op.name, op.verb))
 	reduceBody(op, 4, 8,
 		avxBroadcast,
@@ -269,6 +272,7 @@ func reduceAVX(op reduceOp) {
 
 func reduceSSE2(op reduceOp) {
 	TEXT("v"+op.name+"F32SSE2", NOSPLIT, "func(src []float32) float32")
+	Pragma("noescape")
 	Doc(fmt.Sprintf("v%sF32SSE2 returns the %s value of src using SSE2.", op.name, op.verb))
 	reduceBody(op, 4, 4,
 		sseBroadcast,
@@ -400,6 +404,7 @@ func absBody(vecs, lanes int, magnitude func(a, b Mem) VecVirtual, store func(sr
 
 func absAVX() {
 	TEXT("vabsC64AVX", NOSPLIT, "func(dst []float32, src []complex64)")
+	Pragma("noescape")
 	Doc("vabsC64AVX calculates dst[i] = |src[i]| using AVX.")
 	absBody(4, 8,
 		func(a, b Mem) VecVirtual {
@@ -432,6 +437,7 @@ func absAVX() {
 
 func absSSE2() {
 	TEXT("vabsC64SSE2", NOSPLIT, "func(dst []float32, src []complex64)")
+	Pragma("noescape")
 	Doc("vabsC64SSE2 calculates dst[i] = |src[i]| using SSE2.")
 	absBody(4, 4,
 		func(a, b Mem) VecVirtual {
@@ -566,6 +572,7 @@ const firVecs = 4
 func firLeaf(k firKind, isa vecISA, signMask Mem) {
 	name := k.name + isa.name
 	TEXT(name, NOSPLIT, k.sig)
+	Pragma("noescape")
 	Doc(fmt.Sprintf("%s implements %s for stride 1 using %s.", name, k.doc, isa.name))
 
 	dst := Load(Param("dst").Base(), GP64())
@@ -809,6 +816,7 @@ func reduce8(isa vecISA, t, u VecVirtual) VecVirtual {
 func dotLeaf(isa vecISA) {
 	name := "dotF32" + isa.name
 	TEXT(name, NOSPLIT, "func(x, c []float32) float32")
+	Pragma("noescape")
 	Doc(fmt.Sprintf("%s implements Dot using %s. x must be at least as long as c.", name, isa.name))
 	x := Load(Param("x").Base(), GP64())
 	c := Load(Param("c").Base(), GP64())
@@ -875,6 +883,7 @@ func dotLeaf(isa vecISA) {
 func cdotRealLeaf(isa vecISA) {
 	name := "cdotReal" + isa.name
 	TEXT(name, NOSPLIT, "func(x []complex64, c []float32) complex64")
+	Pragma("noescape")
 	Doc(fmt.Sprintf("%s implements CDotReal using %s. x must be at least as long as c.", name, isa.name))
 	x := Load(Param("x").Base(), GP64())
 	c := Load(Param("c").Base(), GP64())

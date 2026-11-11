@@ -5,55 +5,91 @@
 package f32
 
 // vscaleF32AVX calculates dst[i] = src[i] * scale using AVX.
+//
+//go:noescape
 func vscaleF32AVX(dst []float32, src []float32, scale float32)
 
 // vscaleF32SSE2 calculates dst[i] = src[i] * scale using SSE2.
+//
+//go:noescape
 func vscaleF32SSE2(dst []float32, src []float32, scale float32)
 
 // vmaxF32AVX returns the maximum value of src using AVX.
+//
+//go:noescape
 func vmaxF32AVX(src []float32) float32
 
 // vmaxF32SSE2 returns the maximum value of src using SSE2.
+//
+//go:noescape
 func vmaxF32SSE2(src []float32) float32
 
 // vminF32AVX returns the minimum value of src using AVX.
+//
+//go:noescape
 func vminF32AVX(src []float32) float32
 
 // vminF32SSE2 returns the minimum value of src using SSE2.
+//
+//go:noescape
 func vminF32SSE2(src []float32) float32
 
 // vabsC64AVX calculates dst[i] = |src[i]| using AVX.
+//
+//go:noescape
 func vabsC64AVX(dst []float32, src []complex64)
 
 // vabsC64SSE2 calculates dst[i] = |src[i]| using SSE2.
+//
+//go:noescape
 func vabsC64SSE2(dst []float32, src []complex64)
 
 // firF32AVX implements FIR for stride 1 using AVX.
+//
+//go:noescape
 func firF32AVX(dst []float32, work []float32, taps []float32)
 
 // firF32SSE2 implements FIR for stride 1 using SSE2.
+//
+//go:noescape
 func firF32SSE2(dst []float32, work []float32, taps []float32)
 
 // cfirRealAVX implements CFIRReal for stride 1 using AVX.
+//
+//go:noescape
 func cfirRealAVX(dst []complex64, work []complex64, taps []float32)
 
 // cfirRealSSE2 implements CFIRReal for stride 1 using SSE2.
+//
+//go:noescape
 func cfirRealSSE2(dst []complex64, work []complex64, taps []float32)
 
 // cfirAVX implements CFIR for stride 1 using AVX.
+//
+//go:noescape
 func cfirAVX(dst []complex64, work []complex64, taps []complex64)
 
 // cfirSSE2 implements CFIR for stride 1 using SSE2.
+//
+//go:noescape
 func cfirSSE2(dst []complex64, work []complex64, taps []complex64)
 
 // dotF32AVX implements Dot using AVX. x must be at least as long as c.
+//
+//go:noescape
 func dotF32AVX(x []float32, c []float32) float32
 
 // dotF32SSE2 implements Dot using SSE2. x must be at least as long as c.
+//
+//go:noescape
 func dotF32SSE2(x []float32, c []float32) float32
 
 // cdotRealAVX implements CDotReal using AVX. x must be at least as long as c.
+//
+//go:noescape
 func cdotRealAVX(x []complex64, c []float32) complex64
 
 // cdotRealSSE2 implements CDotReal using SSE2. x must be at least as long as c.
+//
+//go:noescape
 func cdotRealSSE2(x []complex64, c []float32) complex64
