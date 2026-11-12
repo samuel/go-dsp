@@ -3,11 +3,10 @@ package sampleio
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
-	"io"
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -54,6 +53,10 @@ func TestOpenWAVFixtures(t *testing.T) {
 		{"tone-f64le.wav", pcm.F64LE, 64, 1, 1e-9},
 		{"tone-rf64.wav", pcm.I16LE, 16, 1, 1.0 / 32768},
 		{"stereo-i16le.wav", pcm.I16LE, 16, 2, 1.0 / 32768},
+		// The tone peaks where a G.711 step is 1024 codes of 16 bits, so half
+		// of one is as far as a level can be from it.
+		{"tone-alaw.wav", pcm.ALaw, 8, 1, 512.0 / 32768 / 3},
+		{"tone-mulaw.wav", pcm.MuLaw, 8, 1, 512.0 / 32768 / 3},
 	} {
 		t.Run(tc.file, func(t *testing.T) {
 			r, err := Open(filepath.Join("testdata", tc.file), Options{})
@@ -321,8 +324,29 @@ func TestWAVMalformed(t *testing.T) {
 		{"zero rate", wav(pcmFmt(wavPCM, 1, 0, 16), uint32(len(payload)), payload), true, 0},
 		{"format chunk too short", wav(good[:12], uint32(len(payload)), payload), true, 0},
 		{"adpcm", wav(pcmFmt(2, 1, 8000, 4), uint32(len(payload)), payload), true, 0},
-		{"a-law", wav(pcmFmt(wavALaw, 1, 8000, 8), uint32(len(payload)), payload), true, 0},
-		{"mu-law", wav(pcmFmt(wavMuLaw, 1, 8000, 8), uint32(len(payload)), payload), true, 0},
+		// G.711 is one byte a sample, so the same payload is eight frames, and
+		// no other width of it exists.
+		{"a-law", wav(pcmFmt(wavALaw, 1, 8000, 8), uint32(len(payload)), payload), false, 8},
+		{"mu-law", wav(pcmFmt(wavMuLaw, 1, 8000, 8), uint32(len(payload)), payload), false, 8},
+		{"extensible mu-law", wav(extFmt(1, 8000, 8, 8, ksGUID(wavMuLaw)), uint32(len(payload)), payload), false, 8},
+		{"sixteen-bit a-law", wav(pcmFmt(wavALaw, 1, 8000, 16), uint32(len(payload)), payload), true, 0},
+		{"sixteen-bit mu-law", wav(pcmFmt(wavMuLaw, 1, 8000, 16), uint32(len(payload)), payload), true, 0},
+
+		// A format chunk that claims 4 GiB is not read on its say-so.
+		{"format chunk of 4 GiB", func() []byte {
+			b := wav(good, uint32(len(payload)), payload)
+			binary.LittleEndian.PutUint32(b[16:], math.MaxUint32)
+			return b
+		}(), true, 0},
+
+		// An empty chunk ahead of the format, in a stream whose sizes were
+		// never filled in, must not be taken for the one that runs to the end.
+		{"empty chunk in an unsized stream", func() []byte {
+			b := wav(good, math.MaxUint32, payload)
+			b = slices.Concat(b[:12], chunk("JUNK", nil), b[12:])
+			binary.LittleEndian.PutUint32(b[4:], math.MaxUint32)
+			return b
+		}(), false, 4},
 		{"unknown tag", wav(pcmFmt(0x1234, 1, 8000, 16), uint32(len(payload)), payload), true, 0},
 		{"extensible but too short", wav(pcmFmt(wavExtensible, 1, 8000, 16), uint32(len(payload)), payload), true, 0},
 		{"extensible with a foreign guid", wav(extFmt(1, 8000, 16, 16, foreignGUID()),
@@ -590,6 +614,7 @@ func FuzzReadWAVHeader(f *testing.F) {
 	f.Add(wav(good, uint32(len(payload)), payload))
 	f.Add(wav(good, 0xffffffff, payload))
 	f.Add(wav(extFmt(1, 8000, 24, 20, ksGUID(wavPCM)), 6, make([]byte, 6)))
+	f.Add(wav(pcmFmt(wavMuLaw, 2, 8000, 8), 5, []byte{0xff, 0x7f, 0x00, 0x80, 0x55}))
 	f.Add([]byte("RIFF"))
 	f.Add([]byte("RF64\xff\xff\xff\xffWAVE"))
 	if raw, err := readFixture("tone-i16le.wav"); err == nil {
@@ -613,15 +638,16 @@ func FuzzReadWAVHeader(f *testing.F) {
 		if info.Frames < -1 {
 			t.Fatalf("Frames = %d", info.Frames)
 		}
-		// Reading must terminate and must not panic.
+		// Reading must terminate and must not panic, from the start and after
+		// a seek.
 		buf := make([]float64, 32)
 		for range 64 {
 			if _, err := r.ReadSamples(buf); err != nil {
-				if errors.Is(err, io.EOF) {
-					break
-				}
 				break
 			}
+		}
+		if r.SeekFrame(1) == nil {
+			_, _ = r.ReadSamples(buf)
 		}
 	})
 }

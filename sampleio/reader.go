@@ -1,9 +1,11 @@
 package sampleio
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"slices"
 
@@ -11,6 +13,9 @@ import (
 	"samuelks.com/dsp/internal/view"
 	"samuelks.com/dsp/pcm"
 )
+
+// ErrNotSeekable is returned by SeekFrame when the source cannot seek.
+var ErrNotSeekable = errors.New("sampleio: the source cannot seek")
 
 // Channel selects which channel of a stream to read.
 type Channel int
@@ -37,8 +42,12 @@ type Info struct {
 	// Note.
 	Frames int64
 
-	Bits      int // container bits per sample; 0 for a float format
+	Bits      int // container bits per sample; 0 for a float format, 8 for G.711
 	ValidBits int // significant bits, when the header says fewer than Bits
+
+	// ChannelMask is a WAV's speaker assignment, a Speaker bit per position
+	// in channel order, or zero when the header gives none.
+	ChannelMask uint32
 
 	// Notes records everything surprising but survivable: a rate override, a
 	// header field not worth trusting, a float sample past full scale.
@@ -75,6 +84,16 @@ type Reader struct {
 	src    io.Reader
 	closer io.Closer
 	info   Info
+	chunks []Chunk
+
+	// seeker is the source when it can seek, which src may be a buffer in
+	// front of, and dataStart the offset of its first sample byte. first is
+	// the frame Options.Skip put the Reader at, and window how many frames
+	// follow it, or -1 when the stream sets no end.
+	seeker    io.ReadSeeker
+	dataStart int64
+	first     int64
+	window    int64
 
 	width  int     // bytes per element
 	elems  int     // interleaved elements per frame
@@ -152,6 +171,12 @@ func newReader(src io.Reader, closer io.Closer, opt Options, size int64) (*Reade
 
 	r := &Reader{src: src, closer: closer, left: -1}
 	r.info = Info{Container: Raw, Frames: -1}
+	// A source that has Seek but cannot use it, like a pipe, is not seekable.
+	if s, ok := src.(io.ReadSeeker); ok {
+		if _, err := s.Seek(0, io.SeekCurrent); err == nil {
+			r.seeker = s
+		}
+	}
 
 	// A header, unless the caller said not to look for one.
 	var dataBytes int64 = -1
@@ -166,10 +191,12 @@ func newReader(src io.Reader, closer io.Closer, opt Options, size int64) (*Reade
 		if h != nil {
 			r.info.Container = WAV
 			r.info.Format = h.format
-			r.info.Rate = h.rate
+			r.info.Rate = float64(h.rate)
 			r.info.Channels = h.channels
 			r.info.Bits = h.bits
 			r.info.ValidBits = h.validBits
+			r.info.ChannelMask = h.mask
+			r.chunks = h.chunks
 			r.info.Notes = h.notes
 			dataBytes = h.dataBytes
 			if size >= 0 && dataBytes > size {
@@ -225,6 +252,18 @@ func newReader(src io.Reader, closer io.Closer, opt Options, size int64) (*Reade
 		return nil, err
 	}
 
+	if r.seeker != nil {
+		// The header was read through a buffer, which has run ahead of it.
+		at, err := r.seeker.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return nil, err
+		}
+		if br, ok := r.src.(*bufio.Reader); ok {
+			at -= int64(br.Buffered())
+		}
+		r.dataStart = at
+	}
+
 	r.buf = make([]byte, blockBytes/r.stride*r.stride+r.stride)
 	if opt.Skip > 0 {
 		if err := r.skip(opt.Skip); err != nil {
@@ -251,6 +290,7 @@ func newReader(src io.Reader, closer io.Closer, opt Options, size int64) (*Reade
 	if opt.Limit > 0 && (r.left < 0 || opt.Limit < r.left) {
 		r.left = opt.Limit
 	}
+	r.first, r.window = opt.Skip, r.left
 
 	// Reporting it as a length needs the size on disk to check it against. A
 	// streaming writer fills that field before it knows the answer, and what it
@@ -332,6 +372,41 @@ func (r *Reader) Info() Info {
 			"a float sample lies outside full scale, so levels are relative to a range the container does not enforce")
 	}
 	return info
+}
+
+// Chunks returns the chunks of a WAV that come before its samples, other than
+// the format, in file order. A chunk over 1 MiB, or one that would take the
+// total past 4 MiB, is listed with nil Data. Chunks after the samples are not
+// read.
+func (r *Reader) Chunks() []Chunk { return r.chunks }
+
+// SeekFrame positions the Reader so the next read starts at frame n of the
+// frames it produces: 0 is the first frame after Options.Skip, and
+// Info().Frames the end. It returns ErrNotSeekable unless the source can seek,
+// as a file from Open or an io.ReadSeeker handed to NewReader can.
+//
+// A stream with no stated end takes any n that is not negative, and reads
+// io.EOF when n is past the last frame.
+func (r *Reader) SeekFrame(n int64) error {
+	if r.seeker == nil {
+		return ErrNotSeekable
+	}
+	stride := int64(r.stride)
+	if n < 0 || (r.window >= 0 && n > r.window) || n > (math.MaxInt64-r.dataStart)/stride-r.first {
+		return fmt.Errorf("sampleio: frame %d is outside the %d this Reader has", n, r.window)
+	}
+	if _, err := r.seeker.Seek(r.dataStart+(r.first+n)*stride, io.SeekStart); err != nil {
+		return err
+	}
+	if br, ok := r.src.(*bufio.Reader); ok {
+		br.Reset(r.seeker)
+	}
+	r.n, r.off, r.eof = 0, 0, false
+	r.left = -1
+	if r.window >= 0 {
+		r.left = r.window - n
+	}
+	return nil
 }
 
 // Close closes the underlying file, if there is one.
@@ -620,8 +695,11 @@ func (r *Reader) gather(src []byte, frames, first, count int) []byte {
 // else reads and discards, which is what makes skipping work on a pipe.
 func (r *Reader) skip(frames int64) error {
 	want := frames * int64(r.stride)
-	if s, ok := r.src.(io.Seeker); ok {
-		if _, err := s.Seek(want, io.SeekCurrent); err == nil {
+	if r.seeker != nil {
+		if _, err := r.seeker.Seek(r.dataStart+want, io.SeekStart); err == nil {
+			if br, ok := r.src.(*bufio.Reader); ok {
+				br.Reset(r.seeker)
+			}
 			return nil
 		}
 		// A source that claims to seek but will not: read past it instead.

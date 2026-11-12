@@ -2,13 +2,14 @@ package sampleio
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
-	"math"
 
 	"samuelks.com/dsp/pcm"
+	"samuelks.com/dsp/riff"
 )
 
 // WAV format tags. Anything else is a codec this package does not decode.
@@ -20,19 +21,153 @@ const (
 	wavExtensible = 0xfffe
 )
 
+// The sizes of a format chunk: plain PCM, and WAVE_FORMAT_EXTENSIBLE, the
+// largest the format defines.
+const (
+	fmtSize    = 16
+	fmtExtSize = 40
+)
+
+// ds64Size is the payload of RF64's ds64 chunk with no table: the RIFF, data
+// and frame counts at 64 bits and a zero table length. A Writer reserves it as
+// a JUNK chunk of the same size.
+const ds64Size = 28
+
+// Limits on the chunks a Reader keeps for Chunks. The sizes come from the
+// file, so neither one chunk nor the sum of them is trusted.
+const (
+	maxChunkSize  = 1 << 20
+	maxChunkTotal = 4 << 20
+)
+
+// Speaker positions for a ChannelMask, one bit each, in the order channels are
+// interleaved.
+const (
+	SpeakerFrontLeft uint32 = 1 << iota
+	SpeakerFrontRight
+	SpeakerFrontCenter
+	SpeakerLowFrequency
+	SpeakerBackLeft
+	SpeakerBackRight
+	SpeakerFrontLeftOfCenter
+	SpeakerFrontRightOfCenter
+	SpeakerBackCenter
+	SpeakerSideLeft
+	SpeakerSideRight
+	SpeakerTopCenter
+	SpeakerTopFrontLeft
+	SpeakerTopFrontCenter
+	SpeakerTopFrontRight
+	SpeakerTopBackLeft
+	SpeakerTopBackCenter
+	SpeakerTopBackRight
+)
+
+// The masks an extensible header gets when the caller gives none.
+const (
+	maskMono   = SpeakerFrontCenter
+	maskStereo = SpeakerFrontLeft | SpeakerFrontRight
+)
+
+var (
+	fourWAVE = riff.NewFourCC("WAVE")
+	fourFmt  = riff.NewFourCC("fmt ")
+	fourFact = riff.NewFourCC("fact")
+	fourData = riff.NewFourCC("data")
+	fourDS64 = riff.NewFourCC("ds64")
+	fourJUNK = riff.NewFourCC("JUNK")
+)
+
 // ksSuffix is the fixed tail of a KSDATAFORMAT_SUBTYPE GUID. The first two
 // bytes carry the real format tag; a GUID that does not end this way is a codec
 // of its own, not a PCM tag in disguise.
 var ksSuffix = [14]byte{0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}
 
+// Chunk is a chunk of a WAV file other than the format and the samples, such
+// as LIST, bext or cue.
+type Chunk struct {
+	ID riff.FourCC
+
+	// Size is the declared size of the chunk's data.
+	Size uint32
+
+	// Data is the chunk's contents, or nil when the chunk was too large to
+	// keep and was skipped unread.
+	Data []byte
+}
+
+// wavFmt is a WAV format chunk, shared by the Reader and the Writer. An
+// extensible chunk is held as the tag its SubFormat GUID names.
+type wavFmt struct {
+	tag       uint16
+	channels  int
+	rate      uint32
+	bits      int    // container bits per sample
+	validBits int    // significant bits; zero when that is all of them
+	mask      uint32 // speaker assignment; zero when unspecified
+}
+
+// blockAlign is the size of one frame in bytes.
+func (f wavFmt) blockAlign() int { return f.channels * f.bits / 8 }
+
+// extensible reports whether the format needs WAVE_FORMAT_EXTENSIBLE to be
+// described: more than two channels, a speaker mask, fewer valid bits than the
+// container holds, or PCM wider than 16 bits.
+func (f wavFmt) extensible() bool {
+	return f.channels > 2 || f.mask != 0 ||
+		(f.validBits != 0 && f.validBits != f.bits) ||
+		(f.tag == wavPCM && f.bits > 16)
+}
+
+// marshal encodes the format chunk: 16 bytes for PCM, 18 for another plain
+// format, which carries an empty extension, and 40 for an extensible one. An
+// extensible mono or stereo chunk with no mask gets the usual one.
+func (f wavFmt) marshal() []byte {
+	le := binary.LittleEndian
+	tag := f.tag
+	size := fmtSize
+	switch {
+	case f.extensible():
+		tag = wavExtensible
+		size = fmtExtSize
+	case f.tag != wavPCM:
+		size = fmtSize + 2
+	}
+	b := make([]byte, size)
+	le.PutUint16(b[0:], tag)
+	le.PutUint16(b[2:], uint16(f.channels))
+	le.PutUint32(b[4:], f.rate)
+	le.PutUint32(b[8:], f.rate*uint32(f.blockAlign()))
+	le.PutUint16(b[12:], uint16(f.blockAlign()))
+	le.PutUint16(b[14:], uint16(f.bits))
+	if tag == wavExtensible {
+		valid, mask := f.validBits, f.mask
+		if valid == 0 {
+			valid = f.bits
+		}
+		if mask == 0 {
+			switch f.channels {
+			case 1:
+				mask = maskMono
+			case 2:
+				mask = maskStereo
+			}
+		}
+		le.PutUint16(b[16:], fmtExtSize-fmtSize-2)
+		le.PutUint16(b[18:], uint16(valid))
+		le.PutUint32(b[20:], mask)
+		le.PutUint16(b[24:], f.tag)
+		copy(b[26:], ksSuffix[:])
+	}
+	return b
+}
+
 // wavHeader is what a WAV says about itself.
 type wavHeader struct {
+	wavFmt
 	format    pcm.Format
-	rate      float64
-	channels  int
-	bits      int
-	validBits int
 	dataBytes int64 // -1 when the size cannot be trusted; read to EOF
+	chunks    []Chunk
 	notes     []string
 }
 
@@ -69,155 +204,162 @@ func sniffWAV(src *io.Reader) (*wavHeader, error) {
 // readWAVHeader walks the chunks up to the data chunk and leaves the reader
 // positioned at the first sample byte.
 func readWAVHeader(r io.Reader) (*wavHeader, error) {
-	var riff [12]byte
-	if _, err := io.ReadFull(r, riff[:]); err != nil {
+	rr, err := riff.New(r)
+	if err != nil {
 		return nil, fmt.Errorf("sampleio: reading the RIFF header: %w", err)
 	}
-	if string(riff[8:12]) != "WAVE" {
-		return nil, fmt.Errorf("sampleio: %q is a RIFF file but not a WAVE", riff[8:12])
+	if rr.FormType != fourWAVE {
+		return nil, fmt.Errorf("sampleio: %q is a RIFF file but not a WAVE", rr.FormType)
 	}
-	rf64 := string(riff[0:4]) == "RF64"
+	// The container size is the first thing a streaming writer gets wrong, and
+	// nothing here depends on it: the walk stops at the data chunk, whose own
+	// size the Reader checks against the file.
+	rr.IgnoreSize = true
+	rr.AllowUnsizedChunk = fourData
 
 	h := &wavHeader{dataBytes: -1}
 	var (
 		haveFmt  bool
 		ds64Data int64 = -1
+		kept     int64
 	)
-
 	for {
-		var head [8]byte
-		if _, err := io.ReadFull(r, head[:]); err != nil {
-			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				return nil, errors.New("sampleio: the file ended before its data chunk")
-			}
-			return nil, err
+		c, err := rr.Next()
+		if err != nil {
+			return nil, headerErr(err)
 		}
-		id := string(head[0:4])
-		size := int64(binary.LittleEndian.Uint32(head[4:8]))
 
-		switch id {
-		case "data":
-			// The size is the first thing a streaming writer cannot know, so
-			// three values all mean "to the end of the file": the placeholder a
-			// pipe leaves, a zero, and RF64's 32-bit field that ds64 replaces.
-			switch {
-			case rf64 && ds64Data >= 0:
-				h.dataBytes = ds64Data
-			case size == 0xffffffff:
-				h.notes = append(h.notes, "the data chunk size is a placeholder; reading to the end")
-			case size == 0:
-				h.notes = append(h.notes, "the data chunk size is zero; reading to the end")
-			default:
-				h.dataBytes = size
-			}
+		switch c.ID {
+		case fourData:
 			if !haveFmt {
 				return nil, errors.New("sampleio: the data chunk comes before the format chunk")
 			}
+			// The size is the next thing a streaming writer cannot know, so
+			// three values all mean "to the end of the file": the placeholder a
+			// pipe leaves, a zero, and RF64's 32-bit field that ds64 replaces.
+			switch {
+			case rr.RF64 && ds64Data >= 0:
+				h.dataBytes = ds64Data
+			case c.Size == 0xffffffff:
+				h.notes = append(h.notes, "the data chunk size is a placeholder; reading to the end")
+			case c.Size == 0:
+				h.notes = append(h.notes, "the data chunk size is zero; reading to the end")
+			default:
+				h.dataBytes = int64(c.Size)
+			}
 			return h, nil
 
-		case "fmt ":
-			if err := h.readFmt(r, size); err != nil {
+		case fourFmt:
+			if c.Size < fmtSize {
+				return nil, fmt.Errorf("sampleio: the format chunk is %d bytes, too short to read", c.Size)
+			}
+			var b [fmtExtSize]byte
+			n, err := chunkHead(c, b[:])
+			if err != nil {
+				return nil, fmt.Errorf("sampleio: reading the format chunk: %w", err)
+			}
+			if err := h.parseFmt(b[:n]); err != nil {
 				return nil, err
 			}
 			haveFmt = true
 
-		case "ds64":
+		case fourDS64:
 			// RF64's 64-bit sizes, which stand in for the 32-bit ones.
-			var b [28]byte
-			n := min(size, int64(len(b)))
-			if _, err := io.ReadFull(r, b[:n]); err != nil {
+			var b [ds64Size]byte
+			n, err := chunkHead(c, b[:])
+			if err != nil {
 				return nil, fmt.Errorf("sampleio: reading the ds64 chunk: %w", err)
 			}
 			if n >= 16 {
 				ds64Data = int64(binary.LittleEndian.Uint64(b[8:16]))
 			}
-			if err := skipBytes(r, size-n); err != nil {
-				return nil, err
-			}
 
 		default:
 			// LIST, fact, PEAK, bext, id3 and whatever else; unknown is not the
 			// same as wrong.
-			if err := skipBytes(r, size); err != nil {
-				return nil, err
+			ch := Chunk{ID: c.ID, Size: c.Size}
+			if size := int64(c.Size); size <= maxChunkSize && kept+size <= maxChunkTotal {
+				if ch.Data, err = c.Bytes(maxChunkSize); err != nil {
+					return nil, headerErr(err)
+				}
+				kept += size
 			}
-		}
-
-		// Chunks are word-aligned: an odd size is followed by a pad byte the size
-		// does not count. Forgetting it desynchronizes every chunk after the
-		// first odd one.
-		if size%2 == 1 {
-			if err := skipBytes(r, 1); err != nil {
-				return nil, err
-			}
+			h.chunks = append(h.chunks, ch)
 		}
 	}
 }
 
-// readFmt parses a format chunk.
-func (h *wavHeader) readFmt(r io.Reader, size int64) error {
-	if size < 16 {
-		return fmt.Errorf("sampleio: the format chunk is %d bytes, too short to read", size)
-	}
-	var b [40]byte
-	n := min(size, int64(len(b)))
-	if _, err := io.ReadFull(r, b[:n]); err != nil {
-		return fmt.Errorf("sampleio: reading the format chunk: %w", err)
-	}
+// chunkHead reads as much of the front of a chunk as b holds and returns the
+// count. The rest of the chunk is left for the walk to skip.
+func chunkHead(c *riff.Chunk, b []byte) (int, error) {
+	n := int(min(int64(c.Size), int64(len(b))))
+	return io.ReadFull(c, b[:n])
+}
 
-	tag := binary.LittleEndian.Uint16(b[0:2])
-	channels := int(binary.LittleEndian.Uint16(b[2:4]))
-	rate := binary.LittleEndian.Uint32(b[4:8])
-	blockAlign := int(binary.LittleEndian.Uint16(b[12:14]))
-	bits := int(binary.LittleEndian.Uint16(b[14:16]))
+// headerErr describes a failure of the chunk walk.
+func headerErr(err error) error {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return errors.New("sampleio: the file ended before its data chunk")
+	}
+	return fmt.Errorf("sampleio: reading the WAV header: %w", err)
+}
 
-	if tag == wavExtensible {
-		if n < 40 {
-			return fmt.Errorf("sampleio: an extensible format chunk needs 40 bytes and has %d", n)
+// parseFmt reads a format chunk, of which b is at most the first 40 bytes.
+func (h *wavHeader) parseFmt(b []byte) error {
+	le := binary.LittleEndian
+	f := wavFmt{
+		tag:      le.Uint16(b[0:2]),
+		channels: int(le.Uint16(b[2:4])),
+		rate:     le.Uint32(b[4:8]),
+		bits:     int(le.Uint16(b[14:16])),
+	}
+	blockAlign := int(le.Uint16(b[12:14]))
+
+	if f.tag == wavExtensible {
+		if len(b) < fmtExtSize {
+			return fmt.Errorf("sampleio: an extensible format chunk needs 40 bytes and has %d", len(b))
 		}
-		cbSize := int(binary.LittleEndian.Uint16(b[16:18]))
+		cbSize := int(le.Uint16(b[16:18]))
 		if cbSize < 22 {
 			return fmt.Errorf("sampleio: an extensible format chunk needs 22 extra bytes and declares %d", cbSize)
 		}
-		if v := int(binary.LittleEndian.Uint16(b[18:20])); v > 0 && v < bits {
+		if v := int(le.Uint16(b[18:20])); v > 0 && v < f.bits {
 			// The sample is left-justified in its container, so the container's
 			// width is still what full scale is measured against.
-			h.validBits = v
+			f.validBits = v
 		}
+		f.mask = le.Uint32(b[20:24])
 		guid := b[24:40]
-		if [14]byte(guid[2:16]) != ksSuffix {
+		if !bytes.Equal(guid[2:], ksSuffix[:]) {
 			return fmt.Errorf("sampleio: the format is a GUID this package does not decode (%x)", guid)
 		}
-		tag = binary.LittleEndian.Uint16(guid[0:2])
+		f.tag = le.Uint16(guid[0:2])
 	}
 
-	if channels <= 0 {
-		return fmt.Errorf("sampleio: the header says %d channels", channels)
+	if f.channels <= 0 {
+		return fmt.Errorf("sampleio: the header says %d channels", f.channels)
 	}
-	if rate == 0 {
+	if f.rate == 0 {
 		return errors.New("sampleio: the header says a sample rate of zero")
 	}
-	if bits <= 0 || bits%8 != 0 {
-		return fmt.Errorf("sampleio: %d bits per sample is not a whole number of bytes", bits)
+	if f.bits <= 0 || f.bits%8 != 0 {
+		return fmt.Errorf("sampleio: %d bits per sample is not a whole number of bytes", f.bits)
 	}
 
-	f, err := wavFormat(tag, bits)
+	format, err := wavFormat(f.tag, f.bits)
 	if err != nil {
 		return err
 	}
-	h.format = f
-	h.channels = channels
-	h.rate = float64(rate)
-	h.bits = bits
+	h.wavFmt = f
+	h.format = format
 
-	if want := channels * bits / 8; blockAlign != want {
+	if want := f.blockAlign(); blockAlign != want {
 		// Some writers get block alignment wrong and lay the samples out
 		// correctly anyway, so believe the arithmetic and say what was ignored.
 		h.notes = append(h.notes, fmt.Sprintf(
-			"the header says a block of %d bytes; %d channels of %d bits is %d", blockAlign, channels, bits, want))
+			"the header says a block of %d bytes; %d channels of %d bits is %d", blockAlign, f.channels, f.bits, want))
 	}
-
-	return skipBytes(r, size-n)
+	return nil
 }
 
 // wavFormat maps a tag and a width to an encoding. RIFF is little-endian, so
@@ -249,41 +391,33 @@ func wavFormat(tag uint16, bits int) (pcm.Format, error) {
 		}
 		return 0, fmt.Errorf("sampleio: %d-bit float", bits)
 
-	case wavALaw, wavMuLaw:
-		name := "A-law"
-		if tag == wavMuLaw {
-			name = "mu-law"
+	case wavALaw:
+		if bits == 8 {
+			return pcm.ALaw, nil
 		}
-		return 0, fmt.Errorf("sampleio: %s is a companded format this package does not decode yet", name)
+		return 0, fmt.Errorf("sampleio: %d-bit A-law", bits)
+
+	case wavMuLaw:
+		if bits == 8 {
+			return pcm.MuLaw, nil
+		}
+		return 0, fmt.Errorf("sampleio: %d-bit mu-law", bits)
 	}
 	return 0, fmt.Errorf("sampleio: WAV format tag %#04x is a codec this package does not decode", tag)
 }
 
-// skipBytes discards n bytes.
-func skipBytes(r io.Reader, n int64) error {
-	if n <= 0 {
-		return nil
+// wavTag is the format tag a WAV gives an encoding it can hold.
+func wavTag(f pcm.Format) uint16 {
+	switch {
+	case f == pcm.ALaw:
+		return wavALaw
+	case f == pcm.MuLaw:
+		return wavMuLaw
+	case f.Float():
+		return wavFloat
 	}
-	if _, err := io.CopyN(io.Discard, r, n); err != nil {
-		if errors.Is(err, io.EOF) {
-			return errors.New("sampleio: the file ended inside a chunk")
-		}
-		return err
-	}
-	return nil
+	return wavPCM
 }
-
-// ds64Size is the payload of RF64's ds64 chunk with no table: the RIFF, data
-// and frame counts at 64 bits and a zero table length. A Writer reserves it as
-// a JUNK chunk of the same size.
-const ds64Size = 28
-
-// Speaker masks for WAVE_FORMAT_EXTENSIBLE: front center for mono, front left
-// and right for stereo.
-const (
-	maskMono   = 0x4
-	maskStereo = 0x3
-)
 
 // wavLayout is where the fields a Writer patches on Close sit in the header it
 // wrote. junk and fact are -1 when the header has no such chunk.
@@ -297,79 +431,40 @@ type wavLayout struct {
 // wavHeaderBytes builds a WAV header with the placeholder sizes a pipe reader
 // expects, and a JUNK chunk to become ds64 when junk is set.
 //
-// U8 and I16 with one or two channels get the plain PCM chunk, I24, I32 and
-// more than two channels WAVE_FORMAT_EXTENSIBLE, and a float format the IEEE
-// float tag, or the extensible float subtype past two channels, with the fact
-// chunk a float WAV requires.
-func wavHeaderBytes(f pcm.Format, channels int, rate uint32, junk bool) ([]byte, wavLayout) {
-	le := binary.LittleEndian
+// U8 and I16 with one or two channels and no mask get the plain PCM chunk,
+// I24, I32, more than two channels and a mask WAVE_FORMAT_EXTENSIBLE, and a
+// float or G.711 format its own tag, or the extensible subtype of it, with the
+// fact chunk every format but PCM requires.
+func wavHeaderBytes(f pcm.Format, channels int, rate, mask uint32, junk bool) ([]byte, wavLayout, error) {
 	l := wavLayout{junk: -1, fact: -1}
-	b := []byte("RIFF")
-	b = le.AppendUint32(b, math.MaxUint32)
-	b = append(b, "WAVE"...)
+	wf := wavFmt{tag: wavTag(f), channels: channels, rate: rate, bits: f.Width() * 8, mask: mask}
 
+	// A buffer cannot seek, so riff leaves the container and data sizes as the
+	// placeholders, which is the header a pipe gets. Close patches a file.
+	var b bytes.Buffer
+	w, err := riff.NewWriter(&b, fourWAVE)
+	if err != nil {
+		return nil, l, err
+	}
 	if junk {
-		l.junk = len(b)
-		b = append(b, "JUNK"...)
-		b = le.AppendUint32(b, ds64Size)
-		b = append(b, make([]byte, ds64Size)...)
-	}
-
-	tag := uint16(wavPCM)
-	if f.Float() {
-		tag = wavFloat
-	}
-	bits := f.Width() * 8
-	block := channels * f.Width()
-	extensible := f == pcm.I24LE || f == pcm.I32LE || channels > 2
-
-	b = append(b, "fmt "...)
-	switch {
-	case extensible:
-		b = le.AppendUint32(b, 40)
-	case f.Float():
-		b = le.AppendUint32(b, 18)
-	default:
-		b = le.AppendUint32(b, 16)
-	}
-	if extensible {
-		b = le.AppendUint16(b, wavExtensible)
-	} else {
-		b = le.AppendUint16(b, tag)
-	}
-	b = le.AppendUint16(b, uint16(channels))
-	b = le.AppendUint32(b, rate)
-	b = le.AppendUint32(b, rate*uint32(block))
-	b = le.AppendUint16(b, uint16(block))
-	b = le.AppendUint16(b, uint16(bits))
-	switch {
-	case extensible:
-		var mask uint32
-		switch channels {
-		case 1:
-			mask = maskMono
-		case 2:
-			mask = maskStereo
+		l.junk = b.Len()
+		if err := w.WriteChunk(fourJUNK, make([]byte, ds64Size)); err != nil {
+			return nil, l, err
 		}
-		b = le.AppendUint16(b, 22)
-		b = le.AppendUint16(b, uint16(bits)) // valid bits
-		b = le.AppendUint32(b, mask)
-		b = le.AppendUint16(b, tag)
-		b = append(b, ksSuffix[:]...)
-	case f.Float():
-		b = le.AppendUint16(b, 0)
 	}
-
-	if f.Float() {
-		b = append(b, "fact"...)
-		b = le.AppendUint32(b, 4)
-		l.fact = len(b)
-		b = le.AppendUint32(b, 0)
+	if err := w.WriteChunk(fourFmt, wf.marshal()); err != nil {
+		return nil, l, err
 	}
-
-	b = append(b, "data"...)
-	l.data = len(b)
-	b = le.AppendUint32(b, math.MaxUint32)
-	l.size = len(b)
-	return b, l
+	if wf.tag != wavPCM {
+		if err := w.WriteChunk(fourFact, make([]byte, 4)); err != nil {
+			return nil, l, err
+		}
+		l.fact = b.Len() - 4
+	}
+	if _, err := w.Chunk(fourData); err != nil {
+		return nil, l, err
+	}
+	l.data = b.Len() - 4
+	l.size = b.Len()
+	return b.Bytes(), l, nil
 }

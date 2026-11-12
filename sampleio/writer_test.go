@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -93,7 +94,7 @@ func narrowPlanes[T dsp.Float](x [][]float64) [][]T {
 // it back: the samples must be exactly the format's encoding of what went in,
 // and the Info the Reader finds must be the Layout the Writer was given.
 func TestWriteReadRoundTrip(t *testing.T) {
-	wavFormats := []pcm.Format{pcm.U8, pcm.I16LE, pcm.I24LE, pcm.I32LE, pcm.F32LE, pcm.F64LE}
+	wavFormats := []pcm.Format{pcm.U8, pcm.I16LE, pcm.I24LE, pcm.I32LE, pcm.F32LE, pcm.F64LE, pcm.ALaw, pcm.MuLaw}
 	for _, container := range []Container{WAV, Raw} {
 		formats := wavFormats
 		if container == Raw {
@@ -298,9 +299,15 @@ func TestWAVHeaderChoice(t *testing.T) {
 		{pcm.F32LE, 1, wavFloat, 0, 0, true},
 		{pcm.F64LE, 2, wavFloat, 0, 0, true},
 		{pcm.F32LE, 4, wavExtensible, wavFloat, 0, true},
+		{pcm.ALaw, 1, wavALaw, 0, 0, true},
+		{pcm.MuLaw, 2, wavMuLaw, 0, 0, true},
+		{pcm.MuLaw, 6, wavExtensible, wavMuLaw, 0, true},
 	} {
 		t.Run(fmt.Sprintf("%v/%dch", tc.f, tc.channels), func(t *testing.T) {
-			hdr, l := wavHeaderBytes(tc.f, tc.channels, 8000, false)
+			hdr, l, err := wavHeaderBytes(tc.f, tc.channels, 8000, 0, false)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if l.junk != -1 {
 				t.Error("a JUNK chunk without asking for one")
 			}
@@ -427,6 +434,12 @@ func TestWriterClipNote(t *testing.T) {
 		{pcm.I16LE, []float32{0.5, 1.5, -0.2}, true},
 		{pcm.U8, []float32{-1.01}, true},
 		{pcm.F32LE, []float32{0.5, 2, -3}, false},
+		// A-law's top step reaches full scale. Mu-law's stops short of it, and
+		// a sample past its edge has only the top level left to take.
+		{pcm.ALaw, []float32{1, -1}, false},
+		{pcm.ALaw, []float32{1.01}, true},
+		{pcm.MuLaw, []float32{0.995, -0.995}, false},
+		{pcm.MuLaw, []float32{0.997}, true},
 	} {
 		w, err := NewWriter(io.Discard, WriterOptions{Format: tc.f, Rate: 8000})
 		if err != nil {
@@ -667,8 +680,9 @@ func FuzzWriteRead(f *testing.F) {
 	f.Add([]byte{0, 1, 2, 3, 4, 5, 6, 7}, uint8(1), uint8(0), true)
 	f.Add([]byte("\x7f\xff\x80\x00\x01\x00\xff\x7f"), uint8(3), uint8(1), false)
 	f.Add(make([]byte, 33), uint8(5), uint8(2), true)
+	f.Add([]byte("\x00\x00\x80\x3f\x00\x00\x00\xbf\x00\x00\x80\x39"), uint8(7), uint8(0), true)
 	f.Fuzz(func(t *testing.T, in []byte, format, channels uint8, seek bool) {
-		formats := []pcm.Format{pcm.U8, pcm.I16LE, pcm.I24LE, pcm.I32LE, pcm.F32LE, pcm.F64LE}
+		formats := []pcm.Format{pcm.U8, pcm.I16LE, pcm.I24LE, pcm.I32LE, pcm.F32LE, pcm.F64LE, pcm.ALaw, pcm.MuLaw}
 		fm := formats[int(format)%len(formats)]
 		ch := 1 + int(channels)%3
 		frames := len(in) / 4 / ch
@@ -691,4 +705,83 @@ func FuzzWriteRead(f *testing.F) {
 			narrowsTo(t, fmt.Sprint("channel ", c), encoded(planes[c], fm), got[c], func(v float32) float32 { return v })
 		}
 	})
+}
+
+// TestG711Transcode reads every G.711 code out of a WAV, writes the samples
+// as 16-bit PCM, reads that and writes it back as G.711. Decoding is exact and
+// 16 bits hold every level, so the codes come back as they were, but for
+// mu-law's negative zero.
+func TestG711Transcode(t *testing.T) {
+	codes := make([]float32, 256)
+	for _, f := range []pcm.Format{pcm.ALaw, pcm.MuLaw} {
+		l := Layout{Format: f, Rate: 8000, Channels: 1, Container: WAV}
+		all := make([]byte, 256)
+		for i := range all {
+			all[i] = byte(i)
+		}
+		pcm.Decode(codes, all, f)
+
+		file := writeAll(t, WriterOptions{Layout: l}, true, func(w *Writer) (int, error) { return w.WriteSamples(codes) })
+		at := bytes.Index(file, []byte("data")) + 8
+		want := bytes.Clone(all)
+		if f == pcm.MuLaw {
+			want[0x7f] = 0xff
+		}
+		if !bytes.Equal(file[at:at+256], want) {
+			t.Fatalf("%v: the codes were written as % x", f, file[at:at+256])
+		}
+
+		r, err := NewReader(bytes.NewReader(file), Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		linear := l
+		linear.Format = pcm.I16LE
+		wide := writeAll(t, WriterOptions{Layout: linear}, true, func(w *Writer) (int, error) {
+			return w.WriteSamples(drain[float32](t, r, 100))
+		})
+
+		r, err = NewReader(bytes.NewReader(wide), Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		back := writeAll(t, WriterOptions{Layout: l}, true, func(w *Writer) (int, error) {
+			return w.WriteSamples(drain[float32](t, r, 100))
+		})
+		if !bytes.Equal(back, file) {
+			t.Errorf("%v: the file did not survive a trip through 16-bit PCM", f)
+		}
+	}
+}
+
+// TestWriterAtOffset writes a WAV into a destination that already holds
+// something: Close patches the sizes relative to where the WAV began and
+// leaves what came before it alone.
+func TestWriterAtOffset(t *testing.T) {
+	sb := &seekBuffer{b: []byte("xyz"), off: 3}
+	w, err := NewWriter(sb, WriterOptions{Format: pcm.MuLaw, Rate: 8000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	x := []float32{0.5, -0.25, 0}
+	if _, err := w.WriteSamples(x); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if string(sb.b[:3]) != "xyz" {
+		t.Errorf("the prefix was overwritten: %q", sb.b[:3])
+	}
+	if got := binary.LittleEndian.Uint32(sb.b[3+4:]); int(got) != len(sb.b)-3-8 {
+		t.Errorf("RIFF size %d, want %d", got, len(sb.b)-3-8)
+	}
+	r, err := NewReader(bytes.NewReader(sb.b[3:]), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := drain[float32](t, r, 8)
+	if want := encoded(x, pcm.MuLaw); !slices.Equal(got, want) {
+		t.Errorf("read back %v, want %v", got, want)
+	}
 }

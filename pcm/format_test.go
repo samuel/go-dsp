@@ -60,6 +60,10 @@ func TestParseFormat(t *testing.T) {
 		{"s24le", I24LE},
 		{"s32be", I32BE},
 		{"s8", I8},
+
+		{"alaw", ALaw},
+		{"mulaw", MuLaw},
+		{"ulaw", MuLaw},
 	} {
 		got, err := ParseFormat(tc.in)
 		if err != nil {
@@ -71,7 +75,7 @@ func TestParseFormat(t *testing.T) {
 		}
 	}
 
-	for _, bad := range []string{"", "i16", "le16s", "8uc", "i12le", "pcm", "s", "c", "i16LEE"} {
+	for _, bad := range []string{"", "i16", "le16s", "8uc", "i12le", "pcm", "s", "c", "i16LEE", "law", "alawle", "salaw"} {
 		if got, err := ParseFormat(bad); err == nil {
 			t.Errorf("ParseFormat(%q) = %v, want an error", bad, got)
 		}

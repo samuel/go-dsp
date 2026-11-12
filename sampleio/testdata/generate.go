@@ -12,9 +12,9 @@
 // package. A parser checked against its own writer passes when both halves are
 // wrong in the same way, and the reason for these files is that something
 // else wrote them: sox emits WAVE_FORMAT_EXTENSIBLE for 24- and 32-bit, a
-// format chunk of 18 bytes for float, a fact chunk that has to be skipped, and
-// the pad byte after an odd chunk. None of that would appear in fixtures
-// written here.
+// format chunk of 18 bytes for float and G.711, a fact chunk that has to be
+// skipped, and the pad byte after an odd chunk. None of that would appear in
+// fixtures written here.
 package main
 
 import (
@@ -85,6 +85,8 @@ func main() {
 		{name: "tone-u8.wav", enc: "unsigned-integer", bits: 8, channels: 1},
 		{name: "tone-f32le.wav", enc: "floating-point", bits: 32, channels: 1},
 		{name: "tone-f64le.wav", enc: "floating-point", bits: 64, channels: 1},
+		{name: "tone-alaw.wav", enc: "a-law", bits: 8, channels: 1},
+		{name: "tone-mulaw.wav", enc: "mu-law", bits: 8, channels: 1},
 		// Two channels, the second inverted, so a test can tell which one it
 		// selected and prove a mixdown of the two is silence.
 		{name: "stereo-i16le.wav", enc: "signed-integer", bits: 16, channels: 2},

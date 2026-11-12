@@ -19,11 +19,12 @@ Paths are relative to the module, `samuelks.com/dsp`, whose root is package
 | Path | Contents |
 | --- | --- |
 | `.` (`dsp`) | The main API: generic vector operations (`VScale`, `VAdd`, ...), FM demodulation, a phase-continuous `Oscillator` and `Mixer`, IIR/biquad/FIR filters, boxcar and FIR decimators, Goertzel tone detection, sliding DFT, fixed-size FFT, transfer-function evaluation, window functions, Kaiser-windowed sinc low-pass design (`LowPassFIR`), FIR interpolation (`FIRInterpolator`, zero-phase `Upsample`), interpolators including a polyphase `SincInterpolator`, interleave/deinterleave, `FastAtan2`. |
-| `pcm` | The sample codec: `Format` names an encoding (`U8`, `I16LE`, `F32BE`, ...), and `Decode` and `Encode` move between bytes and full-scale samples of any width, real or interleaved complex. |
+| `pcm` | The sample codec: `Format` names an encoding (`U8`, `I16LE`, `F32BE`, `MuLaw`, ...), and `Decode` and `Encode` move between bytes and full-scale samples of any width, real or interleaved complex. |
 | `ax25` | AX.25/HDLC frame encoding and decoding, NRZI line coding and CRC-16/X-25 `FCS`/`CheckFCS`. |
 | `fsk` | Binary FSK modulation and demodulation: Bell 202 and Bell 103 AFSK, or complex baseband, at any samples per symbol. |
 | `dtmf` | DTMF decoding built on Goertzel. |
-| `sampleio` | Reading and writing WAV/RF64 audio and headerless I/Q captures as full-scale samples. |
+| `sampleio` | Reading and writing WAV/RF64 audio, G.711 included, and headerless I/Q captures as full-scale samples. |
+| `riff` | The RIFF container under WAV: a chunk reader and writer, with streaming sizes and nested `LIST` chunks. |
 | `firpm` | Parks-McClellan (Remez exchange) linear-phase FIR design. |
 | `analysis` | Measuring filters (frequency response, impulse, step, tone spectrum, sweep) and recordings (PSD, spectrogram, level, histogram, statistics, tone tracking) as single-pass builders. |
 | `plot` | Charts over `analysis` results: axes, palettes, stdlib-only SVG and PNG. |
@@ -182,7 +183,8 @@ if key != dtmf.NoKey {
 
 `sampleio` reads a WAV/RF64 file, or a headerless stream that must be told its
 format and rate. Integer samples are scaled so the most negative code is
-exactly -1 (full scale is `2^(bits-1)`); float samples pass through.
+exactly -1 (full scale is `2^(bits-1)`); float samples pass through, and a
+G.711 A-law or mu-law WAV decodes to its levels on the 16-bit scale.
 
 ```go
 rd, err := sampleio.Open("fm.wav", sampleio.Options{})
@@ -210,6 +212,12 @@ at once with `ReadPlanar`, which decodes the interleaved run once and splits it
 in a single pass. `Info` reports the stream's `Layout` (format, rate,
 channels, I/Q and `Container`), the same struct `Options` takes.
 
+A Reader over a file or any other `io.ReadSeeker` jumps to a frame with
+`SeekFrame`, counted from `Options.Skip` and bounded by `Options.Limit`. For a
+WAV, `Chunks` returns the chunks ahead of the samples (`LIST`, `bext`, `cue `,
+...), up to 1 MiB each and 4 MiB in total, and `Info().ChannelMask` the speaker
+assignment.
+
 ### Writing a capture
 
 `sampleio.Writer` takes full-scale samples at any width and writes a WAV,
@@ -226,7 +234,33 @@ err = w.Close()
 
 Writing with a Reader's `Info().Layout` reproduces a capture's shape. An
 integer sample past full scale is clipped, and `Info` records a Note the first
-time.
+time. `WriterOptions.ChannelMask` sets a WAV's speaker assignment from the
+`Speaker` constants. `Format: pcm.ALaw` or `pcm.MuLaw` writes G.711, as a WAV
+or as the headerless `.al`/`.ul` stream.
+
+### RIFF containers
+
+`riff` is the container layer `sampleio` reads and writes WAV through, usable
+on its own for any RIFF file:
+
+```go
+r, err := riff.New(f) // RIFF or RF64
+for {
+    c, err := r.Next() // io.EOF at the end of the container
+    if err != nil {
+        break
+    }
+    if c.ID == riff.NewFourCC("LIST") {
+        b, err := c.Bytes(1 << 20) // the whole chunk, under an explicit cap
+        // ...
+    }
+}
+```
+
+A `Chunk` is an `io.Reader` bounded to its data and valid until the next call
+to `Next`. `riff.NewWriter` is the other half: `WriteChunk` for data in hand,
+`Chunk` for one written as a stream, with the sizes patched on `Close` when the
+destination can seek.
 
 ### Sample formats
 
@@ -236,6 +270,14 @@ full scale: an integer is divided by 2^(bits-1), so the codes run [-1, 1).
 the rails and encodes NaN as zero, so every integer code round-trips. A
 complex slice reads and writes interleaved I/Q pairs. Float formats pass
 through unscaled.
+
+`pcm.ALaw` and `pcm.MuLaw` are the companded 8-bit codes of G.711. A code
+decodes to its level on the 16-bit scale, exactly, as sox and ffmpeg have it,
+so the top level is just short of full scale. Encoding rounds to 16 bits and
+applies G.711's quantizer, with its decision values, to the magnitude. The
+ITU's G.191 reference encoder drops the low bits first, so its output is not
+reproduced byte for byte. Every code round-trips except mu-law's negative
+zero.
 
 ```go
 f, err := pcm.ParseFormat("i24be")
@@ -331,8 +373,8 @@ go run ./examples/ax25 -rate 11025 -baud 300 -mark 1600 -space 1800 radio-paket3
   imaginary part; `FIRFilter.Taps` and `IIRFilter.Coefficients` return them
   at the sample type.
 - **Samples are full scale everywhere**: `pcm.Decode` divides an integer
-  format by 2^(bits-1) and `pcm.Encode` multiplies by it, so nothing
-  downstream carries a format's range. A `LE` or `BE` suffix on a `Format` is
+  format by 2^(bits-1) and `pcm.Encode` multiplies by it, and a G.711 code is
+  its 16-bit level over 2^15, so nothing downstream carries a format's range. A `LE` or `BE` suffix on a `Format` is
   the byte order of its samples.
 - **Stateless 1:1 operations process `min(dst, src)`**: the `V` functions
   return nothing, and `pcm.Decode` and `pcm.Encode` return the samples

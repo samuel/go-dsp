@@ -16,7 +16,8 @@ import (
 // I32 into float32 rounds its top codes up to exactly 1. The divisor is a
 // power of two, so the result is exact wherever T can hold it, and the same on
 // every architecture. U8 has its bias of 128 removed first. A float format
-// passes through unscaled, widened or narrowed to T.
+// passes through unscaled, widened or narrowed to T. A G.711 code expands to
+// its level on the 16-bit scale, which is exact and stops short of full scale.
 func Decode[T dsp.Sample](dst []T, src []byte, f Format) int {
 	switch d := any(dst).(type) {
 	case []float32:
@@ -42,7 +43,9 @@ func Decode[T dsp.Sample](dst []T, src []byte, f Format) int {
 // even, clipped to the format's range, with NaN giving zero: +1.0 gives the top
 // code, and Encode(Decode(b)) is b for every integer code. A float format
 // passes the sample through, widened or rounded to nearest even, with no clip
-// and NaN kept.
+// and NaN kept. A G.711 format rounds to 16 bits the same way and takes the
+// code of the step that holds the result, so Encode(Decode(b)) is b for every
+// code but mu-law's negative zero, 0x7f, which comes back as 0xff.
 func Encode[T dsp.Sample](dst []byte, src []T, f Format) int {
 	switch s := any(src).(type) {
 	case []float32:
@@ -147,6 +150,10 @@ func decoderF32(f Format) func([]float32, []byte) {
 		return f32LEToF32
 	case F64LE, F64BE:
 		return f64LEToF32
+	case ALaw:
+		return alawToF32
+	case MuLaw:
+		return mulawToF32
 	}
 	return nil
 }
@@ -167,6 +174,10 @@ func decoderF64(f Format) func([]float64, []byte) {
 		return f32LEToF64
 	case F64LE, F64BE:
 		return f64LEToF64
+	case ALaw:
+		return alawToF64
+	case MuLaw:
+		return mulawToF64
 	}
 	return nil
 }
@@ -187,6 +198,10 @@ func encoderF32(f Format) func([]byte, []float32) {
 		return f32ToF32LE
 	case F64LE, F64BE:
 		return f32ToF64LE
+	case ALaw:
+		return f32ToALaw
+	case MuLaw:
+		return f32ToMuLaw
 	}
 	return nil
 }
@@ -207,6 +222,10 @@ func encoderF64(f Format) func([]byte, []float64) {
 		return f64ToF32LE
 	case F64LE, F64BE:
 		return f64ToF64LE
+	case ALaw:
+		return f64ToALaw
+	case MuLaw:
+		return f64ToMuLaw
 	}
 	return nil
 }

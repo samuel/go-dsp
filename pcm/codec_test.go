@@ -42,7 +42,8 @@ func coverCell[T dsp.Sample](t *testing.T, f Format) {
 		t.Fatalf("Encode %T: %d samples, want 5", dst, n)
 	}
 	// A sample round-trips through any T that holds it exactly: every format
-	// but I32 and F64 at float32 width.
+	// but I32 and F64 at float32 width. Mu-law's 0x7f is the exception, and is
+	// not among these bytes.
 	if f.Width() < 4 || (f.Width() == 4 && f.Float()) || isF64[T]() {
 		if !bytes.Equal(out, src) && !hasNaN(dst) {
 			t.Errorf("Encode(Decode(b)) %T = % x, want % x", dst, out, src)
@@ -95,6 +96,9 @@ func TestDecodeScale(t *testing.T) {
 		{F32BE, binary.BigEndian.AppendUint32(nil, math.Float32bits(-2.25)), []float64{-2.25}},
 		{F64LE, binary.LittleEndian.AppendUint64(nil, math.Float64bits(3.0000000001)), []float64{3.0000000001}},
 		{F64BE, binary.BigEndian.AppendUint64(nil, math.Float64bits(-7)), []float64{-7}},
+		// The rails, the smallest levels, and mu-law's two zeros.
+		{ALaw, []byte{0x2a, 0xaa, 0x55, 0xd5, 0x00}, []float64{-32256.0 / 32768, 32256.0 / 32768, -8.0 / 32768, 8.0 / 32768, -5504.0 / 32768}},
+		{MuLaw, []byte{0x00, 0x80, 0x7f, 0xff, 0xfe}, []float64{-32124.0 / 32768, 32124.0 / 32768, 0, 0, 8.0 / 32768}},
 	} {
 		got := make([]float64, len(tc.want))
 		if n := Decode(got, tc.src, tc.f); n != len(tc.want) || !slices.Equal(got, tc.want) {
@@ -141,6 +145,10 @@ func TestEncodeRule(t *testing.T) {
 		{F32BE, []float64{-3}, binary.BigEndian.AppendUint32(nil, math.Float32bits(-3))},
 		{F64LE, []float64{1e300}, binary.LittleEndian.AppendUint64(nil, math.Float64bits(1e300))},
 		{F64BE, []float64{-0.1}, binary.BigEndian.AppendUint64(nil, math.Float64bits(-0.1))},
+		// The top level is short of full scale, so +1 and -1 already clip. NaN
+		// is zero, which for A-law is its smallest positive level.
+		{ALaw, []float64{-1, 1, 2, math.Inf(-1), 0, nan, math.Copysign(0, -1)}, []byte{0x2a, 0xaa, 0xaa, 0x2a, 0xd5, 0xd5, 0xd5}},
+		{MuLaw, []float64{-1, 1, 2, math.Inf(-1), 0, nan, math.Copysign(0, -1), -1.0 / 32768}, []byte{0x00, 0x80, 0x80, 0x00, 0xff, 0xff, 0xff, 0x7f}},
 	} {
 		got := make([]byte, len(tc.want))
 		if n := Encode(got, tc.src, tc.f); n != len(tc.src) || !bytes.Equal(got, tc.want) {
@@ -203,7 +211,7 @@ func TestEncodeTiesToEven(t *testing.T) {
 // TestRoundTripEveryCode decodes every code of the narrow formats and a sweep
 // of the wide ones and encodes it back.
 func TestRoundTripEveryCode(t *testing.T) {
-	for _, f := range []Format{U8, I8, I16LE, I16BE} {
+	for _, f := range []Format{U8, I8, I16LE, I16BE, ALaw} {
 		src := make([]byte, (1<<f.Bits())*f.Width())
 		for c := range 1 << f.Bits() {
 			for j := range f.Width() {

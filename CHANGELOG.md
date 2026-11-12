@@ -27,6 +27,14 @@ Go 1.27.
   frequency shifter, in cycles per sample at every width, with the phase held
   in cycles so a binary-fraction frequency is exact. `Mixer` implements
   `Processor` and takes a real IF to complex baseband.
+- `riff`: a reader and writer for RIFF containers, formerly the
+  `samuelks.com/wave/riff` package. The reader also accepts an RF64 header
+  (`Reader.RF64`) and can disregard a wrong container size
+  (`Reader.IgnoreSize`).
+- `sampleio`: `Reader.SeekFrame` on a seekable source, `Reader.Chunks` for the
+  WAV chunks ahead of the samples, and the speaker mask as `Info.ChannelMask`
+  and `WriterOptions.ChannelMask`. `Options.Skip` seeks instead of reading
+  when the source allows it.
 - `dsp.Processor`: one block contract for every filter, decimator and
   interpolator, `FMDemod`, `Rotator90` and `SDFT`. `Process(dst, src)`
   consumes all of `src`, returns `OutputLen(len(src))` and panics if `dst` is
@@ -43,7 +51,10 @@ Go 1.27.
 - `pcm`: the sample codec. `Format` names an encoding, and `Decode` and
   `Encode` convert between its bytes and full-scale samples of any width,
   real or interleaved complex: an integer is scaled by 2^(bits-1), and
-  encoding rounds to nearest even, clips and encodes NaN as zero.
+  encoding rounds to nearest even, clips and encodes NaN as zero. `ALaw` and
+  `MuLaw` are G.711: a code decodes to its level on the 16-bit scale, and
+  encoding applies G.711's decision values to the sample rounded to 16 bits,
+  which is not the output of the ITU's G.191 reference encoder byte for byte.
 - `ax25`: AX.25/HDLC frame decoding and encoding (`Encoder`,
   `Frame.AppendBinary`), NRZI line coding and the CRC-16/X-25 frame check.
 - `fsk`: binary FSK. `Discriminator`, `Slicer` and `Demodulator` receive AFSK
@@ -56,7 +67,9 @@ Go 1.27.
   generic over the sample width and decode straight to it; `Options` and
   `Info` share a `Layout` of format, rate, channels, I/Q and `Container`.
   `Writer` writes WAV, RF64 and headerless streams from samples of any width,
-  filling in the WAV sizes on `Close` when the destination can seek.
+  filling in the WAV sizes on `Close` when the destination can seek. A-law
+  and mu-law WAVs and headerless streams read and write as `pcm.ALaw` and
+  `pcm.MuLaw`, and the `Speaker` constants name the bits of a channel mask.
 - `analysis`: measuring a `dsp.Processor[float64, float64]` at a given input
   rate, exactly from its transfer function where it has a real one, and
   analyzing recordings in one pass. `Adapt` measures a filter at any sample

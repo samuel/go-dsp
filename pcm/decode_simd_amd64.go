@@ -185,3 +185,7 @@ func i16ToF32x16(dst []float32, src []byte) {
 	}
 	i16LEToFloatRef(dst[i:], src[2*i:])
 }
+func alawToF32(dst []float32, src []byte)  { alawToFloatRef(dst, src) }
+func alawToF64(dst []float64, src []byte)  { alawToFloatRef(dst, src) }
+func mulawToF32(dst []float32, src []byte) { mulawToFloatRef(dst, src) }
+func mulawToF64(dst []float64, src []byte) { mulawToFloatRef(dst, src) }

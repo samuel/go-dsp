@@ -88,3 +88,7 @@ func f32ToI16BlockX8(out *[16]byte, in *[8]float32, m, lo, hi archsimd.Float32x8
 	q := v.ConvertToInt32()
 	q.GetLo().SaturateToInt16Concat(q.GetHi()).ToBits().ReshapeToUint8s().StoreArray(out)
 }
+func f32ToALaw(dst []byte, src []float32)  { floatToALawRef(dst, src) }
+func f64ToALaw(dst []byte, src []float64)  { floatToALawRef(dst, src) }
+func f32ToMuLaw(dst []byte, src []float32) { floatToMuLawRef(dst, src) }
+func f64ToMuLaw(dst []byte, src []float64) { floatToMuLawRef(dst, src) }

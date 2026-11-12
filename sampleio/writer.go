@@ -21,6 +21,11 @@ import (
 // selects WAV; Raw writes the samples with no header.
 type WriterOptions struct {
 	Layout
+
+	// ChannelMask is a WAV's speaker assignment, a Speaker bit per position
+	// in channel order. Zero leaves it to the header: none for a plain one, and
+	// the usual mono or stereo mask where the format needs an extensible one.
+	ChannelMask uint32
 }
 
 // Writer is the mirror of Reader: it takes full-scale samples and owns
@@ -109,7 +114,10 @@ func NewWriter(w io.Writer, opt WriterOptions) (*Writer, error) {
 	wr.buf = make([]byte, max(blockBytes/wr.stride*wr.stride, wr.stride)+wr.stride)
 	if info.Container == WAV {
 		var hdr []byte
-		hdr, wr.hdr = wavHeaderBytes(info.Format, info.Channels, uint32(info.Rate), wr.seeker != nil)
+		hdr, wr.hdr, err = wavHeaderBytes(info.Format, info.Channels, uint32(info.Rate), info.ChannelMask, wr.seeker != nil)
+		if err != nil {
+			return nil, err
+		}
 		if len(hdr) > len(wr.buf) {
 			wr.buf = make([]byte, len(hdr)+len(wr.buf))
 		}
@@ -150,13 +158,17 @@ func writerInfo(opt WriterOptions) (Info, error) {
 			return Info{}, err
 		}
 	}
-	return Info{Layout: l, Bits: l.Format.Bits()}, nil
+	info := Info{Layout: l, Bits: l.Format.Bits()}
+	if l.Container == WAV {
+		info.ChannelMask = opt.ChannelMask
+	}
+	return info, nil
 }
 
 // wavWritable reports why a layout cannot be written as a WAV, if it cannot.
 func wavWritable(l Layout) error {
 	switch l.Format {
-	case pcm.U8, pcm.I16LE, pcm.I24LE, pcm.I32LE, pcm.F32LE, pcm.F64LE:
+	case pcm.U8, pcm.I16LE, pcm.I24LE, pcm.I32LE, pcm.F32LE, pcm.F64LE, pcm.ALaw, pcm.MuLaw:
 	case pcm.I8:
 		return errors.New("sampleio: a WAV holds 8-bit samples unsigned; write U8")
 	default:
@@ -295,20 +307,29 @@ func noteClip[T dsp.Sample](w *Writer, x []T) {
 	if w.clipped || w.info.Format.Float() || len(x) == 0 {
 		return
 	}
+	limit := 1.0
+	if w.info.Format == pcm.MuLaw {
+		limit = muLawLimit
+	}
 	switch v := any(x).(type) {
 	case []float32:
-		w.clipped = pastFullScale(v)
+		w.clipped = pastLimit(v, float32(limit))
 	case []float64:
-		w.clipped = pastFullScale(v)
+		w.clipped = pastLimit(v, limit)
 	case []complex64:
-		w.clipped = pastFullScale(view.C64ToF32(v))
+		w.clipped = pastLimit(view.C64ToF32(v), float32(limit))
 	case []complex128:
-		w.clipped = pastFullScale(view.C128ToF64(v))
+		w.clipped = pastLimit(view.C128ToF64(v), limit)
 	}
 }
 
-func pastFullScale[F dsp.Float](x []F) bool {
-	return dsp.VMax(x) > 1 || dsp.VMin(x) < -1
+// muLawLimit is the upper edge of mu-law's top step, half a step above its
+// level: a sample past it is clipped rather than quantized. A-law's top step
+// reaches full scale, so it clips where an integer format does.
+const muLawLimit = (32124 + 512) / 32768.0
+
+func pastLimit[F dsp.Float](x []F, limit F) bool {
+	return dsp.VMax(x) > limit || dsp.VMin(x) < -limit
 }
 
 // flushBuf writes the buffer out, keeping the first error for every call

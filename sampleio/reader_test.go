@@ -900,3 +900,25 @@ func benchRead[T dsp.Sample](b *testing.B, f pcm.Format, iq bool) {
 		}
 	}
 }
+
+// TestReadIntoNothing checks that a read into an empty slice takes nothing
+// from the stream and is not mistaken for its end, whether or not the stream
+// says how long it is.
+func TestReadIntoNothing(t *testing.T) {
+	payload := i16(0.5, -0.5, 0.25)
+	for _, size := range []uint32{uint32(len(payload)), math.MaxUint32} {
+		r, err := NewReader(bytes.NewReader(wav(pcmFmt(wavPCM, 1, 8000, 16), size, payload)), Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n, err := r.ReadSamples([]float32(nil)); n != 0 || err != nil {
+			t.Errorf("size %#x: an empty read at the start = (%d, %v), want (0, nil)", size, n, err)
+		}
+		if n, err := r.ReadPlanar([][]float64{nil}); n != 0 || err != nil {
+			t.Errorf("size %#x: an empty planar read = (%d, %v), want (0, nil)", size, n, err)
+		}
+		if got := drain[float64](t, r, 8); len(got) != 3 {
+			t.Errorf("size %#x: %d frames after the empty reads, want 3", size, len(got))
+		}
+	}
+}

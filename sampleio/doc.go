@@ -23,6 +23,11 @@
 // A stream's shape is a Layout -- format, rate, channels, I/Q and container --
 // which Options carries in and Info carries out.
 //
+// A Reader over a file, or any other source that can seek, moves to a frame
+// with SeekFrame. A WAV's other chunks -- LIST, bext, cue and the like -- are
+// kept for Chunks when they come before the samples, and its speaker mask is
+// Info.ChannelMask.
+//
 // # Writing
 //
 // A Writer is the mirror of a Reader: WriteSamples takes one channel or I/Q
@@ -45,6 +50,10 @@
 // Float samples are passed through unscaled, since a float file is already
 // written in those units; a Note records it if any sample is outside the range.
 //
+// G.711 is pcm.ALaw and pcm.MuLaw, in a WAV or as a headerless stream of
+// codes. Its levels are those of a 16-bit file, so reading one and writing
+// pcm.I16LE loses nothing, and its top level reads a little under 0 dBFS.
+//
 // Complex is not a format. Interleaved I/Q is a layout over an ordinary element
 // type rather than an encoding of its own -- pcm.Decode into a complex slice
 // reads interleaved pairs of any format -- so it is Layout.IQ, and
@@ -54,7 +63,8 @@
 // # Byte order
 //
 // WAV is a RIFF container and always little-endian, so the big-endian formats
-// only ever come from a raw stream that is explicitly said to be one.
+// only ever come from a raw stream that is explicitly said to be one. The
+// container itself is read and written through package riff.
 //
 //go:generate go run testdata/generate.go
 package sampleio

@@ -4,8 +4,9 @@
 //
 // Format names an encoding: U8 and I8 for 8-bit samples, I16, I24 and I32 for
 // wider signed integers, F32 and F64 for floats, with LE or BE for the byte
-// order of anything wider than a byte. ParseFormat also accepts the ffmpeg
-// spelling of the signed integers, where s16le means the same as i16le.
+// order of anything wider than a byte, and ALaw and MuLaw for the companded
+// codes of ITU-T G.711. ParseFormat also accepts the ffmpeg spelling of the
+// signed integers, where s16le means the same as i16le.
 //
 // Decode turns bytes into samples of any dsp.Sample type and Encode turns them
 // back. A complex sample is an interleaved I/Q pair of the format's element.
@@ -26,6 +27,26 @@
 // U8 is offset binary with its bias of 128 removed, so the codes round-trip
 // exactly. A source whose midpoint is 127.5, as an rtl-sdr's is, therefore
 // decodes with a DC offset of half a code, which dsp.DCFilter removes.
+//
+// # G.711
+//
+// ALaw and MuLaw are 8-bit codes on a logarithmic scale: 256 levels, close
+// together near zero and far apart near the rails. A code decodes to its level
+// on the 16-bit scale, as every other decoder has it, so the top levels are
+// 32256/32768 for A-law and 32124/32768 for mu-law and a full-scale tone reads
+// about -0.14 and -0.17 dBFS. Decoding is exact at either width, and decoding
+// into a 16-bit format loses nothing.
+//
+// Encode rounds the sample to 16 bits as it would for I16 and applies the
+// quantizer of G.711 to its magnitude: each level is the center of a step, the
+// edges of the steps are the decision values, and the sample takes the code of
+// the step it is in. A sample past the top step clips to its level. The ITU's
+// reference encoder, G.191, drops the low two or three bits of the 16-bit
+// sample first and takes the magnitude of a negative one as its complement, so
+// its output is not reproduced byte for byte. Every code survives a
+// decode and an encode but mu-law's negative zero, 0x7f, which comes back as
+// the positive one, 0xff. A-law has no zero, and encodes one as its smallest
+// positive level.
 //
 // # Implementation
 //

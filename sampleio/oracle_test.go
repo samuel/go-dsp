@@ -1,6 +1,7 @@
 package sampleio
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"os"
@@ -78,8 +79,9 @@ func TestHeadersAgreeWithSox(t *testing.T) {
 			// Only for PCM. sox's Precision for a float format is how many
 			// bits it thinks the encoding is good for -- 25 for float32, 54 for
 			// float64 -- rather than the width of the container, so it is not
-			// the same number and comparing them proves nothing.
-			if bits, ok := fields["Precision"]; ok && !info.Format.Float() && int64(info.Bits) != bits {
+			// the same number and comparing them proves nothing. For G.711 it
+			// is the 13 or 14 bits the code expands to.
+			if bits, ok := fields["Precision"]; ok && !info.Format.Float() && !info.Format.Companded() && int64(info.Bits) != bits {
 				t.Errorf("bits: got %d, sox says %d", info.Bits, bits)
 			}
 		})
@@ -181,7 +183,7 @@ func writeOracleFiles(t *testing.T) []writerFile {
 	t.Helper()
 	dir := t.TempDir()
 	var files []writerFile
-	for _, f := range []pcm.Format{pcm.U8, pcm.I16LE, pcm.I24LE, pcm.I32LE, pcm.F32LE, pcm.F64LE} {
+	for _, f := range []pcm.Format{pcm.U8, pcm.I16LE, pcm.I24LE, pcm.I32LE, pcm.F32LE, pcm.F64LE, pcm.ALaw, pcm.MuLaw} {
 		for _, channels := range []int{1, 2, 3} {
 			for _, seek := range []bool{true, false} {
 				l := Layout{Format: f, Rate: 22050, Channels: channels, Container: WAV}
@@ -283,5 +285,56 @@ func TestWriterAgreesWithFFprobe(t *testing.T) {
 				t.Errorf("ffprobe did not report %s:\n%s", key, out)
 			}
 		})
+	}
+}
+
+// TestG711DecodesAsSoxAndFFmpeg writes every code of each law and checks that
+// sox and ffmpeg expand them to the levels this package does. Only decoding is
+// compared: the encoders of the three differ wherever a sample lies near the
+// edge of a step.
+func TestG711DecodesAsSoxAndFFmpeg(t *testing.T) {
+	if !*oracle {
+		t.Skip("run with -oracle to cross-check against sox and ffprobe")
+	}
+	dir := t.TempDir()
+	for _, f := range []pcm.Format{pcm.ALaw, pcm.MuLaw} {
+		codes := make([]byte, 256)
+		for i := range codes {
+			codes[i] = byte(i)
+		}
+		x := make([]float64, len(codes))
+		pcm.Decode(x, codes, f)
+		l := Layout{Format: f, Rate: 8000, Channels: 1, Container: WAV}
+		path := filepath.Join(dir, f.String()+".wav")
+		file := writeAll(t, WriterOptions{Layout: l}, true, func(w *Writer) (int, error) { return w.WriteSamples(x) })
+		if err := os.WriteFile(path, file, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		want := make([]byte, 2*len(x))
+		pcm.Encode(want, x, pcm.I16LE)
+		// Mu-law's negative zero is written as the positive one, which is the
+		// same level.
+
+		for _, tool := range []struct {
+			name string
+			args []string
+		}{
+			{"sox", []string{"-D", path, "-t", "raw", "-e", "signed-integer", "-b", "16", "-"}},
+			{"ffmpeg", []string{"-v", "error", "-i", path, "-f", "s16le", "-"}},
+		} {
+			t.Run(f.String()+"/"+tool.name, func(t *testing.T) {
+				bin, err := exec.LookPath(tool.name)
+				if err != nil {
+					t.Skip(tool.name + " is not installed")
+				}
+				got, err := exec.Command(bin, tool.args...).Output()
+				if err != nil {
+					t.Fatalf("%s: %v", tool.name, err)
+				}
+				if !bytes.Equal(got, want) {
+					t.Errorf("%s decodes the codes to different levels", tool.name)
+				}
+			})
+		}
 	}
 }

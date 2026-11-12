@@ -69,7 +69,7 @@ func benchEncodeKernel[F float](b *testing.B, width int, kernel func([]byte, []F
 // and big-endian reversal included, for a little- and a big-endian format at
 // each sample type.
 func BenchmarkDecode(b *testing.B) {
-	for _, f := range []Format{U8, I16LE, I16BE, F32LE} {
+	for _, f := range []Format{U8, I16LE, I16BE, F32LE, ALaw, MuLaw} {
 		b.Run(f.String(), func(b *testing.B) {
 			b.Run("float32", func(b *testing.B) { benchDecode[float32](b, f) })
 			b.Run("float64", func(b *testing.B) { benchDecode[float64](b, f) })
@@ -80,7 +80,7 @@ func BenchmarkDecode(b *testing.B) {
 }
 
 func BenchmarkEncode(b *testing.B) {
-	for _, f := range []Format{U8, I16LE, I16BE, F32LE} {
+	for _, f := range []Format{U8, I16LE, I16BE, F32LE, ALaw, MuLaw} {
 		b.Run(f.String(), func(b *testing.B) {
 			b.Run("float32", func(b *testing.B) { benchEncode[float32](b, f) })
 			b.Run("float64", func(b *testing.B) { benchEncode[float64](b, f) })

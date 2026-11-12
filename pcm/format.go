@@ -7,8 +7,9 @@ import (
 
 // Format is a sample encoding: an element type, a width and a byte order. U8
 // and I8 are 8-bit samples, I16, I24 and I32 wider integers, F32 and F64
-// floats, with LE or BE for the byte order of anything wider than a byte.
-// Decode and Encode handle every one of them.
+// floats, with LE or BE for the byte order of anything wider than a byte, and
+// ALaw and MuLaw the two 8-bit companded codes of ITU-T G.711. Decode and
+// Encode handle every one of them.
 type Format int
 
 // The encodings a sample file can hold. The zero value is not one of them, so a
@@ -26,13 +27,15 @@ const (
 	F32BE
 	F64LE
 	F64BE
+	ALaw
+	MuLaw
 )
 
 // info is the one description of a format. It is a switch rather than a
 // package-level table, which an importer could reorder.
 //
-// bits is the significant bits of an integer sample, zero for a float, which is
-// already in full-scale units.
+// bits is the significant bits of an integer sample, the eight of a companded
+// code, and zero for a float, which is already in full-scale units.
 func (f Format) info() (name, desc string, width, bits int) {
 	switch f {
 	case U8:
@@ -59,6 +62,10 @@ func (f Format) info() (name, desc string, width, bits int) {
 		return "f64le", "64-bit float, little-endian", 8, 0
 	case F64BE:
 		return "f64be", "64-bit float, big-endian", 8, 0
+	case ALaw:
+		return "alaw", "8-bit G.711 A-law", 1, 8
+	case MuLaw:
+		return "mulaw", "8-bit G.711 mu-law", 1, 8
 	}
 	return "", "", 0, 0
 }
@@ -87,7 +94,8 @@ func (f Format) Width() int {
 
 // Bits returns the significant bits of an integer format, which sets the
 // power of two Decode divides by and Encode multiplies by, or zero for a float
-// format, which is already in full-scale units.
+// format, which is already in full-scale units. A companded format has the
+// eight bits of its code, which set no such scale.
 func (f Format) Bits() int {
 	_, _, _, b := f.info()
 	return b
@@ -95,6 +103,10 @@ func (f Format) Bits() int {
 
 // Float reports whether f holds floating-point samples.
 func (f Format) Float() bool { return f.Valid() && f.Bits() == 0 }
+
+// Companded reports whether f is a G.711 format, whose codes are not evenly
+// spaced.
+func (f Format) Companded() bool { return f == ALaw || f == MuLaw }
 
 // Valid reports whether f is one of the encodings this package knows.
 func (f Format) Valid() bool { return f.Width() != 0 }
@@ -108,6 +120,7 @@ func Formats() []Format {
 		I32LE, I32BE,
 		F32LE, F32BE,
 		F64LE, F64BE,
+		ALaw, MuLaw,
 	}
 }
 
@@ -122,13 +135,17 @@ func FormatNames() []string {
 }
 
 // ParseFormat parses an encoding name, accepting ffmpeg's s16le spelling of a
-// signed integer too; String always reports the i form.
+// signed integer and ulaw for mulaw too; String always reports the i form and
+// mulaw.
 func ParseFormat(s string) (Format, error) {
 	name := strings.ToLower(strings.TrimSpace(s))
 
 	// ffmpeg says s16le where dsp says i16le. Everything else agrees.
 	if rest, ok := strings.CutPrefix(name, "s"); ok {
 		name = "i" + rest
+	}
+	if name == "ulaw" {
+		name = "mulaw"
 	}
 	for _, f := range Formats() {
 		if f.String() == name {

@@ -35,10 +35,13 @@ func FuzzDecode(f *testing.F) {
 
 // FuzzEncodeDecode encodes arbitrary float32 samples, read from the fuzzer's
 // bytes, and checks that decoding gives back the nearest code: within half a
-// step for an in-range sample, a rail for one past it, zero for NaN.
+// step for an in-range sample, a rail for one past it, zero for NaN. A G.711
+// format gives back the level of the step the sample is in.
 func FuzzEncodeDecode(f *testing.F) {
 	f.Add(binary.LittleEndian.AppendUint32(nil, math.Float32bits(0.5)))
 	f.Add(binary.LittleEndian.AppendUint32(nil, math.Float32bits(float32(math.NaN()))))
+	// In mu-law's zero step, on the negative side.
+	f.Add(binary.LittleEndian.AppendUint32(nil, math.Float32bits(-2.0/32768)))
 	f.Fuzz(func(t *testing.T, raw []byte) {
 		src := make([]float32, len(raw)/4)
 		Decode(src, raw, F32LE)
@@ -64,6 +67,10 @@ func checkNearest(t *testing.T, f Format, v, got float64) {
 		}
 		return
 	}
+	if f.Companded() {
+		checkG711Step(t, f, v, got)
+		return
+	}
 	step := math.Ldexp(1, 1-f.Bits())
 	top := 1 - step
 	switch {
@@ -81,5 +88,21 @@ func checkNearest(t *testing.T, f Format, v, got float64) {
 		}
 	case math.Abs(got-v) > step/2:
 		t.Fatalf("%v: %v decodes back as %v, more than half a step away", f, v, got)
+	}
+}
+
+// checkG711Step is checkNearest for a G.711 format, whose levels are not
+// evenly spaced: the sample, rounded to 16 bits, must lie in the step of the
+// level it decoded back as. Mu-law's zero step is the same on either side.
+func checkG711Step(t *testing.T, f Format, v, got float64) {
+	t.Helper()
+	q := quantize(v*(1<<15), -(1 << 15), 1<<15-1)
+	if got == 0 {
+		q = max(q, -q)
+	}
+	out := make([]byte, 1)
+	Encode(out, []float64{got}, f)
+	if !inG711Step(f, out[0], q) {
+		t.Fatalf("%v: %v decodes back as %v, whose step does not hold it", f, v, got)
 	}
 }

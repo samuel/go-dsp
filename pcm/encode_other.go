@@ -20,3 +20,7 @@ func f32ToF32LE(dst []byte, src []float32) { floatToF32LERef(dst, src) }
 func f64ToF32LE(dst []byte, src []float64) { floatToF32LERef(dst, src) }
 func f32ToF64LE(dst []byte, src []float32) { floatToF64LERef(dst, src) }
 func f64ToF64LE(dst []byte, src []float64) { floatToF64LERef(dst, src) }
+func f32ToALaw(dst []byte, src []float32)  { floatToALawRef(dst, src) }
+func f64ToALaw(dst []byte, src []float64)  { floatToALawRef(dst, src) }
+func f32ToMuLaw(dst []byte, src []float32) { floatToMuLawRef(dst, src) }
+func f64ToMuLaw(dst []byte, src []float64) { floatToMuLawRef(dst, src) }

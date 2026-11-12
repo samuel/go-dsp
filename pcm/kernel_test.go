@@ -30,6 +30,8 @@ var decodeF32Kernels = []decodeKernel[float32]{
 	{"i32LEToF32", 4, i32LEToF32, i32LEToFloatRef[float32]},
 	{"f32LEToF32", 4, f32LEToF32, f32LEToFloatRef[float32]},
 	{"f64LEToF32", 8, f64LEToF32, f64LEToFloatRef[float32]},
+	{"alawToF32", 1, alawToF32, alawToFloatRef[float32]},
+	{"mulawToF32", 1, mulawToF32, mulawToFloatRef[float32]},
 }
 
 var decodeF64Kernels = []decodeKernel[float64]{
@@ -40,6 +42,8 @@ var decodeF64Kernels = []decodeKernel[float64]{
 	{"i32LEToF64", 4, i32LEToF64, i32LEToFloatRef[float64]},
 	{"f32LEToF64", 4, f32LEToF64, f32LEToFloatRef[float64]},
 	{"f64LEToF64", 8, f64LEToF64, f64LEToFloatRef[float64]},
+	{"alawToF64", 1, alawToF64, alawToFloatRef[float64]},
+	{"mulawToF64", 1, mulawToF64, mulawToFloatRef[float64]},
 }
 
 var encodeF32Kernels = []encodeKernel[float32]{
@@ -50,6 +54,8 @@ var encodeF32Kernels = []encodeKernel[float32]{
 	{"f32ToI32LE", 4, f32ToI32LE, floatToI32LERef[float32]},
 	{"f32ToF32LE", 4, f32ToF32LE, floatToF32LERef[float32]},
 	{"f32ToF64LE", 8, f32ToF64LE, floatToF64LERef[float32]},
+	{"f32ToALaw", 1, f32ToALaw, floatToALawRef[float32]},
+	{"f32ToMuLaw", 1, f32ToMuLaw, floatToMuLawRef[float32]},
 }
 
 var encodeF64Kernels = []encodeKernel[float64]{
@@ -60,6 +66,8 @@ var encodeF64Kernels = []encodeKernel[float64]{
 	{"f64ToI32LE", 4, f64ToI32LE, floatToI32LERef[float64]},
 	{"f64ToF32LE", 4, f64ToF32LE, floatToF32LERef[float64]},
 	{"f64ToF64LE", 8, f64ToF64LE, floatToF64LERef[float64]},
+	{"f64ToALaw", 1, f64ToALaw, floatToALawRef[float64]},
+	{"f64ToMuLaw", 1, f64ToMuLaw, floatToMuLawRef[float64]},
 }
 
 // TestKernelsMatchReference runs every kernel against its reference on every
