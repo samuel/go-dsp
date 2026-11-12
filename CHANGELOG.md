@@ -44,7 +44,11 @@ Go 1.27.
   `Encode` convert between its bytes and full-scale samples of any width,
   real or interleaved complex: an integer is scaled by 2^(bits-1), and
   encoding rounds to nearest even, clips and encodes NaN as zero.
-- `ax25`: AX.25/HDLC frame decoding and the CRC-16/X-25 frame check.
+- `ax25`: AX.25/HDLC frame decoding and encoding (`Encoder`,
+  `Frame.AppendBinary`), NRZI line coding and the CRC-16/X-25 frame check.
+- `fsk`: binary FSK. `Discriminator`, `Slicer` and `Demodulator` receive AFSK
+  or complex baseband at any samples per symbol, recovering the symbol clock;
+  `Modulator` transmits phase-continuous FSK.
 - `dtmf`: DTMF decoding.
 - `firpm`: Parks-McClellan equiripple FIR design.
 - `sampleio`: reading WAV, RF64 and headerless captures, including rtl-sdr

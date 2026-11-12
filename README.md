@@ -20,7 +20,8 @@ Paths are relative to the module, `samuelks.com/dsp`, whose root is package
 | --- | --- |
 | `.` (`dsp`) | The main API: generic vector operations (`VScale`, `VAdd`, ...), FM demodulation, a phase-continuous `Oscillator` and `Mixer`, IIR/biquad/FIR filters, boxcar and FIR decimators, Goertzel tone detection, sliding DFT, fixed-size FFT, transfer-function evaluation, window functions, Kaiser-windowed sinc low-pass design (`LowPassFIR`), FIR interpolation (`FIRInterpolator`, zero-phase `Upsample`), interpolators including a polyphase `SincInterpolator`, interleave/deinterleave, `FastAtan2`. |
 | `pcm` | The sample codec: `Format` names an encoding (`U8`, `I16LE`, `F32BE`, ...), and `Decode` and `Encode` move between bytes and full-scale samples of any width, real or interleaved complex. |
-| `ax25` | AX.25/HDLC frame decoding plus CRC-16/X-25 `FCS`/`CheckFCS`. |
+| `ax25` | AX.25/HDLC frame encoding and decoding, NRZI line coding and CRC-16/X-25 `FCS`/`CheckFCS`. |
+| `fsk` | Binary FSK modulation and demodulation: Bell 202 and Bell 103 AFSK, or complex baseband, at any samples per symbol. |
 | `dtmf` | DTMF decoding built on Goertzel. |
 | `sampleio` | Reading and writing WAV/RF64 audio and headerless I/Q captures as full-scale samples. |
 | `firpm` | Parks-McClellan (Remez exchange) linear-phase FIR design. |
@@ -116,6 +117,31 @@ fmd := dsp.NewFMDemod[complex64, float32]() // complex64 uses FastAtan2
 out := make([]float32, len(iq))
 fmd.Process(out, iq)
 ```
+
+### FSK and packet radio
+
+`fsk` turns AFSK or baseband FSK into line levels and back. A `Discriminator`
+correlates each sample with the mark and space tones over one symbol, a
+`Slicer` recovers the symbol clock from its zero crossings, and a
+`Demodulator` is the two together; a `Modulator` is the transmit side.
+`ax25.NRZI` converts levels to the bits `ax25.Decoder` takes, and
+`ax25.Encoder` produces those bits from a `Frame`.
+
+```go
+demod, err := fsk.NewDemodulator[float32](fsk.Config{Mark: 1200, Space: 2200, Baud: 1200, Rate: 48000})
+var nrzi ax25.NRZI
+dec := ax25.NewDecoder()
+levels := demod.Demodulate(nil, samples)
+for _, b := range nrzi.Decode(nil, levels) {
+    if frame := dec.Feed(b); frame != nil {
+        fmt.Println(frame.Source, "to", frame.Destination)
+    }
+}
+```
+
+The demodulator runs about 36 million samples a second on an M-series Mac, and
+its bit error rate under white noise is within a small factor of an ideal
+noncoherent detector's.
 
 ### Oscillator and mixer
 
@@ -283,7 +309,7 @@ extension; `analyze` writes a set and takes `-out <dir>`.
 ```sh
 go run ./examples/dtmf dtmf/testdata/1223445-50ms-8000.wav      # -> 1223445
 go run ./examples/dtmf -rate 44100 dtmf/testdata/0123456789-50ms-44100.wav
-go run ./examples/ax25 -rate 11025 -baud 300 radio-paket300-11025.raw
+go run ./examples/ax25 -rate 11025 -baud 300 -mark 1600 -space 1800 radio-paket300-11025.raw
 ```
 
 ## Conventions

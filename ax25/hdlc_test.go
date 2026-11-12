@@ -5,10 +5,9 @@ import (
 	"testing"
 )
 
-// sender turns frames into the bit stream a modem would hand to Feed: an
-// opening flag, the frame and its FCS with a zero stuffed after every five
-// consecutive one bits, then a closing flag. Bytes go out least significant bit
-// first, which is the order Feed reassembles them in.
+// sender feeds a Decoder the bits an Encoder produces. Its flag and bytes
+// methods send raw pieces through the same stuffing, for the tests that need a
+// frame the Encoder would never produce: a bad FCS, an abort, an overflow.
 type sender struct {
 	dec  *Decoder
 	ones int
@@ -18,47 +17,31 @@ type sender struct {
 	frames []*Frame
 }
 
-func (s *sender) bit(b byte) {
-	if s.tap != nil {
-		s.tap(b)
-	}
-	if f := s.dec.Feed(b); f != nil {
-		s.frames = append(s.frames, f)
-	}
-}
-
-func (s *sender) flag() {
-	s.ones = 0
-	for _, b := range [8]byte{0, 1, 1, 1, 1, 1, 1, 0} {
-		s.bit(b)
-	}
-}
-
-func (s *sender) bytes(buf []byte) {
-	for _, by := range buf {
-		for i := range 8 {
-			b := (by >> i) & 1
-			s.bit(b)
-			if b == 0 {
-				s.ones = 0
-				continue
-			}
-			if s.ones++; s.ones == 5 {
-				s.bit(0)
-				s.ones = 0
-			}
+func (s *sender) feed(bits []byte) {
+	for _, b := range bits {
+		if s.tap != nil {
+			s.tap(b)
+		}
+		if f := s.dec.Feed(b); f != nil {
+			s.frames = append(s.frames, f)
 		}
 	}
 }
 
-// send frames one payload, appending its FCS, and returns every frame the
-// decoder produced.
+func (s *sender) bit(b byte) { s.feed([]byte{b}) }
+
+func (s *sender) flag() {
+	s.ones = 0
+	s.feed(appendFlag(nil))
+}
+
+func (s *sender) bytes(buf []byte) { s.feed(appendStuffed(nil, &s.ones, buf)) }
+
+// send frames one payload with Encoder.AppendPayload and returns every frame
+// the decoder produced.
 func (s *sender) send(payload []byte) []*Frame {
 	before := len(s.frames)
-	fcs := FCS(payload)
-	s.flag()
-	s.bytes(append(append([]byte{}, payload...), fcs[0], fcs[1]))
-	s.flag()
+	s.feed(Encoder{}.AppendPayload(nil, payload))
 	return s.frames[before:]
 }
 
@@ -510,7 +493,7 @@ func TestFeedNoInfo(t *testing.T) {
 }
 
 // handStuffedUIFrame is one AX.25 UI frame's HDLC bit stream, written out here
-// rather than produced by sender: an opening flag, then
+// rather than produced by Encoder: an opening flag, then
 //
 //	82 a0 a4 a6 40 40 60   APRS   dest, SSID 0, address field continues
 //	9c 60 86 82 98 98 61   N0CALL source, SSID 0, address field ends
@@ -522,7 +505,7 @@ func TestFeedNoInfo(t *testing.T) {
 // least significant bit first with a zero after every five consecutive ones,
 // then a closing flag. The bits and the FCS were produced by a generator
 // written from the format and from CRC-16/X-25's reflected polynomial, sharing
-// nothing with this package: sender applies the same stuffing rule the decoder
+// nothing with this package: Encoder applies the same stuffing rule the decoder
 // undoes, so the two agreeing proves only that they are inverses. The info
 // bytes are chosen to force stuffing -- 7e is a flag's own bit pattern and ff
 // is eight ones -- and three zeros are stuffed in all, at the three places
@@ -589,12 +572,13 @@ func TestFeedHandStuffedFrame(t *testing.T) {
 	}
 }
 
-// TestSenderMatchesHandStuffedFrame ties the fixture to the helper the rest of
-// this file uses. sender stuffing the same frame has to produce the same bits,
+// TestEncoderMatchesHandStuffedFrame ties the fixture to the Encoder the rest
+// of this file sends through. Stuffing the same frame has to produce the same
+// bits,
 // which is what makes the other tests' bit streams trustworthy rather than
 // merely self-consistent -- on their own they show only that the encoder and
 // the decoder are inverses of each other.
-func TestSenderMatchesHandStuffedFrame(t *testing.T) {
+func TestEncoderMatchesHandStuffedFrame(t *testing.T) {
 	var bits []byte
 	s := &sender{dec: NewDecoder(), tap: func(b byte) { bits = append(bits, '0'+b) }}
 	s.send([]byte{
@@ -603,6 +587,6 @@ func TestSenderMatchesHandStuffedFrame(t *testing.T) {
 		0x03, 0xf0, 0x7e, 0xff, 0x41,
 	})
 	if string(bits) != handStuffedUIFrame {
-		t.Errorf("sender produced\n%s\nwant\n%s", bits, handStuffedUIFrame)
+		t.Errorf("Encoder produced\n%s\nwant\n%s", bits, handStuffedUIFrame)
 	}
 }

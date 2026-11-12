@@ -1,8 +1,8 @@
-// Command ax25 decodes AX.25 packet radio frames from a recording of 1200 baud
-// AFSK, the modulation APRS uses on VHF. A Goertzel filter at the mark and
-// space tones slices the signal into bits, a bit clock recovers their timing,
-// and ax25.Decoder assembles the HDLC frames, printing each one's addresses
-// and payload.
+// Command ax25 decodes AX.25 packet radio frames from a recording of AFSK:
+// 1200 baud Bell 202 by default, the modulation APRS uses on VHF. An
+// fsk.Demodulator turns the audio into line levels, ax25.NRZI turns those into
+// bits, and ax25.Decoder assembles the HDLC frames, printing each one's
+// addresses and payload.
 //
 // The input is a WAV file, or a headerless file or standard input given with
 // -format and -rate. -baud, -mark and -space select other AFSK variants, such
@@ -18,10 +18,9 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 
-	"samuelks.com/dsp"
 	"samuelks.com/dsp/ax25"
+	"samuelks.com/dsp/fsk"
 	"samuelks.com/dsp/pcm"
 	"samuelks.com/dsp/sampleio"
 )
@@ -30,9 +29,9 @@ var (
 	flagVerbose    = flag.Bool("v", false, "Verbose output")
 	flagSampleRate = flag.Float64("rate", 0, "Sample rate override; required for a headerless file")
 	flagFormat     = flag.String("format", "i16le", "Sample format of a headerless file")
-	flagBaud       = flag.Int("baud", 1200, "Baud rate of the AFSK signal")
-	flagMark       = flag.Int("mark", 1200, "Mark tone frequency in Hz")
-	flagSpace      = flag.Int("space", 2200, "Space tone frequency in Hz")
+	flagBaud       = flag.Float64("baud", 1200, "Baud rate of the AFSK signal")
+	flagMark       = flag.Float64("mark", 1200, "Mark tone frequency in Hz")
+	flagSpace      = flag.Float64("space", 2200, "Space tone frequency in Hz")
 )
 
 func main() {
@@ -61,110 +60,53 @@ func run() error {
 		}
 	}()
 
-	sampleRate := rd.Info().Rate
-	baud := *flagBaud
-	if baud <= 0 {
-		// blockSize below divides by it, and the bit clock is its reciprocal.
-		return fmt.Errorf("-baud must be positive, not %d", baud)
-	}
-	window := 4
-	blockSize := int(sampleRate) / baud
-
-	// The type parameter is the sample type; the recursion and the results are
-	// float64 either way.
-	goer, err := dsp.NewGoertzel[float32]([]float64{float64(*flagMark), float64(*flagSpace)}, sampleRate, blockSize)
+	demod, err := fsk.NewDemodulator[float32](fsk.Config{
+		Mark:  *flagMark,
+		Space: *flagSpace,
+		Baud:  *flagBaud,
+		Rate:  rd.Info().Rate,
+	})
 	if err != nil {
 		return err
 	}
+	var nrzi ax25.NRZI
+	dec := ax25.NewDecoder()
 
-	threshold := 50.0
-
-	samples := make([]float32, blockSize)
-	buf := make([]float32, window)
-
-	currentTime := float64(0.0)
-	bitClock := 1.0 / float64(baud)
-	windowTime := float64(window) / sampleRate
-	timeDelta := 0.0
-	prevBit := 0
-	transition := false
-
-	ax := ax25.NewDecoder()
+	samples := make([]float32, 4096)
+	var levels, bits []byte
 	for {
-		if err := readFull(rd, buf); errors.Is(err, io.EOF) {
-			break
-		} else if err != nil {
-			return err
-		}
-
-		copy(samples, samples[window:])
-		copy(samples[len(samples)-window:], buf)
-
-		goer.Reset()
-		goer.Feed(samples)
-		mags := goer.Power()
-		diff := mags[0] - mags[1]
-
-		if math.Abs(diff) > threshold {
-			b := 1
-			if diff < 0 {
-				b = 0
-			}
-			if prevBit != b {
-				transition = true
-				prevBit = b
-				// Align transitions to middle of clock tick
-				timeDelta = bitClock/2.0 - currentTime
+		n, err := rd.ReadSamples(samples)
+		levels = demod.Demodulate(levels[:0], samples[:n])
+		bits = nrzi.Decode(bits[:0], levels)
+		for _, b := range bits {
+			if frame := dec.Feed(b); frame != nil {
+				printFrame(frame)
 			}
 		}
-
-		currentTime += windowTime
-		for currentTime >= bitClock {
-			currentTime -= bitClock
-			b := byte(1)
-			if transition {
-				b = 0
-				currentTime += timeDelta
-				timeDelta = 0.0
-			}
-			frame := ax.Feed(b)
-			if frame != nil {
-				if *flagVerbose {
-					fmt.Printf("%+v\n", frame)
-				} else {
-					fmt.Printf("%s to %s", frame.Source, frame.Destination)
-					if len(frame.Repeaters) != 0 {
-						fmt.Print(" via ")
-						for i, r := range frame.Repeaters {
-							if i != 0 {
-								fmt.Print(",")
-							}
-							fmt.Print(r.String())
-						}
-					}
-					fmt.Println()
-				}
-				fmt.Print(hex.Dump(frame.Info))
-			}
-			transition = false
+		if errors.Is(err, io.EOF) {
+			return nil
 		}
-	}
-	return nil
-}
-
-// readFull fills buf, reporting io.EOF for a short read at the end: a partial
-// window is not a window.
-func readFull(rd *sampleio.Reader, buf []float32) error {
-	total := 0
-	for total < len(buf) {
-		n, err := rd.ReadSamples(buf[total:])
-		total += n
 		if err != nil {
 			return err
 		}
-		if n == 0 {
-			return io.EOF
-		}
 	}
-	return nil
+}
+
+func printFrame(frame *ax25.Frame) {
+	if *flagVerbose {
+		fmt.Printf("%+v\n", frame)
+	} else {
+		fmt.Printf("%s to %s", frame.Source, frame.Destination)
+		if len(frame.Repeaters) != 0 {
+			fmt.Print(" via ")
+			for i, r := range frame.Repeaters {
+				if i != 0 {
+					fmt.Print(",")
+				}
+				fmt.Print(r.String())
+			}
+		}
+		fmt.Println()
+	}
+	fmt.Print(hex.Dump(frame.Info))
 }

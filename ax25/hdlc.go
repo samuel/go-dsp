@@ -1,9 +1,11 @@
-// Package ax25 decodes AX.25 packet radio frames from an HDLC bit stream, the
-// link layer amateur packet and APRS run over.
+// Package ax25 encodes and decodes AX.25 packet radio frames as an HDLC bit
+// stream, the link layer amateur packet and APRS run over.
 //
 // A Decoder is fed one received bit at a time and hands back a Frame each time a
-// complete, correctly checksummed one arrives. FCS builds the frame check
-// sequence a transmitter needs, over the same table.
+// complete, correctly checksummed one arrives. An Encoder turns a Frame into
+// the bits, flags, stuffing and FCS included. NRZI converts between those bits
+// and the line levels a modem such as fsk sends and receives: a 0 bit is a
+// change of level and a 1 bit is none.
 package ax25
 
 import (

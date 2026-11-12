@@ -278,6 +278,7 @@ jobs:
           - { pkg: ./sampleio, target: FuzzWriteRead }
           - { pkg: ./firpm, target: FuzzDesign }
           - { pkg: ./ax25, target: FuzzFeed }
+          - { pkg: ./fsk, target: FuzzSlicer }
           - { pkg: ./pcm, target: FuzzDecode }
           - { pkg: ./pcm, target: FuzzEncodeDecode }
           - { pkg: ./plot, target: FuzzWriteSVG }
