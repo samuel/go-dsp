@@ -10,17 +10,18 @@ import (
 type Container int
 
 const (
-	// DetectContainer, the zero value, has a Reader read a WAV when the stream
-	// starts with one and a headerless stream otherwise.
+	// DetectContainer is the zero value. A Reader reads a WAV when the stream
+	// starts with a WAV header and a headerless stream otherwise. A Writer
+	// writes a WAV.
 	DetectContainer Container = iota
 
-	// WAV is a RIFF/WAVE or RF64 file. A Reader told to expect one fails on a
-	// stream without the header.
+	// WAV is a RIFF/WAVE or RF64 file. A Reader returns an error when the
+	// stream does not start with the header.
 	WAV
 
-	// Raw is a headerless stream, which must be told its format and rate. A
-	// Reader told to read one does so even when the stream has a header, which
-	// is how to look at a WAV whose header is wrong.
+	// Raw is a headerless stream, so the Layout must give its format and rate.
+	// A Reader does not look for a header, which makes this the way to read a
+	// WAV whose header is wrong.
 	Raw
 )
 
@@ -37,27 +38,39 @@ func (c Container) String() string {
 	return "Container(" + strconv.Itoa(int(c)) + ")"
 }
 
-// Layout is what a stream of samples looks like on disk. Options carries the
-// one a Reader is told and Info the one it found.
+// Layout describes a stream of samples: how they are encoded, how fast, how
+// many channels, and what container holds them. Open and NewReader take the
+// layout of a headerless stream, Create and NewWriter take the layout to
+// write, and Info reports the layout in use. A Reader's Info().Layout given to
+// a Writer writes the same shape back out.
 type Layout struct {
-	// Format is the sample encoding. A WAV header states its own and wins over
-	// this one; a headerless stream requires it.
+	// Format is the sample encoding. A headerless stream and a Writer require
+	// it. A Reader ignores it for a WAV, whose header states its own.
 	Format pcm.Format
 
-	// Rate is the sample rate in Hz. On a WAV it overrides the header, with a
-	// Note; a headerless stream requires it.
+	// Rate is the sample rate in Hz. A headerless stream read and a WAV
+	// written require it. Given to a Reader of a WAV, it replaces the header's
+	// rate, with a Note.
 	Rate float64
 
-	// Channels is how many are interleaved, counting I and Q separately. Zero
-	// selects 2 when IQ is set and 1 otherwise. A WAV header that disagrees is
-	// an error.
+	// Channels is the number of interleaved channels, with I and Q counted as
+	// two. Zero means 2 when IQ is set and 1 otherwise. A Reader returns an
+	// error when a WAV header says a different number.
 	Channels int
 
-	// IQ reads channel pairs as interleaved I/Q, so the stream is complex and
-	// half as many channels wide as it looks.
+	// IQ treats each pair of channels as one complex signal, I then Q, so the
+	// stream is read and written as complex samples. A Reader accepts any even
+	// number of channels; a Writer takes exactly two.
 	IQ bool
 
-	// Container is how the samples are packaged. Info always reports WAV or
-	// Raw.
+	// Container is how the samples are packaged. The zero value detects it on
+	// read and selects WAV on write. Info always reports WAV or Raw.
 	Container Container
+
+	// ChannelMask assigns the channels of a WAV to speakers, one Speaker bit
+	// per channel in channel order. A Reader reports the header's mask, or
+	// zero when it has none. A Writer given zero writes no mask, or the usual
+	// mono or stereo mask where the format needs an extensible header. A
+	// headerless stream does not store it.
+	ChannelMask uint32
 }

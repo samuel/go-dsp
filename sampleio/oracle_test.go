@@ -42,7 +42,7 @@ func TestHeadersAgreeWithSox(t *testing.T) {
 	}
 	for _, path := range files {
 		t.Run(filepath.Base(path), func(t *testing.T) {
-			r, err := Open(path, Options{})
+			r, err := Open(path, Layout{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -131,7 +131,7 @@ func TestHeadersAgreeWithFFprobe(t *testing.T) {
 	}
 	for _, path := range files {
 		t.Run(filepath.Base(path), func(t *testing.T) {
-			r, err := Open(path, Options{})
+			r, err := Open(path, Layout{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -189,7 +189,7 @@ func writeOracleFiles(t *testing.T) []writerFile {
 				l := Layout{Format: f, Rate: 22050, Channels: channels, Container: WAV}
 				const frames = 333
 				planes := narrowPlanes[float64](testSignal(channels, frames))
-				b := writeAll(t, WriterOptions{Layout: l}, seek, func(w *Writer) (int, error) {
+				b := writeAll(t, l, seek, func(w *Writer) (int, error) {
 					if channels == 1 {
 						return w.WriteSamples(planes[0])
 					}
@@ -306,7 +306,7 @@ func TestG711DecodesAsSoxAndFFmpeg(t *testing.T) {
 		pcm.Decode(x, codes, f)
 		l := Layout{Format: f, Rate: 8000, Channels: 1, Container: WAV}
 		path := filepath.Join(dir, f.String()+".wav")
-		file := writeAll(t, WriterOptions{Layout: l}, true, func(w *Writer) (int, error) { return w.WriteSamples(x) })
+		file := writeAll(t, l, true, func(w *Writer) (int, error) { return w.WriteSamples(x) })
 		if err := os.WriteFile(path, file, 0o600); err != nil {
 			t.Fatal(err)
 		}

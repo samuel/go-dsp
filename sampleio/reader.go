@@ -17,40 +17,34 @@ import (
 // ErrNotSeekable is returned by SeekFrame when the source cannot seek.
 var ErrNotSeekable = errors.New("sampleio: the source cannot seek")
 
-// Channel selects which channel of a stream to read.
-type Channel int
-
-// MixChannels selects the mean of every channel rather than one of them.
-const MixChannels Channel = -1
-
-// blockBytes is the raw read size. Large enough that a read is not dominated by
-// syscall overhead, small enough that a Reader costs nothing to hold.
+// blockBytes is how many bytes a Reader asks its source for at a time: large
+// enough that system calls are not the main cost, small enough to be cheap to
+// hold.
 const blockBytes = 1 << 16
 
-// Info describes what a Reader found. Its Layout is the stream as read: the
-// header's where there is one, with any Rate override applied, and Container
-// WAV or Raw.
+// Info describes a stream. A Reader's Info holds the layout it is reading:
+// the header's for a WAV, with any Rate override applied, and Container set to
+// WAV or Raw. A Writer's Info holds the layout it is writing.
 type Info struct {
 	Layout
 
-	// Frames is how many samples the Reader will produce, after Skip and Limit, or
-	// -1 when that cannot be known without reading the whole stream.
+	// Frames is how many frames the stream holds, or -1 when that is not known
+	// without reading it to the end. A frame is one sample of every channel.
 	//
-	// It is a length, not a guess: a header's claim is believed only once checked
-	// against the size on disk. A pipe therefore reports -1 even when its header
-	// states a size, and so does a file whose header overstates its data, with a
-	// Note.
+	// A WAV header's size is reported only when it can be checked against the
+	// size of the file. A pipe therefore reports -1 even when its header
+	// states a size, and so does a file whose header claims more data than the
+	// file holds, with a Note.
+	//
+	// For a Writer it is the number of frames written so far.
 	Frames int64
 
 	Bits      int // container bits per sample; 0 for a float format, 8 for G.711
 	ValidBits int // significant bits, when the header says fewer than Bits
 
-	// ChannelMask is a WAV's speaker assignment, a Speaker bit per position
-	// in channel order, or zero when the header gives none.
-	ChannelMask uint32
-
-	// Notes records everything surprising but survivable: a rate override, a
-	// header field not worth trusting, a float sample past full scale.
+	// Notes lists anything odd that did not stop the read or write: a rate
+	// override, a header field that was ignored, a float sample past full
+	// scale, a sample that was clipped.
 	Notes []string
 }
 
@@ -62,91 +56,61 @@ func (i Info) Duration() float64 {
 	return float64(i.Frames) / i.Rate
 }
 
-// Options configures a Reader. The zero value reads a WAV as it finds it.
-type Options struct {
-	// Layout describes a headerless stream; see its fields for how each one
-	// combines with a WAV header.
-	Layout
-
-	// Channel selects which one to read. MixChannels takes the mean of all of
-	// them. With IQ set it selects an I/Q pair rather than a single channel.
-	Channel Channel
-
-	// Skip drops this many frames before the first sample, and Limit stops after
-	// this many. Zero Limit reads to the end.
-	Skip, Limit int64
-}
-
-// Reader hands over samples: one selected channel, or every channel at once
-// into one slice each. Not safe for concurrent use. It reads in blocks, so a
-// capture larger than memory costs no more than a short one.
+// Reader decodes a stream into full-scale samples. It reads the source in
+// blocks, so a long capture uses no more memory than a short one. It is not
+// safe for concurrent use.
 type Reader struct {
 	src    io.Reader
 	closer io.Closer
 	info   Info
 	chunks []Chunk
 
-	// seeker is the source when it can seek, which src may be a buffer in
-	// front of, and dataStart the offset of its first sample byte. first is
-	// the frame Options.Skip put the Reader at, and window how many frames
-	// follow it, or -1 when the stream sets no end.
+	// seeker is the source when it can seek; src may be a buffer in front of
+	// it. dataStart is the offset of the first sample byte.
 	seeker    io.ReadSeeker
 	dataStart int64
-	first     int64
-	window    int64
 
-	width  int     // bytes per element
-	elems  int     // interleaved elements per frame
-	stride int     // bytes per frame
-	pick   Channel // channel, or I/Q pair index, or MixChannels
+	width  int // bytes per element
+	elems  int // interleaved elements per frame
+	stride int // bytes per frame
 	iq     bool
 
-	buf []byte // raw bytes, holding whole frames plus a partial tail
+	buf []byte // raw bytes: whole frames, then possibly part of one
 	n   int    // valid bytes in buf
 	off int    // bytes of buf already decoded
 
-	gath []byte // one channel's bytes, gathered contiguously
+	// work holds a decoded interleaved block during a planar read. It is a
+	// []T at the width of the last such read.
+	work any
 
-	// work is the decoded scratch a mixdown or planar read needs, a []T at the
-	// width of the last read that used it. views is a planar read's [][]T of
-	// plane headers: dsp.Deinterleave writes at the front of the planes it is
-	// handed, so a block landing mid-plane re-points these instead of passing
-	// an offset.
-	work  any
-	views any
-
-	// overrange is set once a float sample outside full scale has been decoded;
-	// see noteOverrange.
+	// overrange is set once a float sample outside full scale has been
+	// decoded; see noteOverrange.
 	overrange bool
 
-	left int64 // frames still allowed by Limit; -1 for no limit
-	eof  bool
+	total int64 // frames the stream holds, or -1 when it has no stated end
+	pos   int64 // frames consumed so far
+	eof   bool  // the source has returned io.EOF
 }
 
-// Open reads the file at path. "-" or "" reads standard input, whose length is
-// not known ahead of time.
+// Open opens the file at path for reading. "-" or "" reads standard input.
 //
-// A file is read as a WAV when it starts with one, unless Options.Container
-// says otherwise.
-func Open(path string, opt Options) (*Reader, error) {
+// A file that starts with a WAV header is read as a WAV unless l.Container
+// says otherwise. Anything else is a headerless stream, and l must give its
+// format and rate. The zero Layout reads a WAV as it is.
+func Open(path string, l Layout) (*Reader, error) {
 	if path == "" || path == "-" {
-		r, err := newReader(os.Stdin, nil, opt, -1)
-		if err != nil {
-			return nil, err
-		}
-		return r, nil
+		return newReader(os.Stdin, nil, l, -1)
 	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	// The size lets a raw stream report its length, which is what lets a caller
-	// choose a frame count before reading anything.
+	// The file size is what lets Info report a length before anything is read.
 	var size int64 = -1
 	if st, err := f.Stat(); err == nil && st.Mode().IsRegular() {
 		size = st.Size()
 	}
-	r, err := newReader(f, f, opt, size)
+	r, err := newReader(f, f, l, size)
 	if err != nil {
 		_ = f.Close()
 		return nil, err
@@ -154,38 +118,36 @@ func Open(path string, opt Options) (*Reader, error) {
 	return r, nil
 }
 
-// NewReader reads a stream. The length is unknown, so Info().Frames is -1 unless
-// a container header says otherwise.
-func NewReader(r io.Reader, opt Options) (*Reader, error) {
-	return newReader(r, nil, opt, -1)
+// NewReader reads samples from r, with l interpreted as it is by Open. The
+// length of r is not known, so Info().Frames is -1. Close does not close r.
+func NewReader(r io.Reader, l Layout) (*Reader, error) {
+	return newReader(r, nil, l, -1)
 }
 
-func newReader(src io.Reader, closer io.Closer, opt Options, size int64) (*Reader, error) {
-	if opt.Skip < 0 || opt.Limit < 0 {
-		return nil, errors.New("sampleio: Skip and Limit cannot be negative")
+// newReader builds a Reader over src. size is the size of the file in bytes,
+// or -1 when src is not a regular file.
+func newReader(src io.Reader, closer io.Closer, l Layout, size int64) (*Reader, error) {
+	if l.Container < DetectContainer || l.Container > Raw {
+		return nil, fmt.Errorf("sampleio: %v is not a container", l.Container)
 	}
 
-	if opt.Container < DetectContainer || opt.Container > Raw {
-		return nil, fmt.Errorf("sampleio: %v is not a container", opt.Container)
-	}
-
-	r := &Reader{src: src, closer: closer, left: -1}
+	r := &Reader{src: src, closer: closer}
 	r.info = Info{Container: Raw, Frames: -1}
-	// A source that has Seek but cannot use it, like a pipe, is not seekable.
+	// A pipe has a Seek method that fails, so try it.
 	if s, ok := src.(io.ReadSeeker); ok {
 		if _, err := s.Seek(0, io.SeekCurrent); err == nil {
 			r.seeker = s
 		}
 	}
 
-	// A header, unless the caller said not to look for one.
+	// Look for a WAV header unless the caller said the stream has none.
 	var dataBytes int64 = -1
-	if opt.Container != Raw {
+	if l.Container != Raw {
 		h, err := sniffWAV(&r.src)
 		if err != nil {
 			return nil, err
 		}
-		if h == nil && opt.Container == WAV {
+		if h == nil && l.Container == WAV {
 			return nil, errors.New("sampleio: the stream does not start with a WAV header")
 		}
 		if h != nil {
@@ -200,8 +162,8 @@ func newReader(src io.Reader, closer io.Closer, opt Options, size int64) (*Reade
 			r.info.Notes = h.notes
 			dataBytes = h.dataBytes
 			if size >= 0 && dataBytes > size {
-				// A writer that streamed to a file and never went back to fix
-				// the size. Trust the file, not the field.
+				// The writer streamed to a file and never went back to fix the
+				// size. The file size is the one to believe.
 				r.info.Notes = append(r.info.Notes, fmt.Sprintf(
 					"the data chunk claims %d bytes, more than the file holds; reading to the end", dataBytes))
 				dataBytes = -1
@@ -210,50 +172,50 @@ func newReader(src io.Reader, closer io.Closer, opt Options, size int64) (*Reade
 	}
 
 	if r.info.Container == Raw {
-		if !opt.Format.Valid() {
+		if !l.Format.Valid() {
 			return nil, errors.New("sampleio: reading a headerless stream needs a sample format")
 		}
-		if opt.Rate <= 0 {
+		if l.Rate <= 0 {
 			return nil, errors.New("sampleio: reading a headerless stream needs a sample rate")
 		}
-		r.info.Format = opt.Format
-		r.info.Rate = opt.Rate
-		r.info.Channels = opt.Channels
+		r.info.Format = l.Format
+		r.info.Rate = l.Rate
+		r.info.Channels = l.Channels
 		if r.info.Channels == 0 {
 			r.info.Channels = 1
-			if opt.IQ {
+			if l.IQ {
 				r.info.Channels = 2
 			}
 		}
-		r.info.Bits = opt.Format.Bits()
+		r.info.Bits = l.Format.Bits()
+		r.info.ChannelMask = l.ChannelMask
 	} else {
-		if opt.Rate > 0 && opt.Rate != r.info.Rate {
+		if l.Rate > 0 && l.Rate != r.info.Rate {
 			r.info.Notes = append(r.info.Notes, fmt.Sprintf(
-				"the header says %g Hz; reading it as %g Hz", r.info.Rate, opt.Rate))
-			r.info.Rate = opt.Rate
+				"the header says %g Hz; reading it as %g Hz", r.info.Rate, l.Rate))
+			r.info.Rate = l.Rate
 		}
-		if opt.Channels > 0 && opt.Channels != r.info.Channels {
+		if l.Channels > 0 && l.Channels != r.info.Channels {
 			return nil, fmt.Errorf("sampleio: the header says %d channels, not %d",
-				r.info.Channels, opt.Channels)
+				r.info.Channels, l.Channels)
 		}
 	}
 
 	if r.info.Channels <= 0 {
 		return nil, fmt.Errorf("sampleio: %d channels", r.info.Channels)
 	}
+	if l.IQ && r.info.Channels%2 != 0 {
+		return nil, fmt.Errorf("sampleio: an I/Q stream needs channels in pairs, and this one has %d", r.info.Channels)
+	}
 	r.width = r.info.Format.Width()
 	r.elems = r.info.Channels
 	r.stride = r.width * r.elems
-	r.iq = opt.IQ
-	r.info.IQ = opt.IQ
-	r.pick = opt.Channel
-
-	if err := r.selectChannel(); err != nil {
-		return nil, err
-	}
+	r.iq = l.IQ
+	r.info.IQ = l.IQ
 
 	if r.seeker != nil {
-		// The header was read through a buffer, which has run ahead of it.
+		// The header was read through a buffer, so the source is further along
+		// than the first sample by whatever the buffer still holds.
 		at, err := r.seeker.Seek(0, io.SeekCurrent)
 		if err != nil {
 			return nil, err
@@ -265,78 +227,35 @@ func newReader(src io.Reader, closer io.Closer, opt Options, size int64) (*Reade
 	}
 
 	r.buf = make([]byte, blockBytes/r.stride*r.stride+r.stride)
-	if opt.Skip > 0 {
-		if err := r.skip(opt.Skip); err != nil {
-			return nil, err
-		}
-	}
 
-	// How many frames there are to read, before the limit.
-	var total int64 = -1
+	// The data chunk size always bounds the read, even when it is not trusted
+	// as a length: it marks where the samples stop, so a LIST or id3 chunk
+	// after them is not decoded as samples.
+	r.total = -1
 	switch {
 	case dataBytes >= 0:
-		total = dataBytes / int64(r.stride)
+		r.total = dataBytes / int64(r.stride)
 	case r.info.Container == Raw && size >= 0:
-		total = size / int64(r.stride)
+		r.total = size / int64(r.stride)
 	}
 
-	// The data chunk size bounds the read whether or not it is trustworthy as a
-	// length: it says where the samples stop, which is what keeps a trailing
-	// LIST or id3 chunk from being decoded as samples.
-	r.left = -1
-	if total >= 0 {
-		r.left = max(0, total-opt.Skip)
-	}
-	if opt.Limit > 0 && (r.left < 0 || opt.Limit < r.left) {
-		r.left = opt.Limit
-	}
-	r.first, r.window = opt.Skip, r.left
-
-	// Reporting it as a length needs the size on disk to check it against. A
-	// streaming writer fills that field before it knows the answer, and what it
-	// puts is not always the placeholder -- sox writes 0x3ffff800 down a pipe,
-	// 6.8 hours at 44.1 kHz -- so an unverifiable length is unknown rather than
-	// a guess.
-	r.info.Frames = -1
+	// The size is reported as a length only when there is a file size to check
+	// it against. A writer streaming down a pipe fills the field in before it
+	// knows the answer, and not always with the usual placeholder: sox writes
+	// 0x3ffff800, which is 6.8 hours at 44.1 kHz.
 	if size >= 0 {
-		r.info.Frames = r.left
-	} else if opt.Limit > 0 {
-		// A limit is the caller's own number, so it needs no checking.
-		r.info.Frames = opt.Limit
+		r.info.Frames = r.total
 	}
 	return r, nil
 }
 
-// selectChannel validates the channel choice against the stream's channel layout.
-func (r *Reader) selectChannel() error {
-	if r.iq {
-		if r.pick == MixChannels {
-			return errors.New("sampleio: an I/Q stream cannot be mixed down; its channels are not alternatives")
-		}
-		if r.elems%2 != 0 {
-			return fmt.Errorf("sampleio: an I/Q stream needs channels in pairs, and this one has %d", r.elems)
-		}
-		if pairs := r.elems / 2; r.pick < 0 || int(r.pick) >= pairs {
-			return fmt.Errorf("sampleio: I/Q pair %d of %d", r.pick, pairs)
-		}
-		return nil
-	}
-	if r.pick == MixChannels {
-		return nil
-	}
-	if r.pick < 0 || int(r.pick) >= r.elems {
-		return fmt.Errorf("sampleio: channel %d of %d", r.pick, r.elems)
-	}
-	return nil
-}
-
-// noteOverrange records a float sample outside full scale, which the package
-// comment promises a Note for.
+// noteOverrange records that a float sample outside full scale was read, so
+// Info can add a Note about it.
 //
-// Only a float format can have one: an integer sample is divided by its own
-// full scale, so it lands in [-1, 1) by construction. It matters because every
-// decibel downstream is relative to 1.0, and a float file need not respect it:
-// a peak of +2.0 reads as +6 dBFS, clipping that is not there.
+// Only a float format can hold one: an integer sample is divided by its own
+// full scale, so it is always in [-1, 1). The Note matters because levels are
+// measured relative to 1.0, and a float file with a peak of 2.0 reads as
+// +6 dBFS.
 func noteOverrange[T dsp.Sample](r *Reader, x []T) {
 	if r.overrange || !r.info.Format.Float() {
 		return
@@ -366,50 +285,101 @@ func outsideFullScale[F dsp.Float](x []F) bool {
 func (r *Reader) Info() Info {
 	info := r.info
 	if r.overrange {
-		// Appended here rather than stored, so the note appears as soon as the
-		// sample that earned it has been read.
+		// Added to the copy, so the stored notes are not changed.
 		info.Notes = append(slices.Clip(info.Notes),
 			"a float sample lies outside full scale, so levels are relative to a range the container does not enforce")
 	}
 	return info
 }
 
-// Chunks returns the chunks of a WAV that come before its samples, other than
-// the format, in file order. A chunk over 1 MiB, or one that would take the
-// total past 4 MiB, is listed with nil Data. Chunks after the samples are not
-// read.
+// Chunks returns the chunks of a WAV that come before its samples, in file
+// order, leaving out the format chunk. A chunk over 1 MiB, or one that would
+// take the total past 4 MiB, is listed with nil Data. Chunks after the samples
+// are not read.
 func (r *Reader) Chunks() []Chunk { return r.chunks }
 
-// SeekFrame positions the Reader so the next read starts at frame n of the
-// frames it produces: 0 is the first frame after Options.Skip, and
-// Info().Frames the end. It returns ErrNotSeekable unless the source can seek,
-// as a file from Open or an io.ReadSeeker handed to NewReader can.
+// SeekFrame moves the Reader so the next read starts at frame n, counted from
+// the first frame of the stream. It returns ErrNotSeekable unless the source
+// can seek, as a file from Open or an io.ReadSeeker given to NewReader can.
 //
-// A stream with no stated end takes any n that is not negative, and reads
-// io.EOF when n is past the last frame.
+// When the stream states its length, n may be anything from 0 to that length.
+// When it does not, any n from 0 up is accepted, and a read past the last
+// frame returns io.EOF.
 func (r *Reader) SeekFrame(n int64) error {
 	if r.seeker == nil {
 		return ErrNotSeekable
 	}
 	stride := int64(r.stride)
-	if n < 0 || (r.window >= 0 && n > r.window) || n > (math.MaxInt64-r.dataStart)/stride-r.first {
-		return fmt.Errorf("sampleio: frame %d is outside the %d this Reader has", n, r.window)
+	if n < 0 || (r.total >= 0 && n > r.total) || n > (math.MaxInt64-r.dataStart)/stride {
+		return fmt.Errorf("sampleio: frame %d is outside the stream", n)
 	}
-	if _, err := r.seeker.Seek(r.dataStart+(r.first+n)*stride, io.SeekStart); err != nil {
+	return r.seekTo(n)
+}
+
+// seekTo moves the source to frame n and empties the buffers.
+func (r *Reader) seekTo(n int64) error {
+	if _, err := r.seeker.Seek(r.dataStart+n*int64(r.stride), io.SeekStart); err != nil {
 		return err
 	}
 	if br, ok := r.src.(*bufio.Reader); ok {
 		br.Reset(r.seeker)
 	}
 	r.n, r.off, r.eof = 0, 0, false
-	r.left = -1
-	if r.window >= 0 {
-		r.left = r.window - n
-	}
+	r.pos = n
 	return nil
 }
 
-// Close closes the underlying file, if there is one.
+// Skip moves forward n frames without decoding them and returns how many it
+// skipped. It returns io.EOF when the stream ended before n frames.
+//
+// It works on any source: one that can seek is moved directly, and anything
+// else, such as a pipe, is read and discarded.
+func (r *Reader) Skip(n int64) (int64, error) {
+	if n < 0 {
+		return 0, errors.New("sampleio: Skip cannot move backward; use SeekFrame")
+	}
+	want := n
+	if r.total >= 0 {
+		want = min(want, r.total-r.pos)
+	}
+
+	// Frames already in the buffer cost nothing to drop.
+	done := min(want, int64((r.n-r.off)/r.stride))
+	r.advance(int(done))
+
+	if done < want && r.seeker != nil {
+		// Seeking past the end of a file succeeds, so find the end first and
+		// stop there.
+		if end, err := r.seeker.Seek(0, io.SeekEnd); err == nil {
+			held := max((end-r.dataStart)/int64(r.stride)-r.pos, 0)
+			k := min(want-done, held)
+			if err := r.seekTo(r.pos + k); err != nil {
+				return done, err
+			}
+			done += k
+		}
+	}
+
+	// Read and discard the rest. After a seek this only finds the end.
+	for done < want {
+		frames, err := r.ready(int(min(want-done, math.MaxInt32)))
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return done, err
+		}
+		r.advance(frames)
+		done += int64(frames)
+	}
+	if done < n {
+		return done, io.EOF
+	}
+	return done, nil
+}
+
+// Close closes the file Open opened. A Reader from NewReader has nothing to
+// close.
 func (r *Reader) Close() error {
 	if r.closer == nil {
 		return nil
@@ -417,76 +387,63 @@ func (r *Reader) Close() error {
 	return r.closer.Close()
 }
 
-// ReadSamples fills dst with samples of the selected channel, or I/Q pair, and
-// returns how many it wrote. It returns io.EOF only when it wrote nothing.
+// ReadSamples fills dst from a stream that holds one signal: a single channel,
+// or a single I/Q pair. It returns how many samples it read, and io.EOF only
+// when it read none. A stream with more channels is read with ReadPlanar.
 //
-// The samples are decoded straight into dst at its width. T is real for a real
-// stream and complex for an I/Q one; the other is an error, since handing back
-// only the real part of an I/Q stream would be worse than saying so.
+// The samples are decoded directly at the width of dst. T must be float32 or
+// float64 for a real stream and complex64 or complex128 for an I/Q stream.
 //
-// It is not io.Reader's Read: the unit is a sample of one channel rather than
-// a byte, so the count means something different.
+// It is named ReadSamples because it does not follow io.Reader's contract: it
+// counts samples, not bytes.
 func (r *Reader) ReadSamples[T dsp.Sample](dst []T) (int, error) {
 	if err := r.checkKind(isComplex[T]()); err != nil {
 		return 0, err
 	}
-	total := 0
-	for total < len(dst) {
-		frames, err := r.ready(len(dst) - total)
-		if err != nil {
-			if total > 0 {
-				return total, nil
-			}
-			return 0, err
-		}
-		decodeSelected(r, dst[total:total+frames], frames)
-		r.advance(frames)
-		total += frames
+	if planes, unit := r.planes(); planes != 1 {
+		return 0, fmt.Errorf("sampleio: this stream has %d %s; read them with ReadPlanar", planes, unit)
 	}
-	return total, nil
+	return readOne(r, dst)
 }
 
-// ReadPlanar fills one slice per channel with that channel's samples and
-// returns how many frames it wrote to each. It returns io.EOF only when it
-// wrote nothing.
+// ReadPlanar reads every channel at once, each into its own slice. It returns
+// how many frames it read into each, and io.EOF only when it read none.
 //
-// dst holds one plane per channel of the file in file order, or one per I/Q
-// pair when T is complex, and must hold exactly as many as the stream has.
-// Options.Channel is not consulted: this is the whole frame rather than a
-// selection, and a Reader opened for a mixdown is an error rather than a
-// silent choice between the two.
+// dst holds one slice, or plane, per channel in file order. For an I/Q stream
+// T is complex and there is one plane per I/Q pair. The number of planes must
+// match the stream.
 //
-// It decodes the interleaved run once and splits it in one pass, so it is
-// several times faster than a Reader per channel, which reads the file once
-// per channel.
+// A nil plane skips that channel: its samples are passed over and not stored.
+// So reading only channel 1 of a stereo file is
 //
-// Planes may differ in length; the shortest is what gets read, and the frames
-// that do not fit are not consumed either. The planes must not overlap.
+//	r.ReadPlanar([][]float32{nil, buf})
+//
+// At least one plane must not be nil. Planes may differ in length; the read
+// stops at the shortest, and frames past it stay in the stream for the next
+// read. The planes must not overlap.
 func (r *Reader) ReadPlanar[T dsp.Sample](dst [][]T) (int, error) {
 	if err := r.checkKind(isComplex[T]()); err != nil {
 		return 0, err
 	}
-	if r.pick == MixChannels {
-		return 0, errors.New("sampleio: this Reader mixes its channels down, and a mixdown has no planar form")
-	}
-	planes, unit := r.elems, "channels"
-	if r.iq {
-		planes, unit = r.elems/2, "I/Q pairs"
-	}
+	planes, unit := r.planes()
 	if len(dst) != planes {
 		return 0, fmt.Errorf("sampleio: %d planes for a stream of %d %s", len(dst), planes, unit)
 	}
+	want := -1
+	for _, p := range dst {
+		if p != nil && (want < 0 || len(p) < want) {
+			want = len(p)
+		}
+	}
+	if want < 0 {
+		return 0, errors.New("sampleio: every plane is nil, so there is nothing to read into")
+	}
 	if planes == 1 {
-		// One channel is already contiguous, so this is a decode straight into
-		// the caller's slice, with no split.
-		return r.ReadSamples(dst[0])
+		// One channel is already contiguous, so it decodes straight into the
+		// caller's slice.
+		return readOne(r, dst[0])
 	}
 
-	want := len(dst[0])
-	for _, p := range dst[1:] {
-		want = min(want, len(p))
-	}
-	heads := scratch[[]T](&r.views, planes)
 	total := 0
 	for total < want {
 		frames, err := r.ready(want - total)
@@ -496,23 +453,59 @@ func (r *Reader) ReadPlanar[T dsp.Sample](dst [][]T) (int, error) {
 			}
 			return 0, err
 		}
-		for c, p := range dst {
-			heads[c] = p[total : total+frames]
-		}
+		// Decode the whole interleaved block, then copy out the planes that
+		// were asked for.
 		w := scratch[T](&r.work, frames*planes)
 		pcm.Decode(w, r.buf[r.off:], r.info.Format)
 		noteOverrange(r, w)
-		dsp.Deinterleave(heads, w)
+		for c, p := range dst {
+			if p == nil {
+				continue
+			}
+			p = p[total : total+frames]
+			src := w[c:]
+			for i := range p {
+				p[i] = src[i*planes]
+			}
+		}
 		r.advance(frames)
 		total += frames
 	}
-	// The arrays behind these headers are the caller's; leaving them pointed at
-	// the planes would keep them alive as long as the Reader is held.
-	clear(heads)
 	return total, nil
 }
 
-// checkKind reports whether a read at a real or complex width fits the stream.
+// readOne fills dst from a stream of one channel or one I/Q pair.
+func readOne[T dsp.Sample](r *Reader, dst []T) (int, error) {
+	total := 0
+	for total < len(dst) {
+		frames, err := r.ready(len(dst) - total)
+		if err != nil {
+			if total > 0 {
+				return total, nil
+			}
+			return 0, err
+		}
+		// The source slice runs to the end of buf; pcm.Decode stops at the
+		// shorter of its two slices.
+		d := dst[total : total+frames]
+		pcm.Decode(d, r.buf[r.off:], r.info.Format)
+		noteOverrange(r, d)
+		r.advance(frames)
+		total += frames
+	}
+	return total, nil
+}
+
+// planes returns how many slices a planar read takes, and what they hold.
+func (r *Reader) planes() (int, string) {
+	if r.iq {
+		return r.elems / 2, "I/Q pairs"
+	}
+	return r.elems, "channels"
+}
+
+// checkKind returns an error when a real read is made of an I/Q stream, or a
+// complex read of a real one.
 func (r *Reader) checkKind(complexT bool) error {
 	switch {
 	case complexT == r.iq:
@@ -533,9 +526,8 @@ func isComplex[T dsp.Sample]() bool {
 	return false
 }
 
-// scratch returns n elements of the []E held in *slot, replacing it when it is
-// short or holds another type. Storing a slice in an interface allocates, so
-// it is done only on growth.
+// scratch returns a []E of length n kept in *slot, allocating a new one when
+// the slot's slice is too short or of another type.
 func scratch[E any](slot *any, n int) []E {
 	s, _ := (*slot).([]E)
 	if cap(s) < n {
@@ -545,21 +537,18 @@ func scratch[E any](slot *any, n int) []E {
 	return s[:n]
 }
 
-// ready makes sure at least one whole frame is decodable and returns how many
-// are, up to want.
+// ready reads from the source until at least one whole frame is buffered and
+// returns how many are, up to want. It returns io.EOF at the end of the stream.
 func (r *Reader) ready(want int) (int, error) {
 	for {
 		frames := (r.n - r.off) / r.stride
-		if r.left >= 0 && int64(frames) > r.left {
-			frames = int(r.left)
+		if r.total >= 0 {
+			frames = int(min(int64(frames), r.total-r.pos))
 		}
 		if frames > 0 {
 			return min(frames, want), nil
 		}
-		if r.left == 0 {
-			return 0, io.EOF
-		}
-		if r.eof {
+		if r.eof || (r.total >= 0 && r.pos >= r.total) {
 			return 0, io.EOF
 		}
 		if err := r.fill(); err != nil {
@@ -568,17 +557,16 @@ func (r *Reader) ready(want int) (int, error) {
 	}
 }
 
-// fill slides the undecoded tail to the front and reads more on top of it.
+// fill moves the undecoded bytes to the front of buf and reads more after
+// them.
 func (r *Reader) fill() error {
 	if r.off > 0 {
 		r.n = copy(r.buf, r.buf[r.off:r.n])
 		r.off = 0
 	}
-	// io.Reader permits (0, nil), and a caller is told to treat it as nothing
-	// happened -- but a source that only ever returns it would spin here
-	// forever. The limit is what io.ReadFull's own loop uses the error for:
-	// enough attempts that a slow source is not cut off, few enough that a
-	// broken one is reported instead of hanging.
+	// An io.Reader may return (0, nil), and a source that does so forever
+	// would hang this loop. Give up after as many empty reads as io.ReadFull
+	// allows.
 	const maxEmptyReads = 100
 	empty := 0
 	for r.n < r.stride {
@@ -587,7 +575,8 @@ func (r *Reader) fill() error {
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				r.eof = true
-				// A trailing partial frame is a truncated file, not a sample.
+				// Part of a frame at the end is a truncated file. It is
+				// dropped.
 				return nil
 			}
 			return err
@@ -600,7 +589,7 @@ func (r *Reader) fill() error {
 		}
 		empty = 0
 	}
-	// Top the buffer up opportunistically, but never block for it.
+	// Try once to fill the rest of the buffer, without waiting for it.
 	if r.n < len(r.buf) {
 		m, err := r.src.Read(r.buf[r.n:])
 		r.n += m
@@ -613,106 +602,8 @@ func (r *Reader) fill() error {
 	return nil
 }
 
+// advance marks frames buffered frames as consumed.
 func (r *Reader) advance(frames int) {
 	r.off += frames * r.stride
-	if r.left > 0 {
-		r.left -= int64(frames)
-	}
-}
-
-// decodeSelected writes frames samples of the selected channel or I/Q pair
-// into dst.
-func decodeSelected[T dsp.Sample](r *Reader, dst []T, frames int) {
-	src := r.buf[r.off:]
-	f := r.info.Format
-	first, count := int(r.pick), 1
-	if r.iq {
-		first, count = 2*first, 2
-	}
-
-	switch {
-	case r.pick == MixChannels:
-		// Only a real stream reaches here: selectChannel refuses to mix I/Q.
-		w := scratch[float64](&r.work, frames*r.elems)
-		pcm.Decode(w, src, f)
-		noteOverrange(r, w)
-		switch d := any(dst).(type) {
-		case []float64:
-			mixdown(d, w, r.elems)
-		case []float32:
-			mixdown(d, w, r.elems)
-		}
-		return
-
-	case r.elems == count:
-		// The common case: one channel or one pair, so the samples are already
-		// contiguous and the decode is one call over the whole run. src runs to
-		// the end of buf, and pcm.Decode stops at the shorter of its two
-		// slices.
-		pcm.Decode(dst, src, f)
-
-	default:
-		pcm.Decode(dst, r.gather(src, frames, first, count), f)
-	}
-	noteOverrange(r, dst)
-}
-
-// mixdown writes the mean of each frame of the interleaved run w to dst. It
-// sums in float64 and narrows once, so a float32 mixdown is the float64 one
-// narrowed.
-func mixdown[F dsp.Float](dst []F, w []float64, channels int) {
-	inv := 1 / float64(channels)
-	for i := range dst {
-		var sum float64
-		for _, v := range w[i*channels : (i+1)*channels] {
-			sum += v
-		}
-		dst[i] = F(sum * inv)
-	}
-}
-
-// gather copies count elements per frame, starting at element first, into one
-// contiguous run.
-//
-// It is a byte shuffle rather than a strided decode so the decode kernels only
-// ever see contiguous input; the mono case and a planar read skip it. It
-// is the slow way round for more than one channel, because the copy length is
-// not a constant, so each frame costs a call rather than a move.
-func (r *Reader) gather(src []byte, frames, first, count int) []byte {
-	need := frames * count * r.width
-	if cap(r.gath) < need {
-		r.gath = make([]byte, need)
-	}
-	out := r.gath[:need]
-	run := count * r.width
-	for i := range frames {
-		copy(out[i*run:], src[i*r.stride+first*r.width:][:run])
-	}
-	return out
-}
-
-// skip drops frames before the first sample. A seekable source jumps; anything
-// else reads and discards, which is what makes skipping work on a pipe.
-func (r *Reader) skip(frames int64) error {
-	want := frames * int64(r.stride)
-	if r.seeker != nil {
-		if _, err := r.seeker.Seek(r.dataStart+want, io.SeekStart); err == nil {
-			if br, ok := r.src.(*bufio.Reader); ok {
-				br.Reset(r.seeker)
-			}
-			return nil
-		}
-		// A source that claims to seek but will not: read past it instead.
-	}
-	if n, err := io.CopyN(io.Discard, r.src, want); err != nil {
-		if errors.Is(err, io.EOF) {
-			// Skipping past the end leaves an empty reader rather than failing.
-			r.eof = true
-			r.info.Notes = append(r.info.Notes, fmt.Sprintf(
-				"asked to skip %d frames but the stream held %d", frames, n/int64(r.stride)))
-			return nil
-		}
-		return err
-	}
-	return nil
+	r.pos += int64(frames)
 }

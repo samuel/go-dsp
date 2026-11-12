@@ -120,7 +120,7 @@ func roundTrip[T dsp.Float](t *testing.T, l Layout, seek bool) {
 	t.Helper()
 	const frames = 1001 // odd, so a U8 mono WAV needs its pad byte
 	in := narrowPlanes[T](testSignal(l.Channels, frames))
-	raw := writeAll(t, WriterOptions{Layout: l}, seek, func(w *Writer) (int, error) {
+	raw := writeAll(t, l, seek, func(w *Writer) (int, error) {
 		if l.Channels == 1 {
 			return w.WriteSamples(in[0][:400])
 		}
@@ -132,13 +132,16 @@ func roundTrip[T dsp.Float](t *testing.T, l Layout, seek bool) {
 		return 0, nil
 	})
 
-	r, err := NewReader(bytes.NewReader(raw), Options{Layout: l})
+	r, err := NewReader(bytes.NewReader(raw), l)
 	if err != nil {
 		t.Fatal(err)
 	}
-	info := r.Info()
-	if info.Layout != l {
-		t.Errorf("read back %+v, wrote %+v", info.Layout, l)
+	// An extensible header is given a mask when the layout has none, which
+	// TestWAVChannelMask covers.
+	back := r.Info().Layout
+	back.ChannelMask = l.ChannelMask
+	if back != l {
+		t.Errorf("read back %+v, wrote %+v", back, l)
 	}
 	got := drainPlanar[T](t, r, l.Channels, 256)
 	for c := range in {
@@ -159,7 +162,7 @@ func roundTrip[T dsp.Float](t *testing.T, l Layout, seek bool) {
 
 // writeAll writes through a Writer to memory with each write in turn, closes
 // it, and returns the bytes.
-func writeAll(t *testing.T, opt WriterOptions, seek bool, writes ...func(*Writer) (int, error)) []byte {
+func writeAll(t *testing.T, opt Layout, seek bool, writes ...func(*Writer) (int, error)) []byte {
 	t.Helper()
 	var dst io.Writer
 	sb := &seekBuffer{}
@@ -199,12 +202,12 @@ func TestWriteIQ(t *testing.T) {
 	}
 	for _, f := range []pcm.Format{pcm.U8, pcm.I16LE, pcm.F32LE} {
 		l := Layout{Format: f, Rate: 2_400_000, IQ: true, Container: Raw}
-		raw := writeAll(t, WriterOptions{Layout: l}, false, func(w *Writer) (int, error) {
+		raw := writeAll(t, l, false, func(w *Writer) (int, error) {
 			return w.WriteSamples(x[:300])
 		}, func(w *Writer) (int, error) {
 			return w.WritePlanar([][]complex128{x[300:]})
 		})
-		r, err := NewReader(bytes.NewReader(raw), Options{Layout: l})
+		r, err := NewReader(bytes.NewReader(raw), l)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -215,8 +218,8 @@ func TestWriteIQ(t *testing.T) {
 			x64[i] = complex64(v)
 		}
 		l.Container = WAV
-		raw = writeAll(t, WriterOptions{Layout: l}, true, func(w *Writer) (int, error) { return w.WriteSamples(x64) })
-		r, err = NewReader(bytes.NewReader(raw), Options{IQ: true})
+		raw = writeAll(t, l, true, func(w *Writer) (int, error) { return w.WriteSamples(x64) })
+		r, err = NewReader(bytes.NewReader(raw), Layout{IQ: true})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -238,7 +241,7 @@ func TestWriterReproducesFixtures(t *testing.T) {
 	dir := t.TempDir()
 	for _, path := range files {
 		t.Run(filepath.Base(path), func(t *testing.T) {
-			r, err := Open(path, Options{})
+			r, err := Open(path, Layout{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -247,7 +250,7 @@ func TestWriterReproducesFixtures(t *testing.T) {
 			want := drainPlanar[float64](t, r, info.Channels, 50)
 
 			out := filepath.Join(dir, filepath.Base(path))
-			w, err := Create(out, WriterOptions{Layout: info.Layout})
+			w, err := Create(out, info.Layout)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -263,7 +266,7 @@ func TestWriterReproducesFixtures(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			r2, err := Open(out, Options{})
+			r2, err := Open(out, Layout{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -336,7 +339,7 @@ func TestWAVHeaderChoice(t *testing.T) {
 func TestWriterSizes(t *testing.T) {
 	x := make([]float32, 101)
 	le := binary.LittleEndian
-	opt := WriterOptions{Format: pcm.F32LE, Rate: 8000}
+	opt := Layout{Format: pcm.F32LE, Rate: 8000}
 	file := writeAll(t, opt, true, func(w *Writer) (int, error) { return w.WriteSamples(x) })
 	pipe := writeAll(t, opt, false, func(w *Writer) (int, error) { return w.WriteSamples(x) })
 
@@ -377,7 +380,7 @@ func TestWriterSizes(t *testing.T) {
 		if err := os.WriteFile(path, b, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		r, err := Open(path, Options{})
+		r, err := Open(path, Layout{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -401,7 +404,7 @@ func TestWriterRF64(t *testing.T) {
 	for i := range x {
 		x[i] = float64(i%200-100) / 128
 	}
-	opt := WriterOptions{Format: pcm.I16LE, Rate: 8000}
+	opt := Layout{Format: pcm.I16LE, Rate: 8000}
 	b := writeAll(t, opt, true, func(w *Writer) (int, error) { return w.WriteSamples(x) })
 	if string(b[:4]) != "RF64" || !bytes.Contains(b, []byte("ds64")) || bytes.Contains(b, []byte("JUNK")) {
 		t.Fatalf("header %q is not RF64 with a ds64 chunk", b[:48])
@@ -411,7 +414,7 @@ func TestWriterRF64(t *testing.T) {
 	if err := os.WriteFile(path, b, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	r, err := Open(path, Options{})
+	r, err := Open(path, Layout{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -441,7 +444,7 @@ func TestWriterClipNote(t *testing.T) {
 		{pcm.MuLaw, []float32{0.995, -0.995}, false},
 		{pcm.MuLaw, []float32{0.997}, true},
 	} {
-		w, err := NewWriter(io.Discard, WriterOptions{Format: tc.f, Rate: 8000})
+		w, err := NewWriter(io.Discard, Layout{Format: tc.f, Rate: 8000})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -462,7 +465,7 @@ func TestWriterClipNote(t *testing.T) {
 	}
 
 	// A complex write is checked too.
-	w, err := NewWriter(io.Discard, WriterOptions{Format: pcm.U8, IQ: true, Container: Raw})
+	w, err := NewWriter(io.Discard, Layout{Format: pcm.U8, IQ: true, Container: Raw})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -474,7 +477,7 @@ func TestWriterClipNote(t *testing.T) {
 	}
 }
 
-func TestWriterRejectsBadOptions(t *testing.T) {
+func TestWriterRejectsBadLayout(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		l    Layout
@@ -494,7 +497,7 @@ func TestWriterRejectsBadOptions(t *testing.T) {
 		{"unknown container", Layout{Format: pcm.I16LE, Rate: 8000, Container: 9}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := NewWriter(io.Discard, WriterOptions{Layout: tc.l}); err == nil {
+			if _, err := NewWriter(io.Discard, tc.l); err == nil {
 				t.Error("accepted")
 			}
 		})
@@ -505,7 +508,7 @@ func TestWriterRejectsBadOptions(t *testing.T) {
 	if err := os.WriteFile(path, []byte("keep"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Create(path, WriterOptions{Format: pcm.I8, Rate: 8000}); err == nil {
+	if _, err := Create(path, Layout{Format: pcm.I8, Rate: 8000}); err == nil {
 		t.Fatal("Create accepted I8 in a WAV")
 	}
 	if b, _ := os.ReadFile(path); string(b) != "keep" {
@@ -515,14 +518,14 @@ func TestWriterRejectsBadOptions(t *testing.T) {
 
 func TestWriterMethodErrors(t *testing.T) {
 	stereo := func() *Writer {
-		w, err := NewWriter(io.Discard, WriterOptions{Format: pcm.I16LE, Rate: 8000, Channels: 2})
+		w, err := NewWriter(io.Discard, Layout{Format: pcm.I16LE, Rate: 8000, Channels: 2})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return w
 	}
 	iq := func() *Writer {
-		w, err := NewWriter(io.Discard, WriterOptions{Format: pcm.I16LE, Rate: 8000, IQ: true})
+		w, err := NewWriter(io.Discard, Layout{Format: pcm.I16LE, Rate: 8000, IQ: true})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -589,7 +592,7 @@ func (f *failAfter) Write(p []byte) (int, error) {
 // TestWriterStickyError checks that a destination's error is returned by the
 // write that met it and by every call after.
 func TestWriterStickyError(t *testing.T) {
-	w, err := NewWriter(&failAfter{n: 1000}, WriterOptions{Format: pcm.I16LE, Rate: 8000})
+	w, err := NewWriter(&failAfter{n: 1000}, Layout{Format: pcm.I16LE, Rate: 8000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -612,7 +615,7 @@ func TestWriterStickyError(t *testing.T) {
 // TestWriterFlush checks that Flush hands a live consumer everything so far.
 func TestWriterFlush(t *testing.T) {
 	var pipe bytes.Buffer
-	w, err := NewWriter(&pipe, WriterOptions{Format: pcm.U8, Rate: 8000})
+	w, err := NewWriter(&pipe, Layout{Format: pcm.U8, Rate: 8000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -625,7 +628,7 @@ func TestWriterFlush(t *testing.T) {
 	if err := w.Flush(); err != nil {
 		t.Fatal(err)
 	}
-	r, err := NewReader(bytes.NewReader(pipe.Bytes()), Options{})
+	r, err := NewReader(bytes.NewReader(pipe.Bytes()), Layout{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -650,7 +653,7 @@ func TestCreateStdout(t *testing.T) {
 	os.Stdout = f
 	defer func() { os.Stdout = saved }()
 
-	w, err := Create("-", WriterOptions{Format: pcm.I16LE, Rate: 8000})
+	w, err := Create("-", Layout{Format: pcm.I16LE, Rate: 8000})
 	os.Stdout = saved
 	if err != nil {
 		t.Fatal(err)
@@ -664,7 +667,7 @@ func TestCreateStdout(t *testing.T) {
 	if _, err := f.Stat(); err != nil {
 		t.Fatalf("standard output was closed: %v", err)
 	}
-	r, err := Open(f.Name(), Options{})
+	r, err := Open(f.Name(), Layout{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -695,8 +698,8 @@ func FuzzWriteRead(f *testing.F) {
 			}
 		}
 		l := Layout{Format: fm, Rate: 8000, Channels: ch, Container: WAV}
-		raw := writeAll(t, WriterOptions{Layout: l}, seek, func(w *Writer) (int, error) { return w.WritePlanar(planes) })
-		r, err := NewReader(bytes.NewReader(raw), Options{})
+		raw := writeAll(t, l, seek, func(w *Writer) (int, error) { return w.WritePlanar(planes) })
+		r, err := NewReader(bytes.NewReader(raw), Layout{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -721,7 +724,7 @@ func TestG711Transcode(t *testing.T) {
 		}
 		pcm.Decode(codes, all, f)
 
-		file := writeAll(t, WriterOptions{Layout: l}, true, func(w *Writer) (int, error) { return w.WriteSamples(codes) })
+		file := writeAll(t, l, true, func(w *Writer) (int, error) { return w.WriteSamples(codes) })
 		at := bytes.Index(file, []byte("data")) + 8
 		want := bytes.Clone(all)
 		if f == pcm.MuLaw {
@@ -731,21 +734,21 @@ func TestG711Transcode(t *testing.T) {
 			t.Fatalf("%v: the codes were written as % x", f, file[at:at+256])
 		}
 
-		r, err := NewReader(bytes.NewReader(file), Options{})
+		r, err := NewReader(bytes.NewReader(file), Layout{})
 		if err != nil {
 			t.Fatal(err)
 		}
 		linear := l
 		linear.Format = pcm.I16LE
-		wide := writeAll(t, WriterOptions{Layout: linear}, true, func(w *Writer) (int, error) {
+		wide := writeAll(t, linear, true, func(w *Writer) (int, error) {
 			return w.WriteSamples(drain[float32](t, r, 100))
 		})
 
-		r, err = NewReader(bytes.NewReader(wide), Options{})
+		r, err = NewReader(bytes.NewReader(wide), Layout{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		back := writeAll(t, WriterOptions{Layout: l}, true, func(w *Writer) (int, error) {
+		back := writeAll(t, l, true, func(w *Writer) (int, error) {
 			return w.WriteSamples(drain[float32](t, r, 100))
 		})
 		if !bytes.Equal(back, file) {
@@ -759,7 +762,7 @@ func TestG711Transcode(t *testing.T) {
 // leaves what came before it alone.
 func TestWriterAtOffset(t *testing.T) {
 	sb := &seekBuffer{b: []byte("xyz"), off: 3}
-	w, err := NewWriter(sb, WriterOptions{Format: pcm.MuLaw, Rate: 8000})
+	w, err := NewWriter(sb, Layout{Format: pcm.MuLaw, Rate: 8000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -776,7 +779,7 @@ func TestWriterAtOffset(t *testing.T) {
 	if got := binary.LittleEndian.Uint32(sb.b[3+4:]); int(got) != len(sb.b)-3-8 {
 		t.Errorf("RIFF size %d, want %d", got, len(sb.b)-3-8)
 	}
-	r, err := NewReader(bytes.NewReader(sb.b[3:]), Options{})
+	r, err := NewReader(bytes.NewReader(sb.b[3:]), Layout{})
 	if err != nil {
 		t.Fatal(err)
 	}

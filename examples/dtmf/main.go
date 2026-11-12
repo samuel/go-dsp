@@ -43,7 +43,7 @@ func run() error {
 	}
 	// A WAV carries its own rate and encoding, so these are overrides for it and
 	// requirements for a headerless stream.
-	rd, err := sampleio.Open(path, sampleio.Options{Format: format, Rate: *flagSampleRate})
+	rd, err := sampleio.Open(path, sampleio.Layout{Format: format, Rate: *flagSampleRate})
 	if err != nil {
 		return err
 	}

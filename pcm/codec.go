@@ -5,19 +5,24 @@ import (
 	"samuelks.com/dsp/internal/view"
 )
 
-// Decode fills dst with samples of format f from the front of src, at full
-// scale, and returns how many it wrote: min(len(dst), len(src)/size), where
-// size is f.Width() for a real T and twice that for a complex one, which reads
-// interleaved I/Q pairs. A trailing partial sample in src is left alone, and an
-// invalid f decodes nothing.
+// Decode converts the bytes of src, in format f, to full-scale samples in dst.
+// It returns the number of samples it wrote, which is
+// min(len(dst), len(src)/size). size is f.Width() when T is real and twice
+// that when T is complex, since a complex sample is read as an I value then a
+// Q value. Bytes at the end of src that do not make a whole sample are
+// ignored. A format that is not valid decodes nothing.
 //
-// An integer sample is divided by 2^(bits-1), so the most negative code is
-// exactly -1 and the most positive one step short of +1: [-1, 1), except that
-// I32 into float32 rounds its top codes up to exactly 1. The divisor is a
-// power of two, so the result is exact wherever T can hold it, and the same on
-// every architecture. U8 has its bias of 128 removed first. A float format
-// passes through unscaled, widened or narrowed to T. A G.711 code expands to
-// its level on the 16-bit scale, which is exact and stops short of full scale.
+// How a sample is converted depends on the format:
+//
+//   - An integer is divided by 2^(bits-1), after 128 is subtracted from a U8.
+//     The most negative code gives exactly -1 and the most positive gives one
+//     step less than 1. The division is by a power of two, so the result is
+//     exact whenever T can hold it, and is the same on every architecture. The
+//     one case that reaches 1 is I32 into float32, where the largest codes
+//     round up to it.
+//   - A float is not scaled. It is widened or narrowed to T.
+//   - A G.711 code gives its level on the 16-bit scale divided by 2^15, which
+//     is exact. The largest level is below full scale.
 func Decode[T dsp.Sample](dst []T, src []byte, f Format) int {
 	switch d := any(dst).(type) {
 	case []float32:
@@ -35,17 +40,25 @@ func Decode[T dsp.Sample](dst []T, src []byte, f Format) int {
 	}
 }
 
-// Encode writes the samples of src into dst in format f and returns how many
-// it wrote: min(len(dst)/size, len(src)), with size as for Decode. Bytes of dst
-// past the last whole sample are left alone, and an invalid f encodes nothing.
+// Encode converts the full-scale samples of src to bytes in dst, in format f.
+// It returns the number of samples it wrote, which is
+// min(len(dst)/size, len(src)), with size as for Decode. Bytes of dst after
+// the last whole sample are not changed. A format that is not valid encodes
+// nothing.
 //
-// An integer format takes each sample times 2^(bits-1), rounded to nearest
-// even, clipped to the format's range, with NaN giving zero: +1.0 gives the top
-// code, and Encode(Decode(b)) is b for every integer code. A float format
-// passes the sample through, widened or rounded to nearest even, with no clip
-// and NaN kept. A G.711 format rounds to 16 bits the same way and takes the
-// code of the step that holds the result, so Encode(Decode(b)) is b for every
-// code but mu-law's negative zero, 0x7f, which comes back as 0xff.
+// How a sample is converted depends on the format:
+//
+//   - For an integer format the sample is multiplied by 2^(bits-1), rounded to
+//     the nearest integer with ties to even, and clipped to the format's
+//     range. NaN gives zero. A sample of 1 or more gives the largest code.
+//   - For a float format the sample is not scaled or clipped, and NaN stays
+//     NaN. A float64 written as F32 is rounded to nearest even.
+//   - For a G.711 format the sample is rounded to 16 bits as for I16, and the
+//     result is given the code of the G.711 step it falls in.
+//
+// Decoding bytes and encoding the result gives back the same bytes for every
+// integer code, and for every G.711 code except mu-law's negative zero, 0x7f,
+// which comes back as 0xff.
 func Encode[T dsp.Sample](dst []byte, src []T, f Format) int {
 	switch s := any(src).(type) {
 	case []float32:
@@ -63,8 +76,9 @@ func Encode[T dsp.Sample](dst []byte, src []T, f Format) int {
 	}
 }
 
-// reverseBlock is the stack buffer a big-endian format's bytes are reversed
-// through, in front of the little-endian kernel.
+// reverseBlock is the size of the stack buffer used for a big-endian format.
+// Each sample's bytes are reversed into or out of it, so that the kernel only
+// sees little-endian samples.
 const reverseBlock = 4096
 
 func decode[F float](dst []F, src []byte, f Format, kernel func([]F, []byte)) int {
@@ -121,8 +135,9 @@ func reverseInto(dst, src []byte, n, width int) {
 	}
 }
 
-// bigEndian reports whether f's samples are stored most significant byte
-// first, and so need reversing around the little-endian kernel.
+// bigEndian reports whether f stores the most significant byte of a sample
+// first. Such a format has its bytes reversed around the little-endian
+// kernel.
 func (f Format) bigEndian() bool {
 	switch f {
 	case I16BE, I24BE, I32BE, F32BE, F64BE:
@@ -131,8 +146,8 @@ func (f Format) bigEndian() bool {
 	return false
 }
 
-// The kernel of each format's element type, ignoring byte order. Nil for an
-// invalid format.
+// The four functions below return the kernel for a format. Both byte orders
+// share the little-endian kernel. A format that is not valid returns nil.
 
 func decoderF32(f Format) func([]float32, []byte) {
 	switch f {

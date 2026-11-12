@@ -12,7 +12,7 @@ import (
 	"samuelks.com/dsp/riff"
 )
 
-// WAV format tags. Anything else is a codec this package does not decode.
+// WAV format tags. A file with any other tag is not decoded.
 const (
 	wavPCM        = 0x0001
 	wavFloat      = 0x0003
@@ -28,20 +28,20 @@ const (
 	fmtExtSize = 40
 )
 
-// ds64Size is the payload of RF64's ds64 chunk with no table: the RIFF, data
-// and frame counts at 64 bits and a zero table length. A Writer reserves it as
-// a JUNK chunk of the same size.
+// ds64Size is the size of the data in RF64's ds64 chunk when it has no table:
+// three 64-bit sizes (RIFF, data, frames) and a zero table length. A Writer
+// reserves the space with a JUNK chunk of this size.
 const ds64Size = 28
 
-// Limits on the chunks a Reader keeps for Chunks. The sizes come from the
-// file, so neither one chunk nor the sum of them is trusted.
+// Limits on the chunks a Reader keeps for Chunks. Chunk sizes come from the
+// file and may be wrong or hostile, so both one chunk and the total are capped.
 const (
 	maxChunkSize  = 1 << 20
 	maxChunkTotal = 4 << 20
 )
 
-// Speaker positions for a ChannelMask, one bit each, in the order channels are
-// interleaved.
+// Speaker positions for Layout.ChannelMask, one bit each. Channels are
+// interleaved in the order of the bits that are set.
 const (
 	SpeakerFrontLeft uint32 = 1 << iota
 	SpeakerFrontRight
@@ -78,13 +78,13 @@ var (
 	fourJUNK = riff.NewFourCC("JUNK")
 )
 
-// ksSuffix is the fixed tail of a KSDATAFORMAT_SUBTYPE GUID. The first two
-// bytes carry the real format tag; a GUID that does not end this way is a codec
-// of its own, not a PCM tag in disguise.
+// ksSuffix is the last 14 bytes of a KSDATAFORMAT_SUBTYPE GUID, whose first
+// two bytes are an ordinary format tag. A GUID with a different ending names
+// some other codec.
 var ksSuffix = [14]byte{0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}
 
-// Chunk is a chunk of a WAV file other than the format and the samples, such
-// as LIST, bext or cue.
+// Chunk is a chunk of a WAV file that is neither the format nor the samples,
+// such as LIST, bext or cue.
 type Chunk struct {
 	ID riff.FourCC
 
@@ -92,12 +92,12 @@ type Chunk struct {
 	Size uint32
 
 	// Data is the chunk's contents, or nil when the chunk was too large to
-	// keep and was skipped unread.
+	// keep and was skipped.
 	Data []byte
 }
 
-// wavFmt is a WAV format chunk, shared by the Reader and the Writer. An
-// extensible chunk is held as the tag its SubFormat GUID names.
+// wavFmt is a WAV format chunk, used by both the Reader and the Writer. For
+// an extensible chunk, tag is the one its SubFormat GUID names.
 type wavFmt struct {
 	tag       uint16
 	channels  int
@@ -110,18 +110,18 @@ type wavFmt struct {
 // blockAlign is the size of one frame in bytes.
 func (f wavFmt) blockAlign() int { return f.channels * f.bits / 8 }
 
-// extensible reports whether the format needs WAVE_FORMAT_EXTENSIBLE to be
-// described: more than two channels, a speaker mask, fewer valid bits than the
-// container holds, or PCM wider than 16 bits.
+// extensible reports whether the format needs a WAVE_FORMAT_EXTENSIBLE chunk.
+// It does when it has more than two channels, a speaker mask, fewer valid bits
+// than container bits, or PCM wider than 16 bits.
 func (f wavFmt) extensible() bool {
 	return f.channels > 2 || f.mask != 0 ||
 		(f.validBits != 0 && f.validBits != f.bits) ||
 		(f.tag == wavPCM && f.bits > 16)
 }
 
-// marshal encodes the format chunk: 16 bytes for PCM, 18 for another plain
-// format, which carries an empty extension, and 40 for an extensible one. An
-// extensible mono or stereo chunk with no mask gets the usual one.
+// marshal encodes the format chunk. It is 16 bytes for PCM, 18 for any other
+// plain format (which has an empty extension) and 40 for an extensible one. An
+// extensible mono or stereo chunk with no mask is given the usual mask.
 func (f wavFmt) marshal() []byte {
 	le := binary.LittleEndian
 	tag := f.tag
@@ -162,7 +162,7 @@ func (f wavFmt) marshal() []byte {
 	return b
 }
 
-// wavHeader is what a WAV says about itself.
+// wavHeader is what was read from a WAV header.
 type wavHeader struct {
 	wavFmt
 	format    pcm.Format
@@ -171,12 +171,12 @@ type wavHeader struct {
 	notes     []string
 }
 
-// sniffWAV looks for a WAV header at the front of the stream.
+// sniffWAV looks for a WAV header at the start of the stream and parses it.
 //
-// It returns nil without consuming anything if the stream does not start with
-// one, so the caller can fall back to reading it raw; that is why it takes a
-// pointer, because the bufio.Reader it wraps the source in must outlive the
-// call for the buffered bytes not to be lost.
+// It returns nil when the stream does not start with one, so the caller can
+// read the stream as raw samples. Looking ahead needs a bufio.Reader, and the
+// bytes it has buffered must not be lost, so sniffWAV replaces *src with that
+// reader.
 func sniffWAV(src *io.Reader) (*wavHeader, error) {
 	br, ok := (*src).(*bufio.Reader)
 	if !ok {
@@ -187,8 +187,8 @@ func sniffWAV(src *io.Reader) (*wavHeader, error) {
 	magic, err := br.Peek(4)
 	if err != nil {
 		if errors.Is(err, io.EOF) {
-			// Too short to be a WAV. Whether it is a valid raw stream is the
-			// caller's question, not this one's.
+			// Too short to be a WAV. The caller decides whether it is a
+			// valid raw stream.
 			return nil, nil
 		}
 		return nil, err
@@ -201,8 +201,8 @@ func sniffWAV(src *io.Reader) (*wavHeader, error) {
 	return readWAVHeader(br)
 }
 
-// readWAVHeader walks the chunks up to the data chunk and leaves the reader
-// positioned at the first sample byte.
+// readWAVHeader reads the chunks up to the data chunk and leaves the reader
+// at the first sample byte.
 func readWAVHeader(r io.Reader) (*wavHeader, error) {
 	rr, err := riff.New(r)
 	if err != nil {
@@ -211,9 +211,9 @@ func readWAVHeader(r io.Reader) (*wavHeader, error) {
 	if rr.FormType != fourWAVE {
 		return nil, fmt.Errorf("sampleio: %q is a RIFF file but not a WAVE", rr.FormType)
 	}
-	// The container size is the first thing a streaming writer gets wrong, and
-	// nothing here depends on it: the walk stops at the data chunk, whose own
-	// size the Reader checks against the file.
+	// The container's size is ignored. A streaming writer often gets it
+	// wrong, and it is not needed: the walk stops at the data chunk, and the
+	// Reader checks that chunk's size against the file.
 	rr.IgnoreSize = true
 	rr.AllowUnsizedChunk = fourData
 
@@ -234,9 +234,10 @@ func readWAVHeader(r io.Reader) (*wavHeader, error) {
 			if !haveFmt {
 				return nil, errors.New("sampleio: the data chunk comes before the format chunk")
 			}
-			// The size is the next thing a streaming writer cannot know, so
-			// three values all mean "to the end of the file": the placeholder a
-			// pipe leaves, a zero, and RF64's 32-bit field that ds64 replaces.
+			// A streaming writer does not know this size either. Three
+			// values mean "to the end of the file": the all-ones placeholder,
+			// zero, and the all-ones field of an RF64 whose real size is in
+			// ds64.
 			switch {
 			case rr.RF64 && ds64Data >= 0:
 				h.dataBytes = ds64Data
@@ -264,7 +265,7 @@ func readWAVHeader(r io.Reader) (*wavHeader, error) {
 			haveFmt = true
 
 		case fourDS64:
-			// RF64's 64-bit sizes, which stand in for the 32-bit ones.
+			// RF64's 64-bit sizes, which replace the 32-bit ones.
 			var b [ds64Size]byte
 			n, err := chunkHead(c, b[:])
 			if err != nil {
@@ -275,8 +276,8 @@ func readWAVHeader(r io.Reader) (*wavHeader, error) {
 			}
 
 		default:
-			// LIST, fact, PEAK, bext, id3 and whatever else; unknown is not the
-			// same as wrong.
+			// Any other chunk, such as LIST, fact, PEAK, bext or id3, is kept
+			// for Chunks.
 			ch := Chunk{ID: c.ID, Size: c.Size}
 			if size := int64(c.Size); size <= maxChunkSize && kept+size <= maxChunkTotal {
 				if ch.Data, err = c.Bytes(maxChunkSize); err != nil {
@@ -289,14 +290,14 @@ func readWAVHeader(r io.Reader) (*wavHeader, error) {
 	}
 }
 
-// chunkHead reads as much of the front of a chunk as b holds and returns the
-// count. The rest of the chunk is left for the walk to skip.
+// chunkHead reads the start of a chunk into b and returns how many bytes it
+// read. The walk skips the rest of the chunk.
 func chunkHead(c *riff.Chunk, b []byte) (int, error) {
 	n := int(min(int64(c.Size), int64(len(b))))
 	return io.ReadFull(c, b[:n])
 }
 
-// headerErr describes a failure of the chunk walk.
+// headerErr wraps an error from reading the header's chunks.
 func headerErr(err error) error {
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		return errors.New("sampleio: the file ended before its data chunk")
@@ -304,7 +305,7 @@ func headerErr(err error) error {
 	return fmt.Errorf("sampleio: reading the WAV header: %w", err)
 }
 
-// parseFmt reads a format chunk, of which b is at most the first 40 bytes.
+// parseFmt parses a format chunk. b holds up to its first 40 bytes.
 func (h *wavHeader) parseFmt(b []byte) error {
 	le := binary.LittleEndian
 	f := wavFmt{
@@ -324,8 +325,8 @@ func (h *wavHeader) parseFmt(b []byte) error {
 			return fmt.Errorf("sampleio: an extensible format chunk needs 22 extra bytes and declares %d", cbSize)
 		}
 		if v := int(le.Uint16(b[18:20])); v > 0 && v < f.bits {
-			// The sample is left-justified in its container, so the container's
-			// width is still what full scale is measured against.
+			// The valid bits are the high bits of the container, so full
+			// scale is still that of the container's width.
 			f.validBits = v
 		}
 		f.mask = le.Uint32(b[20:24])
@@ -354,23 +355,21 @@ func (h *wavHeader) parseFmt(b []byte) error {
 	h.format = format
 
 	if want := f.blockAlign(); blockAlign != want {
-		// Some writers get block alignment wrong and lay the samples out
-		// correctly anyway, so believe the arithmetic and say what was ignored.
+		// Some writers state the wrong block alignment but lay the samples
+		// out correctly. Use the computed value and note the one ignored.
 		h.notes = append(h.notes, fmt.Sprintf(
 			"the header says a block of %d bytes; %d channels of %d bits is %d", blockAlign, f.channels, f.bits, want))
 	}
 	return nil
 }
 
-// wavFormat maps a tag and a width to an encoding. RIFF is little-endian, so
-// nothing here can be big-endian.
+// wavFormat returns the encoding for a format tag and sample width. RIFF is
+// little-endian, so the result is never a big-endian format.
 func wavFormat(tag uint16, bits int) (pcm.Format, error) {
 	switch tag {
 	case wavPCM:
 		switch bits {
-		// 8-bit WAV PCM is unsigned, every wider width signed. It is a wart in
-		// the format, and the reason an 8-bit file read as signed looks
-		// inverted.
+		// WAV PCM is unsigned at 8 bits and signed at every wider width.
 		case 8:
 			return pcm.U8, nil
 		case 16:
@@ -406,7 +405,7 @@ func wavFormat(tag uint16, bits int) (pcm.Format, error) {
 	return 0, fmt.Errorf("sampleio: WAV format tag %#04x is a codec this package does not decode", tag)
 }
 
-// wavTag is the format tag a WAV gives an encoding it can hold.
+// wavTag returns the WAV format tag for an encoding.
 func wavTag(f pcm.Format) uint16 {
 	switch {
 	case f == pcm.ALaw:
@@ -419,8 +418,8 @@ func wavTag(f pcm.Format) uint16 {
 	return wavPCM
 }
 
-// wavLayout is where the fields a Writer patches on Close sit in the header it
-// wrote. junk and fact are -1 when the header has no such chunk.
+// wavLayout holds the offsets of the header fields a Writer fills in on
+// Close. junk and fact are -1 when the header has no such chunk.
 type wavLayout struct {
 	size int // header bytes, up to the first sample
 	junk int // the JUNK chunk's id
@@ -428,19 +427,20 @@ type wavLayout struct {
 	data int // the data chunk's size
 }
 
-// wavHeaderBytes builds a WAV header with the placeholder sizes a pipe reader
-// expects, and a JUNK chunk to become ds64 when junk is set.
+// wavHeaderBytes builds a WAV header with placeholder sizes. When junk is set
+// it includes a JUNK chunk that Close can turn into ds64.
 //
-// U8 and I16 with one or two channels and no mask get the plain PCM chunk,
-// I24, I32, more than two channels and a mask WAVE_FORMAT_EXTENSIBLE, and a
-// float or G.711 format its own tag, or the extensible subtype of it, with the
-// fact chunk every format but PCM requires.
+// The format chunk is plain PCM for U8 and I16 with one or two channels and
+// no mask. I24, I32, more than two channels or a mask make it extensible. A
+// float or G.711 format uses its own tag, or the extensible form of it, and
+// gets the fact chunk that every format but PCM requires.
 func wavHeaderBytes(f pcm.Format, channels int, rate, mask uint32, junk bool) ([]byte, wavLayout, error) {
 	l := wavLayout{junk: -1, fact: -1}
 	wf := wavFmt{tag: wavTag(f), channels: channels, rate: rate, bits: f.Width() * 8, mask: mask}
 
-	// A buffer cannot seek, so riff leaves the container and data sizes as the
-	// placeholders, which is the header a pipe gets. Close patches a file.
+	// The header is built in a buffer, which cannot seek, so riff leaves the
+	// container and data sizes as placeholders. Close fills them in for a
+	// file.
 	var b bytes.Buffer
 	w, err := riff.NewWriter(&b, fourWAVE)
 	if err != nil {

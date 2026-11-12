@@ -59,7 +59,7 @@ func TestOpenWAVFixtures(t *testing.T) {
 		{"tone-mulaw.wav", pcm.MuLaw, 8, 1, 512.0 / 32768 / 3},
 	} {
 		t.Run(tc.file, func(t *testing.T) {
-			r, err := Open(filepath.Join("testdata", tc.file), Options{})
+			r, err := Open(filepath.Join("testdata", tc.file), Layout{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -106,54 +106,38 @@ func TestOpenWAVFixtures(t *testing.T) {
 }
 
 // TestOpenWAVChannelSelection uses the stereo fixture, whose right channel is
-// the negation of its left to within the rounding sox did on the way to 16 bits,
-// so a mixdown is silence to within half a code.
+// the negation of its left to within the rounding sox did on the way to 16
+// bits.
 func TestOpenWAVChannelSelection(t *testing.T) {
 	path := filepath.Join("testdata", "stereo-i16le.wav")
 	want := fixtureTone()
 
-	for _, tc := range []struct {
-		name string
-		pick Channel
-		sign float64
-		zero bool
-	}{
-		{"left", 0, 1, false},
-		{"right", 1, -1, false},
-		{"mix", MixChannels, 0, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			r, err := Open(path, Options{Channel: tc.pick})
-			if err != nil {
-				t.Fatal(err)
+	for c, sign := range []float64{1, -1} {
+		r, err := Open(path, Layout{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := drainPlane[float64](t, r, 2, c, 16)
+		if err := r.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != fixFrames {
+			t.Fatalf("channel %d: read %d frames, want %d", c, len(got), fixFrames)
+		}
+		for i := range got {
+			// The generator negates in float64 and sox rounds each channel
+			// on its own, so the two can disagree by a code.
+			// TestOpenWAVPlanar measures that directly.
+			if math.Abs(got[i]-sign*want[i]) > 3.0/32768 {
+				t.Errorf("channel %d frame %d = %v, want %v", c, i, got[i], sign*want[i])
+				break
 			}
-			defer r.Close() //nolint:errcheck // a file opened for reading has no close error a test could act on
-			got := readAll(t, r, 16)
-			if len(got) != fixFrames {
-				t.Fatalf("read %d frames, want %d", len(got), fixFrames)
-			}
-			for i := range got {
-				expect := tc.sign * want[i]
-				if tc.zero {
-					expect = 0
-				}
-				// The tolerance is a code or two rather than a fudge factor:
-				// the generator negates in float64 and sox rounds the pair
-				// independently on the way to 16 bits, so the two channels
-				// disagree by at most one code and the mixdown by half of one.
-				// TestOpenWAVPlanar measures that directly.
-				if math.Abs(got[i]-expect) > 3.0/32768 {
-					t.Errorf("frame %d = %v, want %v", i, got[i], expect)
-					break
-				}
-			}
-		})
+		}
 	}
 }
 
-// TestOpenWAVPlanar reads the stereo fixture through the planar path and checks
-// it against a Reader per channel, exactly. The two decode the same bytes with
-// the same arithmetic, so any difference is a bug rather than rounding.
+// TestOpenWAVPlanar reads the stereo fixture with both planes present and
+// checks it against a read of each channel alone, exactly.
 //
 // It also measures how far the fixture's channels are from exact negations:
 // sox rounds each channel independently on the way to 16 bits, so half the
@@ -164,17 +148,17 @@ func TestOpenWAVPlanar(t *testing.T) {
 
 	want := make([][]float64, 2)
 	for c := range want {
-		r, err := Open(path, Options{Channel: Channel(c)})
+		r, err := Open(path, Layout{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		want[c] = readAll(t, r, 16)
+		want[c] = drainPlane[float64](t, r, 2, c, 16)
 		if err := r.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	r, err := Open(path, Options{})
+	r, err := Open(path, Layout{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +192,7 @@ func TestOpenWAVPlanar(t *testing.T) {
 
 // TestOpenWAVRateOverride records rather than hides a disagreement.
 func TestOpenWAVRateOverride(t *testing.T) {
-	r, err := Open(filepath.Join("testdata", "tone-i16le.wav"), Options{Rate: 44100})
+	r, err := Open(filepath.Join("testdata", "tone-i16le.wav"), Layout{Rate: 44100})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +209,7 @@ func TestOpenWAVRateOverride(t *testing.T) {
 // TestOpenWAVAsRaw is the escape hatch for a file whose header is wrong: the
 // header bytes come through as samples, so there are more of them.
 func TestOpenWAVAsRaw(t *testing.T) {
-	r, err := Open(filepath.Join("testdata", "tone-i16le.wav"), Options{
+	r, err := Open(filepath.Join("testdata", "tone-i16le.wav"), Layout{
 		Container: Raw, Format: pcm.I16LE, Rate: 8000,
 	})
 	if err != nil {
@@ -390,7 +374,7 @@ func TestWAVMalformed(t *testing.T) {
 			len(payload)+8+20), true, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			r, err := NewReader(bytes.NewReader(tc.in), Options{})
+			r, err := NewReader(bytes.NewReader(tc.in), Layout{})
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("accepted a malformed file; Info = %+v", r.Info())
@@ -464,7 +448,7 @@ func TestWAVTrailingChunks(t *testing.T) {
 	if err := os.WriteFile(path, raw, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	r, err := Open(path, Options{})
+	r, err := Open(path, Layout{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -477,7 +461,7 @@ func TestWAVTrailingChunks(t *testing.T) {
 	}
 
 	// The bound applies to a pipe too, where the length is not reported.
-	sr, err := NewReader(bytes.NewReader(raw), Options{})
+	sr, err := NewReader(bytes.NewReader(raw), Layout{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -494,7 +478,7 @@ func TestWAVStreamLengthIsNotAGuess(t *testing.T) {
 	payload := i16(0.5, -0.5, 0.25, -0.25)
 	raw := wav(pcmFmt(wavPCM, 1, 8000, 16), 0x3ffff800, payload)
 
-	r, err := NewReader(bytes.NewReader(raw), Options{})
+	r, err := NewReader(bytes.NewReader(raw), Layout{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -503,15 +487,6 @@ func TestWAVStreamLengthIsNotAGuess(t *testing.T) {
 	}
 	if got := len(readAll(t, r, 3)); got != 4 {
 		t.Errorf("read %d frames, want the 4 that are there", got)
-	}
-
-	// A caller's own Limit needs no checking, so it is reported.
-	lim, err := NewReader(bytes.NewReader(raw), Options{Limit: 3})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := lim.Info().Frames; got != 3 {
-		t.Errorf("Frames = %d, want the caller's own limit of 3", got)
 	}
 }
 
@@ -522,7 +497,7 @@ func TestWAVFramesIsWhatComesOut(t *testing.T) {
 		"tone-u8.wav", "tone-i16le.wav", "tone-i24le.wav", "tone-i32le.wav",
 		"tone-f32le.wav", "tone-f64le.wav", "tone-rf64.wav", "stereo-i16le.wav",
 	} {
-		r, err := Open(filepath.Join("testdata", name), Options{})
+		r, err := Open(filepath.Join("testdata", name), Layout{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -544,7 +519,7 @@ func TestWAVDataSizePastTheEnd(t *testing.T) {
 	if err := os.WriteFile(path, wav(pcmFmt(wavPCM, 1, 8000, 16), 1<<20, payload), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	r, err := Open(path, Options{})
+	r, err := Open(path, Layout{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -572,7 +547,7 @@ func TestWAVExtensibleFromSox(t *testing.T) {
 		if tag := binary.LittleEndian.Uint16(raw[20:22]); tag != wavExtensible {
 			t.Fatalf("%s has tag %#04x; the fixture is meant to be extensible", name, tag)
 		}
-		if _, err := NewReader(bytes.NewReader(raw), Options{}); err != nil {
+		if _, err := NewReader(bytes.NewReader(raw), Layout{}); err != nil {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
@@ -582,7 +557,7 @@ func TestWAVExtensibleFromSox(t *testing.T) {
 // that is not a WAV must be readable as raw with nothing consumed.
 func TestSniffFallsBackToRaw(t *testing.T) {
 	raw := i16(0.5, -0.5, 0.25)
-	r, err := NewReader(bytes.NewReader(raw), Options{Format: pcm.I16LE, Rate: 8000})
+	r, err := NewReader(bytes.NewReader(raw), Layout{Format: pcm.I16LE, Rate: 8000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -592,7 +567,7 @@ func TestSniffFallsBackToRaw(t *testing.T) {
 	}
 
 	// Shorter than the four magic bytes.
-	short, err := NewReader(bytes.NewReader([]byte{1, 2}), Options{Format: pcm.I8, Rate: 8000})
+	short, err := NewReader(bytes.NewReader([]byte{1, 2}), Layout{Format: pcm.I8, Rate: 8000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -622,7 +597,7 @@ func FuzzReadWAVHeader(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, in []byte) {
-		r, err := NewReader(bytes.NewReader(in), Options{})
+		r, err := NewReader(bytes.NewReader(in), Layout{})
 		if err != nil {
 			return
 		}

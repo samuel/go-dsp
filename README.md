@@ -187,7 +187,7 @@ exactly -1 (full scale is `2^(bits-1)`); float samples pass through, and a
 G.711 A-law or mu-law WAV decodes to its levels on the 16-bit scale.
 
 ```go
-rd, err := sampleio.Open("fm.wav", sampleio.Options{})
+rd, err := sampleio.Open("fm.wav", sampleio.Layout{})
 defer rd.Close()
 samples := make([]float64, 4096)
 for {
@@ -203,20 +203,28 @@ An rtl-sdr `cu8` I/Q capture:
 
 ```go
 f, iq, err := sampleio.ParseFormatSpec("cu8") // rtl-sdr: u8 with IQ set
-rd, err := sampleio.Open("iq.raw", sampleio.Options{Format: f, IQ: iq, Rate: 2_500_000})
+rd, err := sampleio.Open("iq.raw", sampleio.Layout{Format: f, IQ: iq, Rate: 2_500_000})
 ```
 
-`ReadSamples` decodes straight to the width of the slice it is handed: real for
-a real stream, complex for an I/Q one. Read every channel, or every I/Q pair,
-at once with `ReadPlanar`, which decodes the interleaved run once and splits it
-in a single pass. `Info` reports the stream's `Layout` (format, rate,
-channels, I/Q and `Container`), the same struct `Options` takes.
+`ReadSamples` reads a stream of one channel or one I/Q pair, and decodes
+straight to the type of the slice it is given: real for a real stream, complex
+for an I/Q one. A stream with more channels is read with `ReadPlanar`, one
+slice per channel or I/Q pair. A nil slice skips that channel:
 
-A Reader over a file or any other `io.ReadSeeker` jumps to a frame with
-`SeekFrame`, counted from `Options.Skip` and bounded by `Options.Limit`. For a
-WAV, `Chunks` returns the chunks ahead of the samples (`LIST`, `bext`, `cue `,
-...), up to 1 MiB each and 4 MiB in total, and `Info().ChannelMask` the speaker
-assignment.
+```go
+right := make([]float32, 4096)
+n, err := rd.ReadPlanar([][]float32{nil, right}) // channel 1 of a stereo file
+```
+
+`Open` takes a `Layout` (format, rate, channels, I/Q, `Container` and speaker
+mask), and `Info` reports the one in use. The zero `Layout` is enough for a
+WAV.
+
+`Skip` moves forward a number of frames on any source, seeking when it can and
+reading past them when it cannot. `SeekFrame` jumps to a frame of a file or any
+other `io.ReadSeeker`. For a WAV, `Chunks` returns the chunks ahead of the
+samples (`LIST`, `bext`, `cue `, ...), up to 1 MiB each and 4 MiB in total, and
+`Info().ChannelMask` the speaker assignment.
 
 ### Writing a capture
 
@@ -225,17 +233,17 @@ RF64 past 4 GiB, or a headerless stream. `Close` fills in the WAV sizes when
 the destination can seek; a WAV down a pipe keeps the streaming placeholders.
 
 ```go
-w, err := sampleio.Create("out.wav", sampleio.WriterOptions{
+w, err := sampleio.Create("out.wav", sampleio.Layout{
     Format: pcm.I16LE, Rate: 48000, Channels: 2,
 })
 _, err = w.WritePlanar([][]float32{left, right})
 err = w.Close()
 ```
 
-Writing with a Reader's `Info().Layout` reproduces a capture's shape. An
-integer sample past full scale is clipped, and `Info` records a Note the first
-time. `WriterOptions.ChannelMask` sets a WAV's speaker assignment from the
-`Speaker` constants. `Format: pcm.ALaw` or `pcm.MuLaw` writes G.711, as a WAV
+Writing with a Reader's `Info().Layout` reproduces a capture's shape, speaker
+mask included. An integer sample past full scale is clipped, and `Info` records
+a Note the first time. `Layout.ChannelMask` sets a WAV's speaker assignment
+from the `Speaker` constants. `Format: pcm.ALaw` or `pcm.MuLaw` writes G.711, as a WAV
 or as the headerless `.al`/`.ul` stream.
 
 ### RIFF containers

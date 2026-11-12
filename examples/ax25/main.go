@@ -50,7 +50,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	rd, err := sampleio.Open(path, sampleio.Options{Format: format, Rate: *flagSampleRate})
+	rd, err := sampleio.Open(path, sampleio.Layout{Format: format, Rate: *flagSampleRate})
 	if err != nil {
 		return err
 	}

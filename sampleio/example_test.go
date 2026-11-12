@@ -12,16 +12,16 @@ import (
 	"samuelks.com/dsp/sampleio"
 )
 
-// An rtl-sdr capture is headerless interleaved unsigned bytes, I then Q, so
-// it needs its format and rate given. "cu8" names the format and sets IQ. The
-// samples come back scaled so the most negative code is exactly -1.
+// An rtl-sdr capture has no header: it is interleaved unsigned bytes, I then
+// Q. The Layout gives its format and rate, and "cu8" parses to the format with
+// IQ set. Samples are scaled so the most negative code is exactly -1.
 func ExampleNewReader() {
 	format, iq, err := sampleio.ParseFormatSpec("cu8")
 	if err != nil {
 		log.Fatal(err)
 	}
 	capture := []byte{255, 128, 128, 0, 0, 64}
-	rd, err := sampleio.NewReader(bytes.NewReader(capture), sampleio.Options{
+	rd, err := sampleio.NewReader(bytes.NewReader(capture), sampleio.Layout{
 		Format: format,
 		IQ:     iq,
 		Rate:   2_400_000,
@@ -40,10 +40,11 @@ func ExampleNewReader() {
 	// 3 [(0.9921875+0i) (0-1i) (-1-0.5i)]
 }
 
-// Open reads a WAV file's rate and encoding from its header. Read in blocks
-// until io.EOF, which comes on the call after the last samples.
+// Open reads a WAV file's rate and encoding from its header, so the zero
+// Layout is enough. Read in blocks until io.EOF, which is returned by the call
+// after the one that read the last samples.
 func ExampleOpen() {
-	rd, err := sampleio.Open("capture.wav", sampleio.Options{})
+	rd, err := sampleio.Open("capture.wav", sampleio.Layout{})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -68,11 +69,38 @@ func ExampleOpen() {
 	fmt.Printf("%d frames, %.2f s at %g Hz\n", frames, float64(frames)/info.Rate, info.Rate)
 }
 
-// A Writer takes full-scale samples and owns the container and encoding. A
-// stereo pair is written as one slice per channel; Close fills in the WAV
-// sizes, since a file can be sought.
+// A stereo file is read one slice per channel. A nil slice skips its channel,
+// so this reads only the right one, starting 2 frames in.
+func ExampleReader_ReadPlanar() {
+	// Two channels of 8-bit samples, left then right.
+	stereo := []byte{128, 0, 128, 64, 128, 192, 128, 255}
+	rd, err := sampleio.NewReader(bytes.NewReader(stereo), sampleio.Layout{
+		Format:   pcm.U8,
+		Rate:     8000,
+		Channels: 2,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	if _, err := rd.Skip(2); err != nil {
+		log.Fatal(err)
+	}
+
+	right := make([]float32, 16)
+	n, err := rd.ReadPlanar([][]float32{nil, right})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(n, right[:n])
+	// Output:
+	// 2 [0.5 0.9921875]
+}
+
+// A Writer encodes full-scale samples and writes the container. A stereo pair
+// is written as one slice per channel. Close fills in the sizes in the WAV
+// header, since a file can seek.
 func ExampleWriter() {
-	w, err := sampleio.Create("tone.wav", sampleio.WriterOptions{
+	w, err := sampleio.Create("tone.wav", sampleio.Layout{
 		Format:   pcm.I16LE,
 		Rate:     48000,
 		Channels: 2,

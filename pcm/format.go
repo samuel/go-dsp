@@ -5,15 +5,12 @@ import (
 	"strings"
 )
 
-// Format is a sample encoding: an element type, a width and a byte order. U8
-// and I8 are 8-bit samples, I16, I24 and I32 wider integers, F32 and F64
-// floats, with LE or BE for the byte order of anything wider than a byte, and
-// ALaw and MuLaw the two 8-bit companded codes of ITU-T G.711. Decode and
-// Encode handle every one of them.
+// Format is a sample encoding: the type of each sample, its width and its
+// byte order. The package comment lists them.
 type Format int
 
-// The encodings a sample file can hold. The zero value is not one of them, so a
-// Format left unset is a reportable mistake rather than a silent u8.
+// The encodings. The zero Format is not valid, so a Format that was never set
+// is caught and is not taken for U8.
 const (
 	U8 Format = iota + 1
 	I8
@@ -31,11 +28,11 @@ const (
 	MuLaw
 )
 
-// info is the one description of a format. It is a switch rather than a
-// package-level table, which an importer could reorder.
+// info returns everything the package knows about a format. A format that is
+// not valid returns zero values.
 //
-// bits is the significant bits of an integer sample, the eight of a companded
-// code, and zero for a float, which is already in full-scale units.
+// bits is the number of bits in an integer sample, 8 for a G.711 code, and
+// zero for a float, which is not scaled.
 func (f Format) info() (name, desc string, width, bits int) {
 	switch f {
 	case U8:
@@ -70,7 +67,8 @@ func (f Format) info() (name, desc string, width, bits int) {
 	return "", "", 0, 0
 }
 
-// String returns the name a flag takes, such as "i16le".
+// String returns the format's name, such as "i16le". ParseFormat reads it
+// back.
 func (f Format) String() string {
 	name, _, _, _ := f.info()
 	if name == "" {
@@ -79,23 +77,24 @@ func (f Format) String() string {
 	return name
 }
 
-// Desc returns a phrase describing the encoding, for a usage message.
+// Desc returns a short description of the format, such as "16-bit signed,
+// little-endian", for a usage message.
 func (f Format) Desc() string {
 	_, desc, _, _ := f.info()
 	return desc
 }
 
-// Width returns the size of one sample in bytes: 3 for the 24-bit formats,
-// which are packed rather than padded out to four.
+// Width returns the size of one sample in bytes. A 24-bit format is 3 bytes;
+// it is not padded to 4.
 func (f Format) Width() int {
 	_, _, w, _ := f.info()
 	return w
 }
 
-// Bits returns the significant bits of an integer format, which sets the
-// power of two Decode divides by and Encode multiplies by, or zero for a float
-// format, which is already in full-scale units. A companded format has the
-// eight bits of its code, which set no such scale.
+// Bits returns the number of bits in a sample of an integer format. Decode
+// divides by 2^(Bits-1) and Encode multiplies by it. A float format returns
+// zero, since it is not scaled. A G.711 format returns 8, the size of its
+// code, though its scale is that of 16 bits.
 func (f Format) Bits() int {
 	_, _, _, b := f.info()
 	return b
@@ -104,14 +103,15 @@ func (f Format) Bits() int {
 // Float reports whether f holds floating-point samples.
 func (f Format) Float() bool { return f.Valid() && f.Bits() == 0 }
 
-// Companded reports whether f is a G.711 format, whose codes are not evenly
-// spaced.
+// Companded reports whether f is ALaw or MuLaw, the G.711 formats, whose
+// levels are not evenly spaced.
 func (f Format) Companded() bool { return f == ALaw || f == MuLaw }
 
-// Valid reports whether f is one of the encodings this package knows.
+// Valid reports whether f is one of the defined formats.
 func (f Format) Valid() bool { return f.Width() != 0 }
 
-// Formats returns every encoding, in a fresh slice, in declaration order.
+// Formats returns every format, in the order they are declared. The caller
+// may modify the slice.
 func Formats() []Format {
 	return []Format{
 		U8, I8,
@@ -124,7 +124,8 @@ func Formats() []Format {
 	}
 }
 
-// FormatNames returns the name of every encoding, in a fresh slice.
+// FormatNames returns the name of every format, in the same order as
+// Formats. The caller may modify the slice.
 func FormatNames() []string {
 	f := Formats()
 	names := make([]string, len(f))
@@ -134,13 +135,13 @@ func FormatNames() []string {
 	return names
 }
 
-// ParseFormat parses an encoding name, accepting ffmpeg's s16le spelling of a
-// signed integer and ulaw for mulaw too; String always reports the i form and
-// mulaw.
+// ParseFormat parses the name of a format, ignoring case and surrounding
+// space. Besides the names String returns, it accepts ffmpeg's s prefix for a
+// signed integer, as in "s16le", and "ulaw" for "mulaw".
 func ParseFormat(s string) (Format, error) {
 	name := strings.ToLower(strings.TrimSpace(s))
 
-	// ffmpeg says s16le where dsp says i16le. Everything else agrees.
+	// ffmpeg writes s16le for what this package calls i16le.
 	if rest, ok := strings.CutPrefix(name, "s"); ok {
 		name = "i" + rest
 	}

@@ -1,70 +1,90 @@
-// Package sampleio reads and writes audio and I/Q sample files.
+// Package sampleio reads and writes files of audio and I/Q samples.
 //
-// It covers the two forms signal captures arrive in: a WAV file, which carries
-// its own rate and encoding, and a headerless stream of samples, which carries
-// nothing and must be told both. Either way a Reader hands over ready-scaled
-// samples, so nothing downstream knows about interleaving, byte order or bit
-// depth.
+// It handles two kinds of file:
+//
+//   - A WAV file (RIFF/WAVE or RF64), whose header gives the sample format,
+//     rate and channel count.
+//   - A headerless stream of raw samples, such as an SDR capture. Nothing in
+//     the file describes it, so the caller supplies the format and rate.
+//
+// Samples are float32, float64, complex64 or complex128, scaled so that full
+// scale is 1. The package takes care of byte order, bit depth, interleaving
+// and the WAV header.
+//
+// # Layout
+//
+// A Layout describes a stream: its format, rate, channel count, whether it is
+// I/Q, and its container. The same struct is used in three places:
+//
+//   - Open and NewReader take the layout of a headerless stream. For a WAV the
+//     zero Layout is enough, since the header supplies the rest.
+//   - Create and NewWriter take the layout to write.
+//   - Info reports the layout in use, along with the length and any notes.
+//
+// A Reader's Info().Layout given to a Writer writes the same shape back out.
 //
 // # Reading
 //
-// A Reader hands over samples through two generic methods: ReadSamples for one
-// selected channel or I/Q pair, and ReadPlanar for every channel or pair at
-// once into one slice each. The width is the type of dst, and each read
-// decodes straight to it, so a float32 or complex64 read costs no float64
-// detour. Neither is called Read: they have io.Reader's shape but not its
-// contract, since the unit is a sample of one channel rather than a byte.
+// A frame is one sample of every channel. A Reader has two read methods, both
+// generic over the sample type:
 //
-// The planar read is not a convenience over the other. It decodes the
-// interleaved run once and splits it in one pass instead of gathering each
-// channel a frame at a time, which is 3.4x a Reader per channel for stereo and
-// 2.7x at eight channels.
+//   - ReadSamples reads a stream that holds one signal: a single channel, or a
+//     single I/Q pair.
+//   - ReadPlanar reads every channel at once, into one slice per channel. A
+//     nil slice skips that channel, which is how to read some channels of a
+//     file and not others.
 //
-// A stream's shape is a Layout -- format, rate, channels, I/Q and container --
-// which Options carries in and Info carries out.
+// Samples are decoded directly to the type of the destination slice, so
+// reading float32 does not go through float64. A real stream is read into
+// float32 or float64 and an I/Q stream into complex64 or complex128.
 //
-// A Reader over a file, or any other source that can seek, moves to a frame
-// with SeekFrame. A WAV's other chunks -- LIST, bext, cue and the like -- are
-// kept for Chunks when they come before the samples, and its speaker mask is
-// Info.ChannelMask.
+// Reading part of a stream is done with the methods, not with options: Skip
+// moves forward a number of frames on any source, SeekFrame moves to a frame
+// of a source that can seek, and a read stops when the destination slice is
+// full. Combining channels is left to the caller, who reads them with
+// ReadPlanar and mixes them as needed.
+//
+// For a WAV, Chunks returns the chunks that come before the samples, such as
+// LIST, bext and cue, and Info().ChannelMask is the speaker assignment.
 //
 // # Writing
 //
-// A Writer is the mirror of a Reader: WriteSamples takes one channel or I/Q
-// pair, WritePlanar one slice per channel, at any width, and the Writer
-// encodes, interleaves and wraps them in the container its Layout names. A
-// Reader's Info().Layout given to a Writer writes the same shape back out.
+// A Writer mirrors a Reader. WriteSamples writes a stream of one channel or
+// one I/Q pair, and WritePlanar writes one slice per channel. Either takes any
+// of the four sample types.
 //
-// A WAV written to a file that can be sought has its sizes filled in by Close,
-// and becomes RF64 past 4 GiB. One written down a pipe carries the
-// placeholder sizes a streaming reader expects and runs to the end of the
-// stream. An integer sample past full scale is clipped, with a Note in Info
-// the first time it happens.
+// A WAV header states the size of the file, which is not known until the last
+// sample is written. When the destination can seek, as a file can, Close goes
+// back and fills the sizes in, and makes the file RF64 if it is larger than
+// 4 GiB. When it cannot, as with a pipe, the header keeps placeholder sizes
+// that tell a reader to read to the end of the stream.
 //
-// # Formats
+// # Formats and scaling
 //
-// A sample encoding is a pcm.Format, and samples are decoded by pcm.Decode,
-// which normalizes them to full scale: the most negative integer code is
-// exactly -1, so a full-scale sine reads
-// exactly 0 dBFS, which every decibel measured downstream is relative to.
-// Float samples are passed through unscaled, since a float file is already
-// written in those units; a Note records it if any sample is outside the range.
+// A sample encoding is a pcm.Format.
 //
-// G.711 is pcm.ALaw and pcm.MuLaw, in a WAV or as a headerless stream of
-// codes. Its levels are those of a 16-bit file, so reading one and writing
-// pcm.I16LE loses nothing, and its top level reads a little under 0 dBFS.
+// Integer samples are divided by their full scale on read, so the most
+// negative code is exactly -1 and a full-scale sine measures 0 dBFS. On write
+// they are multiplied back, rounded and clipped to the format's range. The
+// first clipped sample adds a Note to the Writer's Info.
 //
-// Complex is not a format. Interleaved I/Q is a layout over an ordinary element
-// type rather than an encoding of its own -- pcm.Decode into a complex slice
-// reads interleaved pairs of any format -- so it is Layout.IQ, and
-// ParseFormatSpec reads the leading c of the names an SDR writes: cu8 is
-// rtl-sdr's format, pcm.U8 with IQ set.
+// Float samples are read and written unchanged. Nothing keeps a float file
+// within full scale, so the first sample read outside it adds a Note to the
+// Reader's Info.
 //
-// # Byte order
+// G.711 is pcm.ALaw and pcm.MuLaw, in a WAV or as a headerless stream. Its
+// levels are those of a 16-bit file, so converting G.711 to pcm.I16LE loses
+// nothing. Its highest level is a little below full scale.
 //
-// WAV is a RIFF container and always little-endian, so the big-endian formats
-// only ever come from a raw stream that is explicitly said to be one. The
-// container itself is read and written through package riff.
+// I/Q is not a format of its own. An I/Q stream is two interleaved channels,
+// I then Q, in any format, so it is selected by Layout.IQ. SDR tools name
+// these captures with a leading c, such as cu8 for rtl-sdr's unsigned bytes,
+// and ParseFormatSpec turns such a name into a format and the IQ flag.
+//
+// A WAV is always little-endian. The big-endian formats can only be read from
+// or written to a headerless stream.
+//
+// The WAV container itself is read and written through package riff.
 //
 //go:generate go run testdata/generate.go
 package sampleio

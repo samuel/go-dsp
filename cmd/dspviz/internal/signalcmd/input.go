@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"samuelks.com/dsp"
 	"samuelks.com/dsp/pcm"
 	"samuelks.com/dsp/sampleio"
 )
@@ -26,8 +27,10 @@ const (
 	// is the default, so a fault in one channel is not silently ignored.
 	chanAll channelMode = iota
 
-	// chanOne is the single channel Options.Channel names, chanMix the mean.
+	// chanOne is the single channel, or I/Q pair, that -channel names.
 	chanOne
+
+	// chanMix is the mean of every channel.
 	chanMix
 )
 
@@ -57,23 +60,23 @@ func (f *inputFlags) register(fs *flag.FlagSet) {
 	fs.BoolVar(&f.raw, "raw", false, "read the file as headerless data even if it has a header")
 }
 
-func (f *inputFlags) options() (sampleio.Options, channelMode, error) {
-	var opt sampleio.Options
-	mode := chanAll
-	opt.Rate = f.rate
-	opt.Channels = f.channels
+// layout turns the flags into what sampleio needs to open the file, which
+// channels to analyze and, for chanOne, which one.
+func (f *inputFlags) layout() (l sampleio.Layout, mode channelMode, pick int, err error) {
+	l.Rate = f.rate
+	l.Channels = f.channels
 	if f.raw {
-		opt.Container = sampleio.Raw
+		l.Container = sampleio.Raw
 	}
-	opt.IQ = f.iq
+	l.IQ = f.iq
 
 	if f.format != "" {
 		format, iq, err := sampleio.ParseFormatSpec(f.format)
 		if err != nil {
-			return opt, mode, err
+			return l, mode, 0, err
 		}
-		opt.Format = format
-		opt.IQ = opt.IQ || iq
+		l.Format = format
+		l.IQ = l.IQ || iq
 	}
 
 	switch strings.ToLower(f.channel) {
@@ -81,42 +84,43 @@ func (f *inputFlags) options() (sampleio.Options, channelMode, error) {
 		mode = chanAll
 	case "mix", "m":
 		mode = chanMix
-		opt.Channel = sampleio.MixChannels
 	default:
-		n, err := strconv.Atoi(f.channel)
+		pick, err = strconv.Atoi(f.channel)
 		if err != nil {
-			return opt, mode, fmt.Errorf("-channel takes a number, all, or mix, not %q", f.channel)
+			return l, mode, 0, fmt.Errorf("-channel takes a number, all, or mix, not %q", f.channel)
 		}
 		mode = chanOne
-		opt.Channel = sampleio.Channel(n)
 	}
 
-	// An I/Q stream's channels are a pair rather than alternatives, so a planar
-	// read has nothing to split: each pair is one signal.
-	if opt.IQ && mode == chanAll {
-		mode = chanOne
-		opt.Channel = 0
+	if l.IQ {
+		switch mode {
+		case chanMix:
+			return l, mode, 0, errors.New("-channel mix does not apply to an I/Q stream; I and Q are one signal")
+		case chanAll:
+			// Each I/Q pair is one signal, so there are no channels to
+			// compare. Read the first pair.
+			mode, pick = chanOne, 0
+		case chanOne:
+		}
 	}
 
 	if f.start < 0 || f.duration < 0 {
-		return opt, mode, errors.New("-start and -duration cannot be negative")
+		return l, mode, 0, errors.New("-start and -duration cannot be negative")
 	}
-	return opt, mode, nil
+	return l, mode, pick, nil
 }
 
-// source is an open recording, plus the section of it that was asked for.
+// source is an open recording, positioned at the section that was asked for.
 type source struct {
 	r    *sampleio.Reader
 	info sampleio.Info
 	mode channelMode
-	skip int64 // frames to drop
+	pick int   // the channel or I/Q pair chanOne reads
 	left int64 // frames still to read, or -1 for all of them
-
-	startSec float64 // what -start asked for, for the error when it is past the end
 }
 
-// channels is how many sets of accumulators the run needs: every channel in the
-// file when reading them separately, and one otherwise.
+// channels is how many sets of accumulators the run needs: one per channel
+// when reading them separately, and one otherwise.
 func (s *source) channels() int {
 	if s.mode == chanAll {
 		return s.info.Channels
@@ -124,176 +128,163 @@ func (s *source) channels() int {
 	return 1
 }
 
-// open opens path, which may be "-" for standard input.
-//
-// The section is read past rather than sought to, even for a file: sampleio's
-// Skip and Limit are in frames, and the rate is not known until the header has
-// been read, so seeking would mean opening the file twice.
+// planes is how many slices a planar read of the file takes: one per channel,
+// or one per I/Q pair.
+func (s *source) planes() int {
+	if s.info.IQ {
+		return s.info.Channels / 2
+	}
+	return s.info.Channels
+}
+
+// open opens path, which may be "-" for standard input, and skips to -start.
 func (f *inputFlags) open(path string) (*source, error) {
-	opt, mode, err := f.options()
+	l, mode, pick, err := f.layout()
 	if err != nil {
 		return nil, err
 	}
-	r, err := sampleio.Open(path, opt)
+	r, err := sampleio.Open(path, l)
 	if err != nil {
 		return nil, err
 	}
-	s := &source{r: r, info: r.Info(), mode: mode, left: -1}
-	if opt.IQ && mode == chanOne && s.info.Channels > 2 {
-		fmt.Fprintf(os.Stderr,
-			"dspviz signal: this capture holds %d I/Q pairs; reading pair 0, and -channel selects another\n",
-			s.info.Channels/2)
+	s := &source{r: r, info: r.Info(), mode: mode, pick: pick, left: -1}
+	if err := s.position(f); err != nil {
+		_ = r.Close() // the error from position is the one to report
+		return nil, err
+	}
+	return s, nil
+}
+
+// position checks -channel against the file and applies -start and -duration,
+// which are in seconds and so need the rate the file was opened with.
+func (s *source) position(f *inputFlags) error {
+	if s.mode == chanOne {
+		unit := "channels"
+		if s.info.IQ {
+			unit = "I/Q pairs"
+		}
+		if s.pick < 0 || s.pick >= s.planes() {
+			return fmt.Errorf("-channel %d: the file has %d %s, numbered from 0", s.pick, s.planes(), unit)
+		}
+		if all := strings.ToLower(f.channel); s.info.IQ && s.planes() > 1 && (all == "all" || all == "a") {
+			fmt.Fprintf(os.Stderr,
+				"dspviz signal: this capture holds %d I/Q pairs; reading pair 0, and -channel selects another\n",
+				s.planes())
+		}
 	}
 	if f.start > 0 {
-		s.skip = int64(f.start * s.info.Rate)
-		s.startSec = f.start
-		// A length is only believed once checked against the size on disk, so
-		// a pipe says -1 and the skip is checked at EOF instead.
-		if s.info.Frames >= 0 && s.skip >= s.info.Frames {
-			_ = r.Close() // the -start error is the one worth reporting
-			return nil, fmt.Errorf("-start %g is at or past the end of the file, which is %.6g seconds long",
+		skip := int64(f.start * s.info.Rate)
+		if s.info.Frames >= 0 && skip >= s.info.Frames {
+			return fmt.Errorf("-start %g is at or past the end of the file, which is %.6g seconds long",
 				f.start, s.info.Duration())
+		}
+		// A pipe does not know its length, so the end is found by skipping.
+		if _, err := s.r.Skip(skip); err != nil {
+			if errors.Is(err, io.EOF) {
+				return fmt.Errorf("-start %g is past the end of the stream", f.start)
+			}
+			return err
 		}
 	}
 	if f.duration > 0 {
 		s.left = int64(f.duration * s.info.Rate)
 	}
-	return s, nil
+	return nil
 }
 
 func (s *source) Close() error { return s.r.Close() }
 
-// exhausted is what the reading loops return at EOF. A skip that never ran out
-// means -start asked for a point past the last sample, and every view would
-// otherwise report an empty analysis without saying why.
-func (s *source) exhausted() error {
-	if s.skip > 0 {
-		return fmt.Errorf("-start %g is past the end of the stream", s.startSec)
+// blocks reads the section a block at a time. read fills the buffers and
+// returns how many frames it read; use is given how many of them are inside
+// the section.
+func (s *source) blocks(read func() (int, error), use func(n int) error) error {
+	for {
+		n, err := read()
+		if s.left >= 0 && int64(n) >= s.left {
+			n, err = int(s.left), io.EOF
+		}
+		if n > 0 {
+			if s.left > 0 {
+				s.left -= int64(n)
+			}
+			if err := use(n); err != nil {
+				return err
+			}
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
 	}
-	return nil
 }
 
 // eachPlanar reads the section in blocks and hands fn one slice per channel.
-//
-// It is one pass over the file however many channels it has: the reader decodes
-// the whole interleaved block once and scatters it.
 func (s *source) eachPlanar(fn func([][]float64) error) error {
 	if s.info.IQ {
 		return errors.New("this analysis needs a real stream; drop -iq")
 	}
-	n := s.info.Channels
-	planes := make([][]float64, n)
+	planes := make([][]float64, s.info.Channels)
 	for c := range planes {
 		planes[c] = make([]float64, blockFrames)
 	}
-	// The section is applied once per block and the views handed sub-slices of
-	// the planes, so every channel is trimmed identically.
-	view := make([][]float64, n)
-	for {
-		got, err := s.r.ReadPlanar(planes)
-		if got > 0 {
-			lo, hi, done := s.section(got)
-			if hi > lo {
-				for c := range view {
-					view[c] = planes[c][lo:hi]
-				}
-				if err := fn(view); err != nil {
-					return err
-				}
+	view := make([][]float64, len(planes))
+	return s.blocks(
+		func() (int, error) { return s.r.ReadPlanar(planes) },
+		func(n int) error {
+			for c := range view {
+				view[c] = planes[c][:n]
 			}
-			if done {
-				return nil
-			}
-		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return s.exhausted()
-			}
-			return err
-		}
-	}
+			return fn(view)
+		})
 }
 
-// each reads the section in blocks and hands each to fn. Exactly one of the two
-// callbacks is used, whichever matches the stream.
+// each reads the section in blocks and hands each to a callback: realFn for a
+// real stream, cplx for an I/Q one. It reads the one channel or pair -channel
+// names, or the mean of every channel for -channel mix.
 func (s *source) each(realFn func([]float64) error, cplx func([]complex128) error) error {
 	if s.info.IQ {
-		return s.eachComplex(cplx)
+		if cplx == nil {
+			return errors.New("this analysis needs a real stream; drop -iq")
+		}
+		// Only the chosen pair gets a slice; a nil plane is not read.
+		buf := make([]complex128, blockFrames)
+		planes := make([][]complex128, s.planes())
+		planes[s.pick] = buf
+		return s.blocks(
+			func() (int, error) { return s.r.ReadPlanar(planes) },
+			func(n int) error { return cplx(buf[:n]) })
 	}
 	if realFn == nil {
 		return errors.New("this analysis needs an I/Q stream; add -iq or a c-prefixed format")
 	}
+	if s.mode == chanMix {
+		return s.eachMix(realFn)
+	}
 	buf := make([]float64, blockFrames)
-	for {
-		n, err := s.r.ReadSamples(buf)
-		if n > 0 {
-			lo, hi, done := s.section(n)
-			if hi > lo {
-				if err := realFn(buf[lo:hi]); err != nil {
-					return err
-				}
-			}
-			if done {
-				return nil
-			}
-		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return s.exhausted()
-			}
-			return err
-		}
-	}
+	planes := make([][]float64, s.planes())
+	planes[s.pick] = buf
+	return s.blocks(
+		func() (int, error) { return s.r.ReadPlanar(planes) },
+		func(n int) error { return realFn(buf[:n]) })
 }
 
-func (s *source) eachComplex(fn func([]complex128) error) error {
-	if fn == nil {
-		return errors.New("this analysis needs a real stream; drop -iq")
+// eachMix hands fn the mean of every channel.
+func (s *source) eachMix(fn func([]float64) error) error {
+	planes := make([][]float64, s.planes())
+	for c := range planes {
+		planes[c] = make([]float64, blockFrames)
 	}
-	buf := make([]complex128, blockFrames)
-	for {
-		n, err := s.r.ReadSamples(buf)
-		if n > 0 {
-			lo, hi, done := s.section(n)
-			if hi > lo {
-				if err := fn(buf[lo:hi]); err != nil {
-					return err
-				}
+	mix := planes[0]
+	scale := 1 / float64(len(planes))
+	return s.blocks(
+		func() (int, error) { return s.r.ReadPlanar(planes) },
+		func(n int) error {
+			for _, p := range planes[1:] {
+				dsp.VAdd(mix[:n], mix[:n], p[:n])
 			}
-			if done {
-				return nil
-			}
-		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return s.exhausted()
-			}
-			return err
-		}
-	}
-}
-
-// section applies -start and -duration to a block that has just been read,
-// returning the half-open range of it to use and whether the section has ended.
-// A block straddling the start is split, keeping its tail, which is why the
-// result is a range rather than a count.
-func (s *source) section(n int) (lo, hi int, done bool) {
-	lo, hi = 0, n
-	if s.skip > 0 {
-		d := min(s.skip, int64(n))
-		s.skip -= d
-		lo = int(d)
-		if lo == hi {
-			return lo, hi, false
-		}
-	}
-	if s.left >= 0 {
-		if int64(hi-lo) >= s.left {
-			hi = lo + int(s.left)
-			s.left = 0
-			return lo, hi, true
-		}
-		s.left -= int64(hi - lo)
-	}
-	return lo, hi, false
+			dsp.VScale(mix[:n], mix[:n], scale)
+			return fn(mix[:n])
+		})
 }

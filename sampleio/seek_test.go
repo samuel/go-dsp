@@ -36,7 +36,7 @@ func TestSeekFrame(t *testing.T) {
 	trailer := chunk("LIST", []byte("INFOISFTsomething"))
 	raw := wavTrailing(pcmFmt(wavPCM, 1, 8000, 16), uint32(len(payload)), payload, nil, [][]byte{trailer})
 
-	r, err := NewReader(bytes.NewReader(raw), Options{})
+	r, err := NewReader(bytes.NewReader(raw), Layout{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,33 +61,156 @@ func TestSeekFrame(t *testing.T) {
 	}
 }
 
-// TestSeekFrameWindow checks that frames are counted from Skip and bounded by
-// Limit, so a seek cannot reach outside what the Reader was opened to produce.
-func TestSeekFrameWindow(t *testing.T) {
+// TestSeekFrameIsAbsolute checks that frames are counted from the start of
+// the stream wherever the Reader is, and that a seek is bounded by its length.
+func TestSeekFrameIsAbsolute(t *testing.T) {
 	payload, want := ramp(8)
 	path := filepath.Join(t.TempDir(), "ramp.wav")
 	if err := os.WriteFile(path, wav(pcmFmt(wavPCM, 1, 8000, 16), uint32(len(payload)), payload), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	r, err := Open(path, Options{Skip: 2, Limit: 4})
+	r, err := Open(path, Layout{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer r.Close() //nolint:errcheck // a file opened for reading has no close error a test could act on
 
-	if got := readAll(t, r, 3); !slices.Equal(got, want[2:6]) {
-		t.Fatalf("read %v, want %v", got, want[2:6])
+	if n, err := r.Skip(2); n != 2 || err != nil {
+		t.Fatalf("Skip(2) = %d, %v", n, err)
 	}
 	seekTo(t, r, 1)
-	if got := readAll(t, r, 3); !slices.Equal(got, want[3:6]) {
-		t.Errorf("after SeekFrame(1) read %v, want %v", got, want[3:6])
+	if got := readAll(t, r, 3); !slices.Equal(got, want[1:]) {
+		t.Errorf("after SeekFrame(1) read %v, want %v", got, want[1:])
 	}
 	seekTo(t, r, r.Info().Frames)
 	if got := readAll(t, r, 3); len(got) != 0 {
 		t.Errorf("read %v at the end", got)
 	}
-	if err := r.SeekFrame(5); err == nil {
-		t.Error("SeekFrame(5) reached past a Limit of 4")
+	if err := r.SeekFrame(9); err == nil {
+		t.Error("SeekFrame(9) reached past the 8 frames of the file")
+	}
+}
+
+// skipSources opens the same samples as each kind of source Skip treats
+// differently. The WAV ones have a chunk after the samples, which a skip must
+// not run into.
+func skipSources(t *testing.T, payload []byte) map[string]func() *Reader {
+	t.Helper()
+	raw := Layout{Format: pcm.I16LE, Rate: 8000}
+	file := wavTrailing(pcmFmt(wavPCM, 1, 8000, 16), uint32(len(payload)), payload, nil,
+		[][]byte{chunk("LIST", make([]byte, 64))})
+	path := filepath.Join(t.TempDir(), "skip.wav")
+	if err := os.WriteFile(path, file, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	must := func(r *Reader, err error) *Reader {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = r.Close() })
+		return r
+	}
+	return map[string]func() *Reader{
+		"a file":            func() *Reader { return must(Open(path, Layout{})) },
+		"a seekable stream": func() *Reader { return must(NewReader(bytes.NewReader(payload), raw)) },
+		"a seekable WAV":    func() *Reader { return must(NewReader(bytes.NewReader(file), Layout{})) },
+		"a pipe":            func() *Reader { return must(NewReader(struct{ io.Reader }{bytes.NewReader(payload)}, raw)) },
+		"a piped WAV":       func() *Reader { return must(NewReader(struct{ io.Reader }{bytes.NewReader(file)}, Layout{})) },
+	}
+}
+
+// TestSkip checks that Skip lands on the right frame and reports the end,
+// whether it seeks or reads, and whether the frames are already buffered or
+// lie more than a block ahead.
+func TestSkip(t *testing.T) {
+	// Longer than the Reader's block, so one skip crosses several.
+	const frames = 100_000
+	want := make([]float64, frames)
+	for i := range want {
+		want[i] = float64(i%2000-1000) / 1024
+	}
+	for name, open := range skipSources(t, i16(want...)) {
+		t.Run(name, func(t *testing.T) {
+			r := open()
+			one := make([]float64, 1)
+			at := 0
+			next := func() {
+				t.Helper()
+				if n, err := r.ReadSamples(one); n != 1 || err != nil {
+					t.Fatalf("ReadSamples at frame %d = %d, %v", at, n, err)
+				}
+				if one[0] != want[at] {
+					t.Fatalf("frame %d = %v, want %v", at, one[0], want[at])
+				}
+				at++
+			}
+			skip := func(n int64) {
+				t.Helper()
+				if got, err := r.Skip(n); got != n || err != nil {
+					t.Fatalf("Skip(%d) at frame %d = %d, %v", n, at, got, err)
+				}
+				at += int(n)
+			}
+
+			skip(0)
+			next()
+			skip(2) // inside what the first read buffered
+			next()
+			skip(70_000) // past the buffer
+			next()
+			skip(3)
+			next()
+
+			if _, err := r.Skip(-1); err == nil {
+				t.Error("Skip(-1) succeeded")
+			}
+			// Past the end: the count is what was there, and the trailing
+			// chunk of the WAV sources is not counted as samples.
+			left := int64(frames - at)
+			if got, err := r.Skip(left + 50); got != left || !errors.Is(err, io.EOF) {
+				t.Errorf("Skip past the end = %d, %v, want %d, io.EOF", got, err, left)
+			}
+			if n, err := r.ReadSamples(one); n != 0 || !errors.Is(err, io.EOF) {
+				t.Errorf("a read after the last frame = %d, %v, want io.EOF", n, err)
+			}
+			if got, err := r.Skip(1); got != 0 || !errors.Is(err, io.EOF) {
+				t.Errorf("Skip at the end = %d, %v, want 0, io.EOF", got, err)
+			}
+		})
+	}
+}
+
+// TestSkipToTheEnd checks that skipping exactly the frames left is not an
+// error: the end is reported only when a frame asked for is not there.
+func TestSkipToTheEnd(t *testing.T) {
+	payload, _ := ramp(8)
+	for name, open := range skipSources(t, payload) {
+		t.Run(name, func(t *testing.T) {
+			r := open()
+			if got, err := r.Skip(8); got != 8 || err != nil {
+				t.Errorf("Skip(8) of 8 frames = %d, %v", got, err)
+			}
+		})
+	}
+}
+
+// TestSkipCountsFrames checks that a skip of a stereo stream moves whole
+// frames, not samples.
+func TestSkipCountsFrames(t *testing.T) {
+	raw := i16(0, 0.5, 0.125, 0.5, 0.25, 0.5, 0.375, 0.5) // four stereo frames
+	for _, src := range []io.Reader{bytes.NewReader(raw), struct{ io.Reader }{bytes.NewReader(raw)}} {
+		r, err := NewReader(src, Layout{Format: pcm.I16LE, Rate: 8000, Channels: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n, err := r.Skip(1); n != 1 || err != nil {
+			t.Fatalf("Skip(1) = %d, %v", n, err)
+		}
+		got := readAllPlanar(t, r, 2, 3)
+		if !slices.Equal(got[0], []float64{0.125, 0.25, 0.375}) {
+			t.Errorf("left channel after the skip = %v", got[0])
+		}
 	}
 }
 
@@ -96,7 +219,7 @@ func TestSeekFrameWindow(t *testing.T) {
 func TestSeekFramePlanar(t *testing.T) {
 	payload, want := ramp(12) // six stereo frames, or six I/Q pairs
 
-	r, err := NewReader(bytes.NewReader(wav(pcmFmt(wavPCM, 2, 8000, 16), uint32(len(payload)), payload)), Options{})
+	r, err := NewReader(bytes.NewReader(wav(pcmFmt(wavPCM, 2, 8000, 16), uint32(len(payload)), payload)), Layout{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +230,7 @@ func TestSeekFramePlanar(t *testing.T) {
 		t.Errorf("after SeekFrame(4) read %v", got)
 	}
 
-	iq, err := NewReader(bytes.NewReader(payload), Options{Format: pcm.I16LE, Rate: 8000, IQ: true})
+	iq, err := NewReader(bytes.NewReader(payload), Layout{Format: pcm.I16LE, Rate: 8000, IQ: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +245,7 @@ func TestSeekFramePlanar(t *testing.T) {
 // header states no size, so there is no end to check a frame against.
 func TestSeekFrameUnknownLength(t *testing.T) {
 	payload, want := ramp(8)
-	r, err := NewReader(bytes.NewReader(wav(pcmFmt(wavPCM, 1, 8000, 16), 0xffffffff, payload)), Options{})
+	r, err := NewReader(bytes.NewReader(wav(pcmFmt(wavPCM, 1, 8000, 16), 0xffffffff, payload)), Layout{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +266,7 @@ func TestSeekFrameNotSeekable(t *testing.T) {
 	payload, _ := ramp(8)
 	raw := wav(pcmFmt(wavPCM, 1, 8000, 16), uint32(len(payload)), payload)
 	// Wrapping the reader hides its Seek, as a pipe has none worth calling.
-	r, err := NewReader(struct{ io.Reader }{bytes.NewReader(raw)}, Options{})
+	r, err := NewReader(struct{ io.Reader }{bytes.NewReader(raw)}, Layout{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +288,7 @@ func TestWAVChunks(t *testing.T) {
 	after := [][]byte{chunk("id3 ", []byte("late"))}
 	raw := wavTrailing(pcmFmt(wavPCM, 1, 8000, 16), uint32(len(payload)), payload, before, after)
 
-	r, err := NewReader(bytes.NewReader(raw), Options{})
+	r, err := NewReader(bytes.NewReader(raw), Layout{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +309,7 @@ func TestWAVChunks(t *testing.T) {
 		t.Errorf("read %v, want %v", samples, want)
 	}
 
-	headerless, err := NewReader(bytes.NewReader(payload), Options{Format: pcm.I16LE, Rate: 8000})
+	headerless, err := NewReader(bytes.NewReader(payload), Layout{Format: pcm.I16LE, Rate: 8000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +326,7 @@ func TestWAVChunkTotal(t *testing.T) {
 		before = append(before, chunk("LIST", make([]byte, maxChunkSize)))
 	}
 	r, err := NewReader(bytes.NewReader(
-		wavTrailing(pcmFmt(wavPCM, 1, 8000, 16), uint32(len(payload)), payload, before, nil)), Options{})
+		wavTrailing(pcmFmt(wavPCM, 1, 8000, 16), uint32(len(payload)), payload, before, nil)), Layout{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +356,7 @@ func TestWAVChannelMask(t *testing.T) {
 		{"surround", pcm.F32LE, 6, 0x3f, 0x3f, wavExtensible},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			opt := WriterOptions{
+			opt := Layout{
 				Format: tc.f, Rate: 8000, Channels: tc.channels,
 				ChannelMask: tc.mask,
 			}
@@ -251,7 +374,7 @@ func TestWAVChannelMask(t *testing.T) {
 			if tag := uint16(b[fmtAt+8]) | uint16(b[fmtAt+9])<<8; tag != tc.tag {
 				t.Errorf("tag %#04x, want %#04x", tag, tc.tag)
 			}
-			r, err := NewReader(bytes.NewReader(b), Options{})
+			r, err := NewReader(bytes.NewReader(b), Layout{})
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -31,10 +31,9 @@ Go 1.27.
   `samuelks.com/wave/riff` package. The reader also accepts an RF64 header
   (`Reader.RF64`) and can disregard a wrong container size
   (`Reader.IgnoreSize`).
-- `sampleio`: `Reader.SeekFrame` on a seekable source, `Reader.Chunks` for the
-  WAV chunks ahead of the samples, and the speaker mask as `Info.ChannelMask`
-  and `WriterOptions.ChannelMask`. `Options.Skip` seeks instead of reading
-  when the source allows it.
+- `sampleio`: `Reader.SeekFrame` on a seekable source, `Reader.Skip` on any
+  source, `Reader.Chunks` for the WAV chunks ahead of the samples, and the
+  speaker mask as `Layout.ChannelMask`.
 - `dsp.Processor`: one block contract for every filter, decimator and
   interpolator, `FMDemod`, `Rotator90` and `SDFT`. `Process(dst, src)`
   consumes all of `src`, returns `OutputLen(len(src))` and panics if `dst` is
@@ -64,8 +63,9 @@ Go 1.27.
 - `firpm`: Parks-McClellan equiripple FIR design.
 - `sampleio`: reading WAV, RF64 and headerless captures, including rtl-sdr
   `cu8`, as normalized samples. `Reader.ReadSamples` and `ReadPlanar` are
-  generic over the sample width and decode straight to it; `Options` and
-  `Info` share a `Layout` of format, rate, channels, I/Q and `Container`.
+  generic over the sample width and decode straight to it, and a nil plane
+  given to `ReadPlanar` skips that channel. `Open`, `Create` and `Info` share
+  a `Layout` of format, rate, channels, I/Q, `Container` and speaker mask.
   `Writer` writes WAV, RF64 and headerless streams from samples of any width,
   filling in the WAV sizes on `Close` when the destination can seek. A-law
   and mu-law WAVs and headerless streams read and write as `pcm.ALaw` and

@@ -5,17 +5,23 @@ import (
 	"math"
 )
 
-// The Go references. Each defines a kernel of the grid, scaling included, and
-// is that kernel on an architecture with no assembly for it. A kernel reads
-// little-endian bytes and handles min(len(dst), len(src)/width) samples when
-// decoding and min(len(dst)/width, len(src)) when encoding.
+// The Go reference kernels. Each one defines the result of a conversion
+// between a format and a float width, including the scaling. An assembly
+// kernel must match its reference bit for bit, and an architecture with no
+// assembly for a kernel runs the reference.
 //
-// Decoding divides an integer by 2^(bits-1), a power of two, so the product is
-// exact: every integer below 2^24 is exact in a float32, and a wider one is
-// rounded once, by the conversion, the same way everywhere.
+// A kernel works on little-endian bytes. A decoder handles
+// min(len(dst), len(src)/width) samples and an encoder
+// min(len(dst)/width, len(src)).
 //
-// Each loop takes a full slice expression per sample, which lets the compiler
-// drop the bounds checks inside it: about twice as fast as indexing src[i*w:].
+// Decoding multiplies an integer by 1/2^(bits-1), a power of two, so the
+// multiply is exact. An integer below 2^24 converts to float32 exactly. A
+// larger one is rounded once, by the conversion, the same way on every
+// architecture.
+//
+// Each loop takes its sample with a full slice expression, src[lo:hi:hi].
+// That lets the compiler remove the bounds checks inside the loop, which
+// makes it about twice as fast as indexing src[i*w:].
 
 type float interface{ float32 | float64 }
 
@@ -58,8 +64,8 @@ func i32LEToFloatRef[F float](dst []F, src []byte) {
 	}
 }
 
-// f32LEToFloatRef passes a float32 through bit for bit, keeping a NaN's
-// payload, or widens it exactly.
+// f32LEToFloatRef copies a float32 unchanged, including the payload of a NaN,
+// or widens it to float64, which is exact.
 func f32LEToFloatRef[F float](dst []F, src []byte) {
 	n := min(len(dst), len(src)/4)
 	for i := range n {
@@ -68,8 +74,8 @@ func f32LEToFloatRef[F float](dst []F, src []byte) {
 	}
 }
 
-// f64LEToFloatRef passes a float64 through bit for bit or narrows it, rounding
-// to nearest even.
+// f64LEToFloatRef copies a float64 unchanged, or narrows it to float32,
+// rounding to nearest even.
 func f64LEToFloatRef[F float](dst []F, src []byte) {
 	n := min(len(dst), len(src)/8)
 	for i := range n {
@@ -78,16 +84,19 @@ func f64LEToFloatRef[F float](dst []F, src []byte) {
 	}
 }
 
-// roundBias rounds a float64 of magnitude below 2^51 to an integer, to nearest
-// even, as (v + roundBias) - roundBias: the sum has no bits below the units
-// place, so the addition rounds and the subtraction is exact. Every integer
-// encoding rounds this way, so the result does not depend on how a platform's
-// float-to-integer conversion rounds.
+// roundBias rounds a float64 to an integer, with ties to even, when it is used
+// as (v + roundBias) - roundBias and v is below 2^51 in magnitude. The sum is
+// too large to hold a fraction, so the addition rounds v to an integer, and
+// the subtraction is then exact.
+//
+// Every integer encoder rounds this way, so the result does not depend on how
+// an architecture's float-to-integer conversion rounds.
 const roundBias = 1.5 * (1 << 52)
 
-// quantize returns v rounded to nearest even and clipped to [lo, hi], with NaN
-// giving zero. lo and hi are integers, so clipping before rounding gives the
-// same answer as after, and the clipped value is small enough for roundBias.
+// quantize returns v rounded to the nearest integer, with ties to even, and
+// clipped to [lo, hi]. NaN gives zero. It clips first: lo and hi are
+// integers, so the order does not change the result, and the clipped value is
+// small enough for roundBias.
 func quantize(v, lo, hi float64) int32 {
 	switch {
 	case v >= hi:
@@ -100,8 +109,9 @@ func quantize(v, lo, hi float64) int32 {
 	return 0
 }
 
-// The multiply by 2^(bits-1) is exact in float64 for either source width, so
-// a float32 source rounds the same as its float64 widening.
+// The multiply by 2^(bits-1) is done in float64, where it is exact for a
+// float32 or a float64 sample. A float32 sample therefore encodes to the same
+// code as the same value held in a float64.
 
 func floatToU8Ref[F float](dst []byte, src []F) {
 	n := min(len(dst), len(src))
@@ -142,8 +152,8 @@ func floatToI32LERef[F float](dst []byte, src []F) {
 	}
 }
 
-// floatToF32LERef passes a float32 through bit for bit or narrows a float64,
-// rounding to nearest even. Neither clips, and NaN stays NaN.
+// floatToF32LERef writes a float32 unchanged, or narrows a float64 to
+// float32, rounding to nearest even. It does not clip, and NaN stays NaN.
 func floatToF32LERef[F float](dst []byte, src []F) {
 	n := min(len(dst)/4, len(src))
 	for i, v := range src[:n] {

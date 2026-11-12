@@ -1,60 +1,99 @@
-// Package pcm encodes and decodes samples: the raw integer and float formats an
-// SDR or audio source delivers or a file stores, to and from full-scale float
-// and complex samples.
+// Package pcm converts between raw sample bytes and full-scale float or
+// complex samples.
 //
-// Format names an encoding: U8 and I8 for 8-bit samples, I16, I24 and I32 for
-// wider signed integers, F32 and F64 for floats, with LE or BE for the byte
-// order of anything wider than a byte, and ALaw and MuLaw for the companded
-// codes of ITU-T G.711. ParseFormat also accepts the ffmpeg spelling of the
-// signed integers, where s16le means the same as i16le.
+// The bytes are in one of the encodings an SDR, a sound card or a file uses:
+// 8-bit to 32-bit integers, 32-bit and 64-bit floats, and the G.711 A-law and
+// mu-law codes. The samples are any dsp.Sample type: float32, float64,
+// complex64 or complex128.
 //
-// Decode turns bytes into samples of any dsp.Sample type and Encode turns them
-// back. A complex sample is an interleaved I/Q pair of the format's element.
-// Samples are at full scale on both sides: an integer is divided by
-// 2^(bits-1) on the way in, so a full-scale sine reads 0 dBFS, and multiplied
-// by it on the way out. The factor is a power of two, so it costs no accuracy
-// and gives the same answer on every architecture.
+// # Formats
+//
+// A Format specifies an encoding:
+//
+//   - U8 and I8 are unsigned and signed 8-bit samples.
+//   - I16, I24 and I32 are signed integers. I24 is three bytes, not padded to
+//     four.
+//   - F32 and F64 are floats.
+//   - ALaw and MuLaw are the 8-bit codes of ITU-T G.711.
+//
+// A format wider than one byte ends in LE or BE for its byte order, as in
+// I16LE. ParseFormat handles the names String returns, such as "i16le", and also
+// accepts ffmpeg's spelling of the signed integers, such as "s16le".
+//
+// # Decode and Encode
+//
+// Decode turns bytes into samples, and Encode turns samples into bytes. Both
+// handle as many whole samples as the shorter of the two slices holds and
+// return that count. The slices may be unaligned, and must not overlap.
+//
+// A complex sample is two values of the format, I then Q, so a complex slice
+// reads or writes interleaved I/Q.
+//
+// # Scaling
+//
+// Samples are at full scale: an integer format covers the range from -1 to
+// just under 1. Decode divides an integer by 2^(bits-1), so the most negative
+// code is exactly -1 and a full-scale sine measures 0 dBFS. Encode multiplies
+// by the same factor. The factor is a power of two, so scaling loses no
+// accuracy and gives the same result on every architecture.
+//
+// Float formats are not scaled. Decode and Encode only convert between the
+// format's width and the sample's.
 //
 // # Rounding and clipping
 //
-// Encode rounds to the nearest integer code, ties to even, with no dither. A
-// caller that wants dither adds it before Encode. A sample past full scale
-// clips to the format's rails, NaN encodes as zero, and nothing reports either;
-// a writer that wants to know looks at the samples first.
+// Encode rounds to the nearest integer code, with ties going to the even
+// code. It adds no dither; a caller that wants dither adds it to the samples
+// first.
+//
+// A sample outside full scale is clipped to the largest or smallest code of
+// the format, and NaN is encoded as zero. Encode does not report either. A
+// caller that needs to know checks the samples before encoding.
 //
 // # U8
 //
-// U8 is offset binary with its bias of 128 removed, so the codes round-trip
-// exactly. A source whose midpoint is 127.5, as an rtl-sdr's is, therefore
-// decodes with a DC offset of half a code, which dsp.DCFilter removes.
+// A U8 code is the sample plus 128, so code 128 is zero, and every code
+// survives a Decode and an Encode unchanged.
+//
+// Some sources center their signal between two codes. An rtl-sdr's midpoint is
+// 127.5, so its samples decode with a DC offset of half a code. dsp.DCFilter
+// removes it.
 //
 // # G.711
 //
-// ALaw and MuLaw are 8-bit codes on a logarithmic scale: 256 levels, close
-// together near zero and far apart near the rails. A code decodes to its level
-// on the 16-bit scale, as every other decoder has it, so the top levels are
-// 32256/32768 for A-law and 32124/32768 for mu-law and a full-scale tone reads
-// about -0.14 and -0.17 dBFS. Decoding is exact at either width, and decoding
-// into a 16-bit format loses nothing.
+// ALaw and MuLaw store each sample in 8 bits on a logarithmic scale. The 256
+// levels are close together near zero and far apart at large amplitudes.
 //
-// Encode rounds the sample to 16 bits as it would for I16 and applies the
-// quantizer of G.711 to its magnitude: each level is the center of a step, the
-// edges of the steps are the decision values, and the sample takes the code of
-// the step it is in. A sample past the top step clips to its level. The ITU's
-// reference encoder, G.191, drops the low two or three bits of the 16-bit
-// sample first and takes the magnitude of a negative one as its complement, so
-// its output is not reproduced byte for byte. Every code survives a
-// decode and an encode but mu-law's negative zero, 0x7f, which comes back as
-// the positive one, 0xff. A-law has no zero, and encodes one as its smallest
-// positive level.
+// Decode returns each code's level on the 16-bit scale, divided by 2^15. This
+// is exact at either float width, and it matches other G.711 decoders, so
+// converting G.711 to a 16-bit format loses nothing. The highest level is
+// 32256/32768 for A-law and 32124/32768 for mu-law. A tone at the top of the
+// G.711 range therefore measures about -0.14 dBFS for A-law and -0.17 dBFS
+// for mu-law.
+//
+// Encode rounds the sample to 16 bits, as it does for I16, and picks the code
+// whose step contains the result. Each level is the center of its step, and
+// the boundaries between steps are G.711's decision values. A sample above the
+// top step is clipped to the top level.
+//
+// Encode does not match the ITU's reference encoder, G.191, byte for byte.
+// G.191 discards the low two or three bits of the 16-bit sample before
+// encoding and takes the magnitude of a negative sample as its ones'
+// complement. Encode keeps those bits.
+//
+// Every code survives a Decode and an Encode except mu-law's negative zero,
+// 0x7f, which comes back as positive zero, 0xff. A-law has no zero level, so a
+// zero sample is encoded as its smallest positive level.
 //
 // # Implementation
 //
-// Every encoding has one little-endian kernel per float width, and a
-// big-endian format reverses its bytes in blocks through a buffer on the stack
-// around that kernel. The kernels a capture spends its time in -- U8, I8 and
-// I16LE into float32, and float32 into I16LE -- are assembly or archsimd on
-// 386, amd64, arm and arm64; every other kernel, and every kernel elsewhere, is
-// Go. All of them agree bit for bit with the Go reference that defines them.
-// Slices may be unaligned, and src and dst must not overlap.
+// Each encoding has one little-endian kernel per float width. A big-endian
+// format is handled by reversing the bytes of each sample, a block at a time
+// through a buffer on the stack, before or after that kernel.
+//
+// The kernels that captures use most are U8, I8 and I16LE into float32, and
+// float32 into I16LE. On 386, amd64, arm and arm64 these are assembly, or
+// archsimd under GOEXPERIMENT=simd. Every other kernel, and every kernel on
+// other architectures, is Go. Each assembly kernel gives the same result, bit
+// for bit, as the Go reference that defines it.
 package pcm

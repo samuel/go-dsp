@@ -52,6 +52,28 @@ func drainPlanar[T dsp.Sample](t *testing.T, r *Reader, planes, block int) [][]T
 	}
 }
 
+// drainPlane reads plane pick of a stream of planes planes to the end, block
+// frames at a time, passing nil for every other plane.
+func drainPlane[T dsp.Sample](t *testing.T, r *Reader, planes, pick, block int) []T {
+	t.Helper()
+	var out []T
+	buf := make([][]T, planes)
+	buf[pick] = make([]T, block)
+	for {
+		n, err := r.ReadPlanar(buf)
+		out = append(out, buf[pick][:n]...)
+		if errors.Is(err, io.EOF) {
+			return out
+		}
+		if err != nil {
+			t.Fatalf("ReadPlanar: %v", err)
+		}
+		if n == 0 {
+			t.Fatal("ReadPlanar returned 0, nil, which would spin")
+		}
+	}
+}
+
 // narrowsTo reports whether every element of got is the one of wide converted
 // to got's width, with NaN matching NaN.
 func narrowsTo[W, N dsp.Sample](t *testing.T, what string, wide []W, got []N, conv func(W) N) {
@@ -84,17 +106,17 @@ func isNaN[T dsp.Sample](v T) bool {
 func f64to32(v float64) float32       { return float32(v) }
 func c128to64(v complex128) complex64 { return complex64(v) }
 
-// TestFixturesAtEveryWidth reads every fixture each way a Reader can hand it
-// over -- each channel, the mixdown, every plane, and its bytes as raw I/Q --
-// and checks that the narrow width is the wide one narrowed, bit for bit. Each
-// decodes the bytes straight to its own width, so this is what pins the two
-// to the same answer.
+// TestFixturesAtEveryWidth reads every fixture each way a Reader can: one
+// channel at a time, every plane at once, and its bytes as raw I/Q. It checks
+// that the narrow width is the wide one narrowed, bit for bit. Each width is
+// decoded directly from the bytes, so this is what holds the two to the same
+// answer.
 func TestFixturesAtEveryWidth(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join("testdata", "*.wav"))
 	if err != nil || len(files) == 0 {
 		t.Skip("no fixtures alongside the test binary")
 	}
-	open := func(t *testing.T, path string, opt Options) *Reader {
+	open := func(t *testing.T, path string, opt Layout) *Reader {
 		t.Helper()
 		r, err := Open(path, opt)
 		if err != nil {
@@ -105,22 +127,22 @@ func TestFixturesAtEveryWidth(t *testing.T) {
 	}
 	for _, path := range files {
 		t.Run(filepath.Base(path), func(t *testing.T) {
-			info := open(t, path, Options{}).Info()
-			for c := MixChannels; int(c) < info.Channels; c++ {
-				opt := Options{Channel: c}
-				wide := drain[float64](t, open(t, path, opt), 7)
-				narrowsTo(t, fmt.Sprint("channel ", c), wide, drain[float32](t, open(t, path, opt), 7), f64to32)
+			info := open(t, path, Layout{}).Info()
+			for c := range info.Channels {
+				wide := drainPlane[float64](t, open(t, path, Layout{}), info.Channels, c, 7)
+				narrow := drainPlane[float32](t, open(t, path, Layout{}), info.Channels, c, 7)
+				narrowsTo(t, fmt.Sprint("channel ", c), wide, narrow, f64to32)
 			}
 
-			wide := drainPlanar[float64](t, open(t, path, Options{}), info.Channels, 7)
-			got := drainPlanar[float32](t, open(t, path, Options{}), info.Channels, 7)
+			wide := drainPlanar[float64](t, open(t, path, Layout{}), info.Channels, 7)
+			got := drainPlanar[float32](t, open(t, path, Layout{}), info.Channels, 7)
 			for c := range wide {
 				narrowsTo(t, fmt.Sprint("plane ", c), wide[c], got[c], f64to32)
 			}
 
 			// The whole file, header included, as I/Q: every byte is a sample, so
 			// the float formats meet NaN and infinities.
-			iq := Options{Container: Raw, Format: info.Format, Rate: 1, IQ: true}
+			iq := Layout{Container: Raw, Format: info.Format, Rate: 1, IQ: true}
 			wideC := drain[complex128](t, open(t, path, iq), 7)
 			narrowsTo(t, "raw I/Q", wideC, drain[complex64](t, open(t, path, iq), 7), c128to64)
 		})
@@ -128,14 +150,14 @@ func TestFixturesAtEveryWidth(t *testing.T) {
 }
 
 // TestReadPlanarIQ reads two interleaved I/Q pairs into one complex plane per
-// pair and checks each against a Reader selecting that pair.
+// pair and checks each against a read of that pair alone.
 func TestReadPlanarIQ(t *testing.T) {
 	raw := make([]byte, 4*2*301)
 	for i := range raw {
 		raw[i] = byte(i*29 + 5)
 	}
-	opt := Options{Format: pcm.I16LE, Rate: 8000, Channels: 4, IQ: true}
-	open := func(o Options) *Reader {
+	opt := Layout{Format: pcm.I16LE, Rate: 8000, Channels: 4, IQ: true}
+	open := func(o Layout) *Reader {
 		r, err := NewReader(bytes.NewReader(raw), o)
 		if err != nil {
 			t.Fatal(err)
@@ -144,10 +166,8 @@ func TestReadPlanarIQ(t *testing.T) {
 	}
 
 	got := drainPlanar[complex128](t, open(opt), 2, 13)
-	for pair := range Channel(2) {
-		o := opt
-		o.Channel = pair
-		want := drain[complex128](t, open(o), 64)
+	for pair := range 2 {
+		want := drainPlane[complex128](t, open(opt), 2, pair, 64)
 		narrowsTo(t, fmt.Sprint("pair ", pair), want, got[pair], func(v complex128) complex128 { return v })
 	}
 
@@ -184,7 +204,7 @@ func TestFloatOverFullScaleNoteAtEveryWidth(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			opt := Options{Format: pcm.F32LE, Rate: 8000, IQ: tc.iq}
+			opt := Layout{Format: pcm.F32LE, Rate: 8000, IQ: tc.iq}
 			if tc.name == "float32 planar" {
 				opt.Channels = 2
 			}
@@ -210,11 +230,11 @@ func TestContainer(t *testing.T) {
 	}
 
 	raw := i16(0.5, -0.5)
-	if _, err := NewReader(bytes.NewReader(raw), Options{
+	if _, err := NewReader(bytes.NewReader(raw), Layout{
 		Format: pcm.I16LE, Rate: 8000, Container: WAV}); err == nil {
 		t.Error("Container WAV accepted a stream with no header")
 	}
-	if _, err := NewReader(bytes.NewReader(raw), Options{
+	if _, err := NewReader(bytes.NewReader(raw), Layout{
 		Format: pcm.I16LE, Rate: 8000, Container: 7}); err == nil {
 		t.Error("an unknown Container was accepted")
 	}

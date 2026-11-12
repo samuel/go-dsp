@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -36,9 +37,13 @@ func i16(vals ...float64) []byte {
 	return b
 }
 
-// readAll drains a Reader, which is how every analysis in the tool will use it.
+// readAll reads a real stream to the end, block frames at a time. A stream of
+// more than one channel gives up its first.
 func readAll(t *testing.T, r *Reader, block int) []float64 {
 	t.Helper()
+	if n := r.Info().Channels; n > 1 {
+		return drainPlane[float64](t, r, n, 0, block)
+	}
 	var out []float64
 	buf := make([]float64, block)
 	for {
@@ -58,7 +63,7 @@ func readAll(t *testing.T, r *Reader, block int) []float64 {
 
 func TestReadRawMono(t *testing.T) {
 	want := []float64{0, 0.5, -0.5, 0.25}
-	r, err := NewReader(bytes.NewReader(i16(want...)), Options{Format: pcm.I16LE, Rate: 8000})
+	r, err := NewReader(bytes.NewReader(i16(want...)), Layout{Format: pcm.I16LE, Rate: 8000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +95,7 @@ func TestReadBlockSizes(t *testing.T) {
 	raw := i16(want...)
 
 	for _, block := range []int{1, 2, 3, 7, 64, 299, 300, 301, 4096} {
-		r, err := NewReader(bytes.NewReader(raw), Options{Format: pcm.I16LE, Rate: 8000})
+		r, err := NewReader(bytes.NewReader(raw), Layout{Format: pcm.I16LE, Rate: 8000})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -116,7 +121,7 @@ func roundTrip16(v float64) float64 {
 // partial frame is not a sample.
 func TestReadTruncatedFrame(t *testing.T) {
 	raw := append(i16(0.5, -0.5), 0x11) // two samples and a stray byte
-	r, err := NewReader(bytes.NewReader(raw), Options{Format: pcm.I16LE, Rate: 8000})
+	r, err := NewReader(bytes.NewReader(raw), Layout{Format: pcm.I16LE, Rate: 8000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,42 +133,35 @@ func TestReadTruncatedFrame(t *testing.T) {
 func TestReadChannels(t *testing.T) {
 	// Two channels: the second is the negation of the first.
 	raw := i16(0.5, -0.5, 0.25, -0.25, -0.75, 0.75)
+	l := Layout{Format: pcm.I16LE, Rate: 8000, Channels: 2}
 
-	for _, tc := range []struct {
-		name string
-		pick Channel
-		want []float64
-	}{
-		{"left", 0, []float64{0.5, 0.25, -0.75}},
-		{"right", 1, []float64{-0.5, -0.25, 0.75}},
-		// The channels cancel exactly, so a mixdown is silence -- which is a
-		// stronger check than a plausible-looking average.
-		{"mix", MixChannels, []float64{0, 0, 0}},
+	for c, want := range [][]float64{
+		{0.5, 0.25, -0.75},
+		{-0.5, -0.25, 0.75},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			r, err := NewReader(bytes.NewReader(raw), Options{
-				Format: pcm.I16LE, Rate: 8000, Channels: 2, Channel: tc.pick,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			got := readAll(t, r, 2)
-			if len(got) != len(tc.want) {
-				t.Fatalf("read %d frames, want %d", len(got), len(tc.want))
-			}
-			for i := range tc.want {
-				if got[i] != tc.want[i] {
-					t.Errorf("frame %d = %v, want %v", i, got[i], tc.want[i])
-				}
-			}
-		})
+		r, err := NewReader(bytes.NewReader(raw), l)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := drainPlane[float64](t, r, 2, c, 2); !slices.Equal(got, want) {
+			t.Errorf("channel %d = %v, want %v", c, got, want)
+		}
+	}
+
+	// ReadSamples has no way to say which channel, so it refuses.
+	r, err := NewReader(bytes.NewReader(raw), l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.ReadSamples(make([]float64, 2)); err == nil {
+		t.Error("ReadSamples read a two-channel stream")
 	}
 }
 
 func TestReadComplex(t *testing.T) {
 	// Interleaved I/Q: (0.5, -0.5), (0.25, 0.75).
 	raw := i16(0.5, -0.5, 0.25, 0.75)
-	r, err := NewReader(bytes.NewReader(raw), Options{Format: pcm.I16LE, Rate: 8000, IQ: true})
+	r, err := NewReader(bytes.NewReader(raw), Layout{Format: pcm.I16LE, Rate: 8000, IQ: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +195,7 @@ func TestReadComplex64(t *testing.T) {
 	}
 	raw := i16(vals...)
 	open := func() *Reader {
-		r, err := NewReader(bytes.NewReader(raw), Options{Format: pcm.I16LE, Rate: 8000, IQ: true})
+		r, err := NewReader(bytes.NewReader(raw), Layout{Format: pcm.I16LE, Rate: 8000, IQ: true})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -230,7 +228,7 @@ func TestReadComplex64(t *testing.T) {
 // TestReadWrongShape validates that a complex stream does not hand back its
 // real part, nor a real stream pretend to be complex.
 func TestReadWrongShape(t *testing.T) {
-	iq, err := NewReader(bytes.NewReader(i16(0, 0, 0, 0)), Options{Format: pcm.I16LE, Rate: 8000, IQ: true})
+	iq, err := NewReader(bytes.NewReader(i16(0, 0, 0, 0)), Layout{Format: pcm.I16LE, Rate: 8000, IQ: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +236,7 @@ func TestReadWrongShape(t *testing.T) {
 		t.Error("a float64 read of an I/Q stream succeeded")
 	}
 
-	realRd, err := NewReader(bytes.NewReader(i16(0, 0)), Options{Format: pcm.I16LE, Rate: 8000})
+	realRd, err := NewReader(bytes.NewReader(i16(0, 0)), Layout{Format: pcm.I16LE, Rate: 8000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,64 +248,28 @@ func TestReadWrongShape(t *testing.T) {
 	}
 }
 
-// TestReadComplexPairs checks that with four interleaved channels the pair index
-// selects an I/Q pair rather than a channel.
+// TestReadComplexPairs checks that with four interleaved channels a plane is
+// an I/Q pair, not a channel.
 func TestReadComplexPairs(t *testing.T) {
 	// Frame: I0 Q0 I1 Q1.
 	raw := i16(0.5, 0.25, -0.5, -0.25)
-	for pair, want := range map[Channel]complex128{
-		0: complex(0.5, 0.25),
-		1: complex(-0.5, -0.25),
-	} {
-		r, err := NewReader(bytes.NewReader(raw), Options{
-			Format: pcm.I16LE, Rate: 8000, Channels: 4, Channel: pair, IQ: true,
-		})
+	l := Layout{Format: pcm.I16LE, Rate: 8000, Channels: 4, IQ: true}
+	for pair, want := range []complex128{complex(0.5, 0.25), complex(-0.5, -0.25)} {
+		r, err := NewReader(bytes.NewReader(raw), l)
 		if err != nil {
 			t.Fatal(err)
 		}
-		dst := make([]complex128, 2)
-		n, err := r.ReadSamples(dst)
-		if err != nil && !errors.Is(err, io.EOF) {
-			t.Fatal(err)
-		}
-		if n != 1 || dst[0] != want {
-			t.Errorf("pair %d: read %d samples, first %v, want 1 and %v", pair, n, dst[0], want)
+		if got := drainPlane[complex128](t, r, 2, pair, 2); len(got) != 1 || got[0] != want {
+			t.Errorf("pair %d = %v, want %v", pair, got, want)
 		}
 	}
-}
 
-func TestReadSkipAndLimit(t *testing.T) {
-	all := []float64{0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875}
-	raw := i16(all...)
-
-	for _, tc := range []struct {
-		name        string
-		skip, limit int64
-		want        []float64
-	}{
-		{"skip", 3, 0, all[3:]},
-		{"limit", 0, 3, all[:3]},
-		{"both", 2, 3, all[2:5]},
-		{"skip past the end", 100, 0, nil},
-		{"limit past the end", 0, 100, all},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			r, err := NewReader(bytes.NewReader(raw), Options{
-				Format: pcm.I16LE, Rate: 8000, Skip: tc.skip, Limit: tc.limit,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			got := readAll(t, r, 3)
-			if len(got) != len(tc.want) {
-				t.Fatalf("read %d samples, want %d", len(got), len(tc.want))
-			}
-			for i := range tc.want {
-				if got[i] != tc.want[i] {
-					t.Errorf("sample %d = %v, want %v", i, got[i], tc.want[i])
-				}
-			}
-		})
+	r, err := NewReader(bytes.NewReader(raw), l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.ReadSamples(make([]complex128, 2)); err == nil {
+		t.Error("ReadSamples read a stream of two I/Q pairs")
 	}
 }
 
@@ -322,15 +284,12 @@ func TestOpenRawReportsItsLength(t *testing.T) {
 
 	for _, tc := range []struct {
 		name        string
-		opt         Options
+		opt         Layout
 		wantFrames  int64
 		wantSeconds float64
 	}{
-		{"whole file", Options{Format: pcm.I16LE, Rate: 100}, 100, 1},
-		{"stereo halves it", Options{Format: pcm.I16LE, Rate: 100, Channels: 2}, 50, 0.5},
-		{"skip", Options{Format: pcm.I16LE, Rate: 100, Skip: 40}, 60, 0.6},
-		{"limit", Options{Format: pcm.I16LE, Rate: 100, Limit: 10}, 10, 0.1},
-		{"skip and limit", Options{Format: pcm.I16LE, Rate: 100, Skip: 95, Limit: 10}, 5, 0.05},
+		{"whole file", Layout{Format: pcm.I16LE, Rate: 100}, 100, 1},
+		{"stereo halves it", Layout{Format: pcm.I16LE, Rate: 100, Channels: 2}, 50, 0.5},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r, err := Open(path, tc.opt)
@@ -352,25 +311,21 @@ func TestOpenRawReportsItsLength(t *testing.T) {
 	}
 }
 
-func TestReaderRejectsBadOptions(t *testing.T) {
+func TestReaderRejectsBadLayout(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		opt  Options
+		opt  Layout
 	}{
-		{"no format", Options{Rate: 8000}},
-		{"no rate", Options{Format: pcm.I16LE}},
-		{"invalid format", Options{Format: pcm.Format(99), Rate: 8000}},
-		{"negative skip", Options{Format: pcm.I16LE, Rate: 8000, Skip: -1}},
-		{"negative limit", Options{Format: pcm.I16LE, Rate: 8000, Limit: -1}},
-		{"channel out of range", Options{Format: pcm.I16LE, Rate: 8000, Channels: 2, Channel: 2}},
-		{"negative channel", Options{Format: pcm.I16LE, Rate: 8000, Channel: -7}},
-		{"mixing an I/Q stream", Options{Format: pcm.I16LE, Rate: 8000, IQ: true, Channel: MixChannels}},
-		{"odd channels for I/Q", Options{Format: pcm.I16LE, Rate: 8000, IQ: true, Channels: 3}},
-		{"I/Q pair out of range", Options{Format: pcm.I16LE, Rate: 8000, IQ: true, Channels: 2, Channel: 1}},
+		{"no format", Layout{Rate: 8000}},
+		{"no rate", Layout{Format: pcm.I16LE}},
+		{"invalid format", Layout{Format: pcm.Format(99), Rate: 8000}},
+		{"negative channels", Layout{Format: pcm.I16LE, Rate: 8000, Channels: -1}},
+		{"an unknown container", Layout{Format: pcm.I16LE, Rate: 8000, Container: 9}},
+		{"odd channels for I/Q", Layout{Format: pcm.I16LE, Rate: 8000, IQ: true, Channels: 3}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := NewReader(bytes.NewReader(make([]byte, 64)), tc.opt); err == nil {
-				t.Error("accepted options that should be rejected")
+				t.Error("accepted a layout that should be rejected")
 			}
 		})
 	}
@@ -379,7 +334,7 @@ func TestReaderRejectsBadOptions(t *testing.T) {
 // TestReadFloat32 covers the width the filters in dsp take, which is what the
 // examples need.
 func TestReadFloat32(t *testing.T) {
-	r, err := NewReader(bytes.NewReader(i16(0.5, -0.5, 0.25)), Options{Format: pcm.I16LE, Rate: 8000})
+	r, err := NewReader(bytes.NewReader(i16(0.5, -0.5, 0.25)), Layout{Format: pcm.I16LE, Rate: 8000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -402,7 +357,7 @@ func TestReadFloat32(t *testing.T) {
 // TestReadEOFIsSticky makes sure a drained Reader keeps saying so rather than
 // blocking or spinning.
 func TestReadEOFIsSticky(t *testing.T) {
-	r, err := NewReader(bytes.NewReader(i16(0.5)), Options{Format: pcm.I16LE, Rate: 8000})
+	r, err := NewReader(bytes.NewReader(i16(0.5)), Layout{Format: pcm.I16LE, Rate: 8000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,34 +365,6 @@ func TestReadEOFIsSticky(t *testing.T) {
 	for range 3 {
 		if n, err := r.ReadSamples(make([]float64, 4)); n != 0 || !errors.Is(err, io.EOF) {
 			t.Fatalf("after EOF, ReadSamples = (%d, %v), want (0, EOF)", n, err)
-		}
-	}
-}
-
-// TestReadFloat32Mixdown checks that a float32 mixdown writes the averages and
-// not the interleaved scratch they are summed from, which is twice as long as
-// the request and so is reallocated by it.
-func TestReadFloat32Mixdown(t *testing.T) {
-	raw := i16(0.5, -0.5, 0.25, -0.25, -0.75, 0.75)
-	r, err := NewReader(bytes.NewReader(raw), Options{
-		Format: pcm.I16LE, Rate: 8000, Channels: 2, Channel: MixChannels,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	dst := make([]float32, 3)
-	n, err := r.ReadSamples(dst)
-	if err != nil && !errors.Is(err, io.EOF) {
-		t.Fatal(err)
-	}
-	if n != 3 {
-		t.Fatalf("read %d frames, want 3", n)
-	}
-	// Every frame's two channels cancel exactly.
-	for i, v := range dst {
-		if v != 0 {
-			t.Errorf("frame %d mixes to %v, want 0 (a raw channel value here means "+
-				"the conversion read a reallocated scratch buffer)", i, v)
 		}
 	}
 }
@@ -468,58 +395,60 @@ func readAllPlanar(t *testing.T, r *Reader, channels, block int) [][]float64 {
 	}
 }
 
-// TestReadPlanarMatchesPerChannelReaders pins that reading every
-// channel at once produces exactly what a Reader per channel
-// produces, bit for bit. The two decode the same bytes with the same arithmetic
-// in the same order, so equality is the right comparison.
-//
-// The oracle being another Reader lets the input be arbitrary bytes, which
-// covers all twelve formats, both byte orders and the packed three-byte width
-// for nothing.
-func TestReadPlanarMatchesPerChannelReaders(t *testing.T) {
+// TestReadPlanarMatchesDecode checks a planar read of every format and channel
+// count against pcm.Decode run over each channel's bytes, bit for bit, both
+// with every plane present and with one plane at a time and the rest nil.
+func TestReadPlanarMatchesDecode(t *testing.T) {
 	blocks := []int{1, 2, 3, 7, 64, 299, 300, 301, 4096}
 	for _, format := range pcm.Formats() {
 		for _, channels := range []int{1, 2, 3, 8} {
 			const frames = 300
-			raw := make([]byte, frames*channels*format.Width())
+			width := format.Width()
+			raw := make([]byte, frames*channels*width)
 			for i := range raw {
 				raw[i] = byte(i*31 + 7)
 			}
-			opt := Options{Format: format, Rate: 8000, Channels: channels, Container: Raw}
+			l := Layout{Format: format, Rate: 8000, Channels: channels, Container: Raw}
 
-			// The oracle: one Reader per channel over the same bytes.
 			want := make([][]float64, channels)
 			for c := range want {
-				o := opt
-				o.Channel = Channel(c)
-				r, err := NewReader(bytes.NewReader(raw), o)
-				if err != nil {
-					t.Fatal(err)
+				var one []byte
+				for i := range frames {
+					at := (i*channels + c) * width
+					one = append(one, raw[at:at+width]...)
 				}
-				want[c] = readAll(t, r, 64)
+				want[c] = make([]float64, frames)
+				pcm.Decode(want[c], one, format)
+			}
+			// Arbitrary bytes read as a float format can be NaN, which is
+			// never equal to itself.
+			same := func(t *testing.T, c int, got []float64) {
+				t.Helper()
+				if len(got) != frames {
+					t.Fatalf("channel %d: %d frames, want %d", c, len(got), frames)
+				}
+				for i, w := range want[c] {
+					if got[i] != w && !(math.IsNaN(got[i]) && math.IsNaN(w)) {
+						t.Fatalf("channel %d frame %d = %v, want %v", c, i, got[i], w)
+					}
+				}
 			}
 
 			for _, block := range blocks {
-				name := fmt.Sprintf("%v/%dch/block%d", format, channels, block)
-				t.Run(name, func(t *testing.T) {
-					r, err := NewReader(bytes.NewReader(raw), opt)
+				t.Run(fmt.Sprintf("%v/%dch/block%d", format, channels, block), func(t *testing.T) {
+					r, err := NewReader(bytes.NewReader(raw), l)
 					if err != nil {
 						t.Fatal(err)
 					}
-					got := readAllPlanar(t, r, channels, block)
-					for c := range got {
-						if len(got[c]) != len(want[c]) {
-							t.Fatalf("channel %d: %d frames, want %d", c, len(got[c]), len(want[c]))
+					for c, got := range readAllPlanar(t, r, channels, block) {
+						same(t, c, got)
+					}
+					for c := range channels {
+						r, err := NewReader(bytes.NewReader(raw), l)
+						if err != nil {
+							t.Fatal(err)
 						}
-						for i := range want[c] {
-							// Arbitrary bytes read as a float format can be NaN,
-							// which is never equal to itself.
-							if got[c][i] != want[c][i] &&
-								!(math.IsNaN(got[c][i]) && math.IsNaN(want[c][i])) {
-								t.Fatalf("channel %d frame %d = %v, want %v",
-									c, i, got[c][i], want[c][i])
-							}
-						}
+						same(t, c, drainPlane[float64](t, r, channels, c, block))
 					}
 				})
 			}
@@ -527,13 +456,12 @@ func TestReadPlanarMatchesPerChannelReaders(t *testing.T) {
 	}
 }
 
-// TestReadPlanarMono covers the delegation to ReadSamples, which nothing else
-// reaches: a one-channel file is already planar, so ReadPlanar hands the plane
-// straight to ReadSamples rather than decoding and splitting it.
+// TestReadPlanarMono covers a planar read of a one-channel stream, which
+// decodes straight into the plane with no split.
 func TestReadPlanarMono(t *testing.T) {
 	want := []float64{0, 0.5, -0.5, 0.25, -0.125}
 	for _, block := range []int{1, 2, 3, 5, 64} {
-		r, err := NewReader(bytes.NewReader(i16(want...)), Options{Format: pcm.I16LE, Rate: 8000})
+		r, err := NewReader(bytes.NewReader(i16(want...)), Layout{Format: pcm.I16LE, Rate: 8000})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -558,7 +486,7 @@ func TestReadPlanarShortestPlaneWins(t *testing.T) {
 	for i := range 16 {
 		binary.LittleEndian.PutUint16(raw[i*2:], uint16(int16(i)))
 	}
-	r, err := NewReader(bytes.NewReader(raw), Options{
+	r, err := NewReader(bytes.NewReader(raw), Layout{
 		Format: pcm.I16LE, Rate: 8000, Channels: 2,
 	})
 	if err != nil {
@@ -598,7 +526,7 @@ func TestReadPlanarShortestPlaneWins(t *testing.T) {
 // rather than half-decoded, as TestReadTruncatedFrame does for one channel.
 func TestReadPlanarTruncatedFrame(t *testing.T) {
 	raw := append(i16(0.5, -0.5, 0.25, -0.25), 0x00) // two whole frames plus a stray byte
-	r, err := NewReader(bytes.NewReader(raw), Options{Format: pcm.I16LE, Rate: 8000, Channels: 2})
+	r, err := NewReader(bytes.NewReader(raw), Layout{Format: pcm.I16LE, Rate: 8000, Channels: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -608,58 +536,48 @@ func TestReadPlanarTruncatedFrame(t *testing.T) {
 	}
 }
 
-// TestReadPlanarSkipAndLimit checks that both land on frames rather than on
-// samples, which is the thing that goes wrong once a file has two channels.
-func TestReadPlanarSkipAndLimit(t *testing.T) {
-	raw := i16(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7) // four stereo frames
-	for _, tt := range []struct {
-		name        string
-		skip, limit int64
-		wantL       []float64
-	}{
-		{"all", 0, 0, []float64{0, 0.2, 0.4, 0.6}},
-		{"skip", 1, 0, []float64{0.2, 0.4, 0.6}},
-		{"limit", 0, 2, []float64{0, 0.2}},
-		{"both", 1, 2, []float64{0.2, 0.4}},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			r, err := NewReader(bytes.NewReader(raw), Options{
-				Format: pcm.I16LE, Rate: 8000, Channels: 2, Skip: tt.skip, Limit: tt.limit,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			got := readAllPlanar(t, r, 2, 3)
-			if len(got[0]) != len(tt.wantL) {
-				t.Fatalf("got %d frames, want %d", len(got[0]), len(tt.wantL))
-			}
-			for i, want := range tt.wantL {
-				if math.Abs(got[0][i]-want) > 1.0/32768 {
-					t.Errorf("frame %d = %v, want %v", i, got[0][i], want)
-				}
-			}
-		})
-	}
-}
-
-// TestReadPlanarIgnoresChannelSelection pins the surprising half of the
-// contract: a planar read is the whole frame, so the channel the Reader was
-// opened for does not narrow it.
-func TestReadPlanarIgnoresChannelSelection(t *testing.T) {
-	raw := i16(0.5, -0.5, 0.25, -0.25)
-	r, err := NewReader(bytes.NewReader(raw), Options{
-		Format: pcm.I16LE, Rate: 8000, Channels: 2, Channel: 1,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := readAllPlanar(t, r, 2, 4)
-	wantL := []float64{0.5, 0.25}
-	wantR := []float64{-0.5, -0.25}
-	for i := range wantL {
-		if got[0][i] != wantL[i] || got[1][i] != wantR[i] {
-			t.Errorf("frame %d = (%v, %v), want (%v, %v)", i, got[0][i], got[1][i], wantL[i], wantR[i])
+// TestReadPlanarNilPlanes checks the rules for a nil plane: its channel is
+// passed over, it does not count toward the shortest plane, and a read with
+// nothing but nil planes is an error, not an empty read.
+func TestReadPlanarNilPlanes(t *testing.T) {
+	// Three channels, four frames; each value names its channel and frame.
+	raw := i16(0.00, 0.10, 0.20, 0.01, 0.11, 0.21, 0.02, 0.12, 0.22, 0.03, 0.13, 0.23)
+	want := func(c, i int) float64 { return roundTrip16(float64(c)/10 + float64(i)/100) }
+	open := func() *Reader {
+		r, err := NewReader(bytes.NewReader(raw), Layout{Format: pcm.I16LE, Rate: 8000, Channels: 3})
+		if err != nil {
+			t.Fatal(err)
 		}
+		return r
+	}
+
+	r := open()
+	first, last := make([]float64, 3), make([]float32, 3)
+	n, err := r.ReadPlanar([][]float64{first, nil, nil})
+	if err != nil || n != 3 {
+		t.Fatalf("ReadPlanar = %d, %v, want 3 frames", n, err)
+	}
+	for i := range n {
+		if first[i] != want(0, i) {
+			t.Errorf("channel 0 frame %d = %v, want %v", i, first[i], want(0, i))
+		}
+	}
+	// The skipped channels were consumed with the frame: the next read, at
+	// another width and of another channel, continues at frame 3.
+	n, err = r.ReadPlanar([][]float32{nil, nil, last})
+	if err != nil || n != 1 {
+		t.Fatalf("second ReadPlanar = %d, %v, want the 1 frame left", n, err)
+	}
+	if last[0] != float32(want(2, 3)) {
+		t.Errorf("channel 2 frame 3 = %v, want %v", last[0], want(2, 3))
+	}
+
+	r = open()
+	if n, err := r.ReadPlanar([][]float64{nil, nil, nil}); err == nil {
+		t.Errorf("a read into nothing but nil planes returned %d frames and no error", n)
+	}
+	if got := readAllPlanar(t, r, 3, 8); len(got[0]) != 4 {
+		t.Errorf("%d frames left after the refused read, want all 4", len(got[0]))
 	}
 }
 
@@ -675,14 +593,13 @@ func TestReadPlanarRejectsWrongShape(t *testing.T) {
 	}
 	for _, tt := range []struct {
 		name   string
-		opt    Options
+		opt    Layout
 		planes int
 	}{
-		{"too few planes", Options{Format: pcm.I16LE, Rate: 8000, Channels: 2}, 1},
-		{"too many planes", Options{Format: pcm.I16LE, Rate: 8000, Channels: 2}, 3},
-		{"no planes", Options{Format: pcm.I16LE, Rate: 8000, Channels: 2}, 0},
-		{"a mixdown", Options{Format: pcm.I16LE, Rate: 8000, Channels: 2, Channel: MixChannels}, 2},
-		{"real planes for an I/Q stream", Options{Format: pcm.I16LE, Rate: 8000, Channels: 2, IQ: true}, 2},
+		{"too few planes", Layout{Format: pcm.I16LE, Rate: 8000, Channels: 2}, 1},
+		{"too many planes", Layout{Format: pcm.I16LE, Rate: 8000, Channels: 2}, 3},
+		{"no planes", Layout{Format: pcm.I16LE, Rate: 8000, Channels: 2}, 0},
+		{"real planes for an I/Q stream", Layout{Format: pcm.I16LE, Rate: 8000, Channels: 2, IQ: true}, 2},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			r, err := NewReader(bytes.NewReader(i16(0, 0, 0, 0)), tt.opt)
@@ -706,7 +623,7 @@ func TestReadPlanarRejectsWrongShape(t *testing.T) {
 // TestReadPlanarEOFIsSticky makes sure a drained Reader keeps saying so rather
 // than blocking or spinning, as TestReadEOFIsSticky does for one channel.
 func TestReadPlanarEOFIsSticky(t *testing.T) {
-	r, err := NewReader(bytes.NewReader(i16(0.5, -0.5)), Options{
+	r, err := NewReader(bytes.NewReader(i16(0.5, -0.5)), Layout{
 		Format: pcm.I16LE, Rate: 8000, Channels: 2,
 	})
 	if err != nil {
@@ -721,13 +638,10 @@ func TestReadPlanarEOFIsSticky(t *testing.T) {
 	}
 }
 
-// BenchmarkReadPlanar backs the reason ReadPlanar exists: one pass over the
-// interleaved bytes for every channel, against one pass per channel.
-//
-// Both arms report the size of the file to SetBytes rather than the bytes each
-// arm touches, so the MB/s figure answers "how fast does this deliver the samples
-// in this file" -- which is the question, since the per-channel arm reads the
-// same file once per channel. Raw keeps sniffWAV's bufio wrap out of both.
+// BenchmarkReadPlanar measures a planar read of a whole stream, with every
+// plane present and with one plane and the rest nil. SetBytes is the size of
+// the stream in both, so the figures compare directly. Raw keeps sniffWAV's
+// bufio wrap out of it.
 func BenchmarkReadPlanar(b *testing.B) {
 	const frames = 1 << 16
 	for _, channels := range []int{2, 4, 8} {
@@ -735,63 +649,48 @@ func BenchmarkReadPlanar(b *testing.B) {
 		for i := range raw {
 			raw[i] = byte(i*31 + 7)
 		}
-		opt := Options{Format: pcm.I16LE, Rate: 8000, Channels: channels, Container: Raw}
+		l := Layout{Format: pcm.I16LE, Rate: 8000, Channels: channels, Container: Raw}
 
-		planes := make([][]float64, channels)
-		for c := range planes {
-			planes[c] = make([]float64, 4096)
+		all := make([][]float64, channels)
+		for c := range all {
+			all[c] = make([]float64, 4096)
 		}
-		one := make([]float64, 4096)
+		one := make([][]float64, channels)
+		one[channels-1] = make([]float64, 4096)
 
-		b.Run(fmt.Sprintf("%dch/planar", channels), func(b *testing.B) {
-			b.SetBytes(int64(len(raw)))
-			b.ReportAllocs()
-			for b.Loop() {
-				r, err := NewReader(bytes.NewReader(raw), opt)
-				if err != nil {
-					b.Fatal(err)
-				}
-				for {
-					if _, err := r.ReadPlanar(planes); err != nil {
-						break
-					}
-				}
-			}
-		})
-		b.Run(fmt.Sprintf("%dch/readers", channels), func(b *testing.B) {
-			b.SetBytes(int64(len(raw)))
-			b.ReportAllocs()
-			for b.Loop() {
-				for c := range channels {
-					o := opt
-					o.Channel = Channel(c)
-					r, err := NewReader(bytes.NewReader(raw), o)
+		for _, arm := range []struct {
+			name   string
+			planes [][]float64
+		}{{"all", all}, {"one", one}} {
+			b.Run(fmt.Sprintf("%dch/%s", channels, arm.name), func(b *testing.B) {
+				b.SetBytes(int64(len(raw)))
+				b.ReportAllocs()
+				for b.Loop() {
+					r, err := NewReader(bytes.NewReader(raw), l)
 					if err != nil {
 						b.Fatal(err)
 					}
 					for {
-						if _, err := r.ReadSamples(one); err != nil {
+						if _, err := r.ReadPlanar(arm.planes); err != nil {
 							break
 						}
 					}
 				}
-			}
-		})
+			})
+		}
 	}
 }
 
-// TestFloatOverFullScaleNote checks the Note the package comment promises for a
-// float sample outside full scale. Every decibel measured downstream is relative
-// to 1.0 and a float container does not enforce that: a peak of 2.0 reads as
-// +6 dBFS, clipping that never happened. The note can appear only once the
-// sample has been read, so Info is checked before and after.
+// TestFloatOverFullScaleNote checks the Note for a float sample outside full
+// scale. It can appear only once the sample has been read, so Info is checked
+// before and after.
 func TestFloatOverFullScaleNote(t *testing.T) {
 	raw := make([]byte, 0, 4*4)
 	for _, v := range []float32{0.5, -0.25, 2.0, 0.1} {
 		raw = binary.LittleEndian.AppendUint32(raw, math.Float32bits(v))
 	}
 
-	r, err := NewReader(io.NopCloser(bytes.NewReader(raw)), Options{
+	r, err := NewReader(io.NopCloser(bytes.NewReader(raw)), Layout{
 		Format: pcm.F32LE, Rate: 8000, Channels: 1,
 	})
 	if err != nil {
@@ -811,7 +710,7 @@ func TestFloatOverFullScaleNote(t *testing.T) {
 
 	// An integer format cannot produce one, since every code divides into
 	// range by construction.
-	ri, err := NewReader(io.NopCloser(bytes.NewReader([]byte{0x00, 0x80, 0xff, 0x7f})), Options{
+	ri, err := NewReader(io.NopCloser(bytes.NewReader([]byte{0x00, 0x80, 0xff, 0x7f})), Layout{
 		Format: pcm.I16LE, Rate: 8000, Channels: 1,
 	})
 	if err != nil {
@@ -842,7 +741,7 @@ func TestFillGivesUpOnAStalledReader(t *testing.T) {
 	go func() {
 		// NewReader primes the buffer, so it is the first thing that can stall;
 		// either it or the read has to come back with the error.
-		r, err := NewReader(io.NopCloser(stalledReader{}), Options{Format: pcm.I16LE, Rate: 8000, Channels: 1})
+		r, err := NewReader(io.NopCloser(stalledReader{}), Layout{Format: pcm.I16LE, Rate: 8000, Channels: 1})
 		if err != nil {
 			done <- err
 			return
@@ -884,7 +783,7 @@ func benchRead[T dsp.Sample](b *testing.B, f pcm.Format, iq bool) {
 	for i := range raw {
 		raw[i] = byte(i*31 + 7)
 	}
-	opt := Options{Format: f, Rate: 8000, IQ: iq, Container: Raw}
+	opt := Layout{Format: f, Rate: 8000, IQ: iq, Container: Raw}
 	buf := make([]T, 4096)
 	b.SetBytes(int64(len(raw)))
 	b.ReportAllocs()
@@ -907,14 +806,14 @@ func benchRead[T dsp.Sample](b *testing.B, f pcm.Format, iq bool) {
 func TestReadIntoNothing(t *testing.T) {
 	payload := i16(0.5, -0.5, 0.25)
 	for _, size := range []uint32{uint32(len(payload)), math.MaxUint32} {
-		r, err := NewReader(bytes.NewReader(wav(pcmFmt(wavPCM, 1, 8000, 16), size, payload)), Options{})
+		r, err := NewReader(bytes.NewReader(wav(pcmFmt(wavPCM, 1, 8000, 16), size, payload)), Layout{})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if n, err := r.ReadSamples([]float32(nil)); n != 0 || err != nil {
 			t.Errorf("size %#x: an empty read at the start = (%d, %v), want (0, nil)", size, n, err)
 		}
-		if n, err := r.ReadPlanar([][]float64{nil}); n != 0 || err != nil {
+		if n, err := r.ReadPlanar([][]float64{{}}); n != 0 || err != nil {
 			t.Errorf("size %#x: an empty planar read = (%d, %v), want (0, nil)", size, n, err)
 		}
 		if got := drain[float64](t, r, 8); len(got) != 3 {

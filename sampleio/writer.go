@@ -14,30 +14,16 @@ import (
 	"samuelks.com/dsp/pcm"
 )
 
-// WriterOptions configures a Writer.
-//
-// Format is required, and Rate is required for a WAV. Channels zero selects 2
-// when IQ is set and 1 otherwise, and IQ requires exactly 2. Container zero
-// selects WAV; Raw writes the samples with no header.
-type WriterOptions struct {
-	Layout
-
-	// ChannelMask is a WAV's speaker assignment, a Speaker bit per position
-	// in channel order. Zero leaves it to the header: none for a plain one, and
-	// the usual mono or stereo mask where the format needs an extensible one.
-	ChannelMask uint32
-}
-
-// Writer is the mirror of Reader: it takes full-scale samples and owns
-// interleaving, byte order, bit depth and the container. Not safe for
-// concurrent use. Samples are buffered, so Close, or Flush for a live
-// consumer, is what gets the last of them to the destination.
+// Writer encodes full-scale samples and writes them in the format, channel
+// count and container of its Layout. Samples are buffered, so the last of them
+// reach the destination on Close, or on Flush for a consumer reading the
+// stream live. It is not safe for concurrent use.
 type Writer struct {
 	dst    io.Writer
 	closer io.Closer // the file Create opened; nil for anything else
 
-	// seeker is the destination when the WAV sizes can be patched on Close,
-	// and start the offset its header begins at.
+	// seeker is the destination when it can seek, which is what lets Close
+	// fill in the WAV sizes. start is the offset of the header.
 	seeker io.WriteSeeker
 	start  int64
 
@@ -57,55 +43,58 @@ type Writer struct {
 	closed  bool
 }
 
-// errClosed is what every call on a closed Writer returns.
+// errClosed is returned by every call on a closed Writer.
 var errClosed = errors.New("sampleio: the Writer is closed")
 
-// rf64Limit is the largest RIFF size a plain WAV can state. A file past it
-// becomes RF64. It is a variable so a test can cross it without writing 4 GiB.
+// rf64Limit is the largest size a plain WAV header can state. A larger file
+// is written as RF64. It is a variable so a test can lower it.
 var rf64Limit int64 = math.MaxUint32
 
-// Create writes to the file at path, replacing it. "-" or "" writes to
-// standard output, which Close leaves open.
+// Create creates the file at path, replacing any file already there, and
+// writes to it. "-" or "" writes to standard output, which Close leaves open.
 //
-// A regular file can be sought, so Close fills in the WAV sizes; standard
-// output usually cannot, and a WAV written there carries the placeholder
-// sizes a pipe reader expects.
-func Create(path string, opt WriterOptions) (*Writer, error) {
+// l.Format is required, and l.Rate is required for a WAV. A zero Container
+// writes a WAV; Raw writes the samples with no header.
+//
+// Close fills in the sizes in the header of a WAV written to a regular file.
+// Standard output usually cannot seek, so a WAV written there keeps the
+// placeholder sizes that tell a reader to read to the end of the stream.
+func Create(path string, l Layout) (*Writer, error) {
 	if path == "" || path == "-" {
-		return NewWriter(os.Stdout, opt)
+		return NewWriter(os.Stdout, l)
 	}
-	// Checked before the file is created, so a bad option leaves an existing
-	// file untouched.
-	if _, err := writerInfo(opt); err != nil {
+	// Check the layout before creating the file, so a bad one does not
+	// truncate a file that is already there.
+	if _, err := writerInfo(l); err != nil {
 		return nil, err
 	}
 	f, err := os.Create(path)
 	if err != nil {
 		return nil, err
 	}
-	w, err := NewWriter(f, opt)
+	w, err := NewWriter(f, l)
 	if err != nil {
-		_ = f.Close() // the option error is the one worth reporting
+		_ = f.Close() // the layout error is the one to report
 		return nil, err
 	}
 	w.closer = f
 	return w, nil
 }
 
-// NewWriter writes to w. When w is an io.WriteSeeker that can seek, Close
-// goes back to fill in the WAV sizes, and turns the file into RF64 if it has
-// grown past 4 GiB; otherwise the sizes are left as the placeholders a
-// streaming writer uses. Close does not close w.
-func NewWriter(w io.Writer, opt WriterOptions) (*Writer, error) {
-	info, err := writerInfo(opt)
+// NewWriter writes to w, with l interpreted as it is by Create. When w is an
+// io.WriteSeeker that can seek, Close goes back and fills in the sizes in a
+// WAV header, and makes the file RF64 if it has grown past 4 GiB. Otherwise
+// the header keeps its placeholder sizes. Close does not close w.
+func NewWriter(w io.Writer, l Layout) (*Writer, error) {
+	info, err := writerInfo(l)
 	if err != nil {
 		return nil, err
 	}
 	wr := &Writer{dst: w, info: info}
 	wr.stride = info.Format.Width() * info.Channels
 	if s, ok := w.(io.WriteSeeker); ok {
-		// os.Stdout is an io.WriteSeeker whether or not it is a pipe; asking
-		// where it is tells the two apart.
+		// os.Stdout always has a Seek method, but it fails on a pipe, so try
+		// it.
 		if off, err := s.Seek(0, io.SeekCurrent); err == nil {
 			wr.seeker, wr.start = s, off
 		}
@@ -126,9 +115,9 @@ func NewWriter(w io.Writer, opt WriterOptions) (*Writer, error) {
 	return wr, nil
 }
 
-// writerInfo validates opt and returns the Info a Writer starts with.
-func writerInfo(opt WriterOptions) (Info, error) {
-	l := opt.Layout
+// writerInfo validates l, fills in its defaults and returns the Info a Writer
+// starts with.
+func writerInfo(l Layout) (Info, error) {
 	if !l.Format.Valid() {
 		return Info{}, errors.New("sampleio: writing needs a sample format")
 	}
@@ -158,14 +147,13 @@ func writerInfo(opt WriterOptions) (Info, error) {
 			return Info{}, err
 		}
 	}
-	info := Info{Layout: l, Bits: l.Format.Bits()}
-	if l.Container == WAV {
-		info.ChannelMask = opt.ChannelMask
+	if l.Container != WAV {
+		l.ChannelMask = 0
 	}
-	return info, nil
+	return Info{Layout: l, Bits: l.Format.Bits()}, nil
 }
 
-// wavWritable reports why a layout cannot be written as a WAV, if it cannot.
+// wavWritable returns an error when a WAV cannot hold the layout.
 func wavWritable(l Layout) error {
 	switch l.Format {
 	case pcm.U8, pcm.I16LE, pcm.I24LE, pcm.I32LE, pcm.F32LE, pcm.F64LE, pcm.ALaw, pcm.MuLaw:
@@ -187,8 +175,8 @@ func wavWritable(l Layout) error {
 	return nil
 }
 
-// Info returns what the Writer is writing. Frames counts the frames handed to
-// it so far, buffered ones included.
+// Info returns the layout being written. Frames counts the frames written so
+// far, including those still buffered.
 func (w *Writer) Info() Info {
 	info := w.info
 	if w.clipped {
@@ -198,12 +186,13 @@ func (w *Writer) Info() Info {
 	return info
 }
 
-// WriteSamples encodes src and returns how many samples it took. T is real for
-// a one-channel stream and complex for an I/Q one; a stream of more channels is
-// written with WritePlanar.
+// WriteSamples writes src to a stream that holds one signal: a single channel,
+// or a single I/Q pair. It returns how many samples it wrote. A stream with
+// more channels is written with WritePlanar.
 //
-// The samples are encoded at the width they are handed over in. Once the
-// destination has failed, every write returns that error.
+// T must be float32 or float64 for a real stream and complex64 or complex128
+// for an I/Q stream. Once a write to the destination has failed, every later
+// write returns the same error.
 func (w *Writer) WriteSamples[T dsp.Sample](src []T) (int, error) {
 	if err := w.writable(isComplex[T]()); err != nil {
 		return 0, err
@@ -214,9 +203,10 @@ func (w *Writer) WriteSamples[T dsp.Sample](src []T) (int, error) {
 	return writeInterleaved(w, src, 1)
 }
 
-// WritePlanar interleaves one slice per channel, or a single complex slice for
-// an I/Q stream, and returns how many frames it wrote. Every plane must be the
-// same length; nothing is written otherwise.
+// WritePlanar writes every channel at once, each from its own slice, and
+// returns how many frames it wrote. src holds one slice, or plane, per channel
+// in file order, or a single complex plane for an I/Q stream. Every plane must
+// be the same length; if they differ, nothing is written.
 func (w *Writer) WritePlanar[T dsp.Sample](src [][]T) (int, error) {
 	if err := w.writable(isComplex[T]()); err != nil {
 		return 0, err
@@ -255,12 +245,14 @@ func (w *Writer) WritePlanar[T dsp.Sample](src [][]T) (int, error) {
 			return done, err
 		}
 	}
-	// The arrays behind these headers are the caller's.
+	// Drop the references to the caller's planes so the Writer does not keep
+	// them alive.
 	clear(heads)
 	return done, nil
 }
 
-// writable reports whether a write of a real or complex width can go ahead.
+// writable returns an error when the Writer is closed or has failed, or when
+// the samples are real and the stream I/Q, or the reverse.
 func (w *Writer) writable(complexT bool) error {
 	switch {
 	case w.closed:
@@ -276,9 +268,9 @@ func (w *Writer) writable(complexT bool) error {
 	}
 }
 
-// writeInterleaved encodes src, perFrame elements to a frame, into the buffer a
-// block at a time, writing the buffer out whenever it fills. It returns the
-// frames taken.
+// writeInterleaved encodes src into the buffer, writing the buffer out each
+// time it fills. src holds perFrame elements per frame. It returns the number
+// of frames encoded.
 func writeInterleaved[T dsp.Sample](w *Writer, src []T, perFrame int) (int, error) {
 	frames := len(src) / perFrame
 	done := 0
@@ -301,8 +293,9 @@ func writeInterleaved[T dsp.Sample](w *Writer, src []T, perFrame int) (int, erro
 	return done, nil
 }
 
-// noteClip records an integer sample outside full scale, which pcm.Encode
-// clips without saying so. A float format holds any value, so it never clips.
+// noteClip records that a sample outside full scale was written to an integer
+// format, so Info can add a Note about it. pcm.Encode clips such a sample. A
+// float format holds any value, so nothing is clipped.
 func noteClip[T dsp.Sample](w *Writer, x []T) {
 	if w.clipped || w.info.Format.Float() || len(x) == 0 {
 		return
@@ -323,17 +316,18 @@ func noteClip[T dsp.Sample](w *Writer, x []T) {
 	}
 }
 
-// muLawLimit is the upper edge of mu-law's top step, half a step above its
-// level: a sample past it is clipped rather than quantized. A-law's top step
-// reaches full scale, so it clips where an integer format does.
+// muLawLimit is the largest magnitude mu-law can represent: the upper edge of
+// its top step, half a step above the top level. A sample past it is clipped.
+// A-law's top step reaches full scale, so it clips at 1 like an integer
+// format.
 const muLawLimit = (32124 + 512) / 32768.0
 
 func pastLimit[F dsp.Float](x []F, limit F) bool {
 	return dsp.VMax(x) > limit || dsp.VMin(x) < -limit
 }
 
-// flushBuf writes the buffer out, keeping the first error for every call
-// after it.
+// flushBuf writes the buffer to the destination. The first error is kept and
+// returned by every later call.
 func (w *Writer) flushBuf() error {
 	if w.err != nil {
 		return w.err
@@ -353,8 +347,9 @@ func (w *Writer) flushBuf() error {
 	return nil
 }
 
-// Flush writes everything buffered to the destination, for a consumer reading
-// the stream live. The WAV sizes are not filled in until Close.
+// Flush writes the buffered samples to the destination, for a consumer
+// reading the stream live. The sizes in a WAV header are still filled in only
+// by Close.
 func (w *Writer) Flush() error {
 	if w.closed {
 		return errClosed
@@ -362,10 +357,10 @@ func (w *Writer) Flush() error {
 	return w.flushBuf()
 }
 
-// Close writes everything buffered and, when the destination can seek, pads
-// an odd-length data chunk and fills in the WAV sizes. It closes a file Create
-// opened. Standard output, and any destination handed to NewWriter, stays
-// open.
+// Close writes the buffered samples. When the destination can seek, it also
+// fills in the sizes in a WAV header and pads the data to an even length. It
+// closes a file that Create opened, and leaves standard output and any
+// destination given to NewWriter open.
 func (w *Writer) Close() error {
 	if w.closed {
 		return errClosed
@@ -374,9 +369,10 @@ func (w *Writer) Close() error {
 
 	err := w.err
 	if err == nil && w.info.Container == WAV && w.seeker != nil && w.data%2 == 1 {
-		// RIFF chunks are word-aligned; the pad byte is not counted in the
-		// data size. A pipe's data chunk has no size and runs to the end of
-		// the stream, so a pad byte there would read as one more sample.
+		// A RIFF chunk of odd length is followed by a pad byte, which its size
+		// does not count. A pipe gets none: its data chunk has no size and
+		// runs to the end of the stream, so a reader would take the pad byte
+		// for a sample.
 		if w.n == len(w.buf) {
 			err = w.flushBuf()
 		}
@@ -399,9 +395,8 @@ func (w *Writer) Close() error {
 	return err
 }
 
-// patchSizes goes back over the header and writes the sizes a streaming header
-// leaves as placeholders, turning the file into RF64 if a 32-bit size cannot
-// hold them.
+// patchSizes replaces the placeholder sizes in the header with the real ones.
+// When they do not fit in 32 bits it rewrites the header as RF64.
 func (w *Writer) patchSizes() error {
 	pad := w.data % 2
 	end := int64(w.hdr.size) + w.data + pad
