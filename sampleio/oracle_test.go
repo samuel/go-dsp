@@ -75,7 +75,7 @@ func TestHeadersAgreeWithSox(t *testing.T) {
 			// bits it thinks the encoding is good for -- 25 for float32, 54 for
 			// float64 -- rather than the width of the container, so it is not
 			// the same number and comparing them proves nothing.
-			if bits, ok := fields["Precision"]; ok && info.Codec == "pcm" && int64(info.Bits) != bits {
+			if bits, ok := fields["Precision"]; ok && !info.Format.Float() && int64(info.Bits) != bits {
 				t.Errorf("bits: got %d, sox says %d", info.Bits, bits)
 			}
 		})

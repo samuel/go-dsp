@@ -29,7 +29,7 @@ func ExampleNewReader() {
 	}
 
 	samples := make([]complex64, 16)
-	n, err := rd.ReadComplex64(samples)
+	n, err := rd.ReadSamples(samples)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func ExampleOpen() {
 	var frames int
 	for {
 		var n int
-		n, err = rd.ReadFloat64(block)
+		n, err = rd.ReadSamples(block)
 		if err != nil {
 			break
 		}

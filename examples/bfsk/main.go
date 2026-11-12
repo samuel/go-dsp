@@ -141,7 +141,7 @@ func run() error {
 func readFull(rd *sampleio.Reader, buf []float32) error {
 	total := 0
 	for total < len(buf) {
-		n, err := rd.ReadFloat32(buf[total:])
+		n, err := rd.ReadSamples(buf[total:])
 		total += n
 		if err != nil {
 			return err

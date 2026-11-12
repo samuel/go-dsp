@@ -148,7 +148,7 @@ rd, err := sampleio.Open("fm.wav", sampleio.Options{})
 defer rd.Close()
 samples := make([]float64, 4096)
 for {
-    n, err := rd.ReadFloat64(samples)
+    n, err := rd.ReadSamples(samples) // any of float32, float64, complex64, complex128
     // process samples[:n]
     if err == io.EOF {
         break
@@ -163,8 +163,11 @@ f, iq, err := sampleio.ParseFormatSpec("cu8") // rtl-sdr: u8 with IQ set
 rd, err := sampleio.Open("iq.raw", sampleio.Options{Format: f, IQ: iq, Rate: 2_500_000})
 ```
 
-Read every channel at once with `ReadFloat64Planar`, which decodes the
-interleaved run once and splits it in a single pass.
+`ReadSamples` decodes straight to the width of the slice it is handed: real for
+a real stream, complex for an I/Q one. Read every channel, or every I/Q pair,
+at once with `ReadPlanar`, which decodes the interleaved run once and splits it
+in a single pass. `Info` reports the stream's `Layout` (format, rate,
+channels, I/Q and `Container`), the same struct `Options` takes.
 
 ### Sample formats
 

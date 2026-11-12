@@ -31,7 +31,6 @@ type wavHeader struct {
 	channels  int
 	bits      int
 	validBits int
-	codec     string
 	dataBytes int64 // -1 when the size cannot be trusted; read to EOF
 	notes     []string
 }
@@ -201,11 +200,11 @@ func (h *wavHeader) readFmt(r io.Reader, size int64) error {
 		return fmt.Errorf("sampleio: %d bits per sample is not a whole number of bytes", bits)
 	}
 
-	f, codec, err := wavFormat(tag, bits)
+	f, err := wavFormat(tag, bits)
 	if err != nil {
 		return err
 	}
-	h.format, h.codec = f, codec
+	h.format = f
 	h.channels = channels
 	h.rate = float64(rate)
 	h.bits = bits
@@ -222,7 +221,7 @@ func (h *wavHeader) readFmt(r io.Reader, size int64) error {
 
 // wavFormat maps a tag and a width to an encoding. RIFF is little-endian, so
 // nothing here can be big-endian.
-func wavFormat(tag uint16, bits int) (pcm.Format, string, error) {
+func wavFormat(tag uint16, bits int) (pcm.Format, error) {
 	switch tag {
 	case wavPCM:
 		switch bits {
@@ -230,33 +229,33 @@ func wavFormat(tag uint16, bits int) (pcm.Format, string, error) {
 		// the format, and the reason an 8-bit file read as signed looks
 		// inverted.
 		case 8:
-			return pcm.U8, "pcm", nil
+			return pcm.U8, nil
 		case 16:
-			return pcm.I16LE, "pcm", nil
+			return pcm.I16LE, nil
 		case 24:
-			return pcm.I24LE, "pcm", nil
+			return pcm.I24LE, nil
 		case 32:
-			return pcm.I32LE, "pcm", nil
+			return pcm.I32LE, nil
 		}
-		return 0, "", fmt.Errorf("sampleio: %d-bit PCM", bits)
+		return 0, fmt.Errorf("sampleio: %d-bit PCM", bits)
 
 	case wavFloat:
 		switch bits {
 		case 32:
-			return pcm.F32LE, "float", nil
+			return pcm.F32LE, nil
 		case 64:
-			return pcm.F64LE, "float", nil
+			return pcm.F64LE, nil
 		}
-		return 0, "", fmt.Errorf("sampleio: %d-bit float", bits)
+		return 0, fmt.Errorf("sampleio: %d-bit float", bits)
 
 	case wavALaw, wavMuLaw:
 		name := "A-law"
 		if tag == wavMuLaw {
 			name = "mu-law"
 		}
-		return 0, "", fmt.Errorf("sampleio: %s is a companded format this package does not decode yet", name)
+		return 0, fmt.Errorf("sampleio: %s is a companded format this package does not decode yet", name)
 	}
-	return 0, "", fmt.Errorf("sampleio: WAV format tag %#04x is a codec this package does not decode", tag)
+	return 0, fmt.Errorf("sampleio: WAV format tag %#04x is a codec this package does not decode", tag)
 }
 
 // skipBytes discards n bytes.

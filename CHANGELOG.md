@@ -44,7 +44,9 @@ Go 1.27.
 - `dtmf`: DTMF decoding.
 - `firpm`: Parks-McClellan equiripple FIR design.
 - `sampleio`: reading WAV, RF64 and headerless captures, including rtl-sdr
-  `cu8`, as normalized samples.
+  `cu8`, as normalized samples. `Reader.ReadSamples` and `ReadPlanar` are
+  generic over the sample width and decode straight to it; `Options` and
+  `Info` share a `Layout` of format, rate, channels, I/Q and `Container`.
 - `analysis`: measuring a `dsp.Processor[float64, float64]` at a given input
   rate, exactly from its transfer function where it has a real one, and
   analyzing recordings in one pass. `Adapt` measures a filter at any sample

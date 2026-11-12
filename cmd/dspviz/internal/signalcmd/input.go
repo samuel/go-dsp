@@ -62,7 +62,9 @@ func (f *inputFlags) options() (sampleio.Options, channelMode, error) {
 	mode := chanAll
 	opt.Rate = f.rate
 	opt.Channels = f.channels
-	opt.Raw = f.raw
+	if f.raw {
+		opt.Container = sampleio.Raw
+	}
 	opt.IQ = f.iq
 
 	if f.format != "" {
@@ -176,7 +178,7 @@ func (s *source) exhausted() error {
 // It is one pass over the file however many channels it has: the reader decodes
 // the whole interleaved block once and scatters it.
 func (s *source) eachPlanar(fn func([][]float64) error) error {
-	if s.info.Complex {
+	if s.info.IQ {
 		return errors.New("this analysis needs a real stream; drop -iq")
 	}
 	n := s.info.Channels
@@ -188,7 +190,7 @@ func (s *source) eachPlanar(fn func([][]float64) error) error {
 	// the planes, so every channel is trimmed identically.
 	view := make([][]float64, n)
 	for {
-		got, err := s.r.ReadFloat64Planar(planes)
+		got, err := s.r.ReadPlanar(planes)
 		if got > 0 {
 			lo, hi, done := s.section(got)
 			if hi > lo {
@@ -215,7 +217,7 @@ func (s *source) eachPlanar(fn func([][]float64) error) error {
 // each reads the section in blocks and hands each to fn. Exactly one of the two
 // callbacks is used, whichever matches the stream.
 func (s *source) each(realFn func([]float64) error, cplx func([]complex128) error) error {
-	if s.info.Complex {
+	if s.info.IQ {
 		return s.eachComplex(cplx)
 	}
 	if realFn == nil {
@@ -223,7 +225,7 @@ func (s *source) each(realFn func([]float64) error, cplx func([]complex128) erro
 	}
 	buf := make([]float64, blockFrames)
 	for {
-		n, err := s.r.ReadFloat64(buf)
+		n, err := s.r.ReadSamples(buf)
 		if n > 0 {
 			lo, hi, done := s.section(n)
 			if hi > lo {
@@ -250,7 +252,7 @@ func (s *source) eachComplex(fn func([]complex128) error) error {
 	}
 	buf := make([]complex128, blockFrames)
 	for {
-		n, err := s.r.ReadComplex128(buf)
+		n, err := s.r.ReadSamples(buf)
 		if n > 0 {
 			lo, hi, done := s.section(n)
 			if hi > lo {

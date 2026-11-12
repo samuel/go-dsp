@@ -40,21 +40,20 @@ func TestOpenWAVFixtures(t *testing.T) {
 		file      string
 		want      pcm.Format
 		bits      int
-		codec     string
 		channels  int
 		tolerance float64
 	}{
-		{"tone-u8.wav", pcm.U8, 8, "pcm", 1, 1.0 / 128},
-		{"tone-i16le.wav", pcm.I16LE, 16, "pcm", 1, 1.0 / 32768},
-		{"tone-i24le.wav", pcm.I24LE, 24, "pcm", 1, 1.0 / 8388608},
-		{"tone-i32le.wav", pcm.I32LE, 32, "pcm", 1, 1e-9},
-		{"tone-f32le.wav", pcm.F32LE, 32, "float", 1, 1e-7},
+		{"tone-u8.wav", pcm.U8, 8, 1, 1.0 / 128},
+		{"tone-i16le.wav", pcm.I16LE, 16, 1, 1.0 / 32768},
+		{"tone-i24le.wav", pcm.I24LE, 24, 1, 1.0 / 8388608},
+		{"tone-i32le.wav", pcm.I32LE, 32, 1, 1e-9},
+		{"tone-f32le.wav", pcm.F32LE, 32, 1, 1e-7},
 		// sox works in 32-bit internally, so even its float64 output carries
 		// only about 2^-31 of precision; the fixture tests this decoder, not
 		// sox's arithmetic.
-		{"tone-f64le.wav", pcm.F64LE, 64, "float", 1, 1e-9},
-		{"tone-rf64.wav", pcm.I16LE, 16, "pcm", 1, 1.0 / 32768},
-		{"stereo-i16le.wav", pcm.I16LE, 16, "pcm", 2, 1.0 / 32768},
+		{"tone-f64le.wav", pcm.F64LE, 64, 1, 1e-9},
+		{"tone-rf64.wav", pcm.I16LE, 16, 1, 1.0 / 32768},
+		{"stereo-i16le.wav", pcm.I16LE, 16, 2, 1.0 / 32768},
 	} {
 		t.Run(tc.file, func(t *testing.T) {
 			r, err := Open(filepath.Join("testdata", tc.file), Options{})
@@ -64,8 +63,8 @@ func TestOpenWAVFixtures(t *testing.T) {
 			defer r.Close() //nolint:errcheck // a file opened for reading has no close error a test could act on
 
 			info := r.Info()
-			if info.Container != "wav" {
-				t.Errorf("Container = %q, want wav", info.Container)
+			if info.Container != WAV {
+				t.Errorf("Container = %v, want wav", info.Container)
 			}
 			if info.Format != tc.want {
 				t.Errorf("Format = %v, want %v", info.Format, tc.want)
@@ -78,9 +77,6 @@ func TestOpenWAVFixtures(t *testing.T) {
 			}
 			if info.Bits != tc.bits {
 				t.Errorf("Bits = %d, want %d", info.Bits, tc.bits)
-			}
-			if info.Codec != tc.codec {
-				t.Errorf("Codec = %q, want %q", info.Codec, tc.codec)
 			}
 			if info.Frames != fixFrames {
 				t.Errorf("Frames = %d, want %d", info.Frames, fixFrames)
@@ -227,13 +223,13 @@ func TestOpenWAVRateOverride(t *testing.T) {
 // header bytes come through as samples, so there are more of them.
 func TestOpenWAVAsRaw(t *testing.T) {
 	r, err := Open(filepath.Join("testdata", "tone-i16le.wav"), Options{
-		Raw: true, Format: pcm.I16LE, Rate: 8000,
+		Container: Raw, Format: pcm.I16LE, Rate: 8000,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer r.Close() //nolint:errcheck // a file opened for reading has no close error a test could act on
-	if got := r.Info().Container; got != "raw" {
+	if got := r.Info().Container; got != Raw {
 		t.Errorf("Container = %q, want raw", got)
 	}
 	if got := r.Info().Frames; got <= fixFrames {
@@ -606,7 +602,7 @@ func FuzzReadWAVHeader(f *testing.F) {
 			return
 		}
 		info := r.Info()
-		if info.Container != "wav" {
+		if info.Container != WAV {
 			// It fell through to raw, which needs a format and a rate this
 			// caller did not supply, so it cannot have succeeded.
 			t.Fatalf("a stream parsed as %q with no format given", info.Container)
@@ -620,7 +616,7 @@ func FuzzReadWAVHeader(f *testing.F) {
 		// Reading must terminate and must not panic.
 		buf := make([]float64, 32)
 		for range 64 {
-			if _, err := r.ReadFloat64(buf); err != nil {
+			if _, err := r.ReadSamples(buf); err != nil {
 				if errors.Is(err, io.EOF) {
 					break
 				}

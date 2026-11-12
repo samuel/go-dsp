@@ -8,19 +8,20 @@
 //
 // # Reading
 //
-// A Reader hands over samples through one method per width and layout:
-// ReadFloat64 and ReadFloat32 for one selected channel, ReadFloat64Planar and
-// ReadFloat32Planar for every channel at once into one slice each, and
-// ReadComplex128 for an I/Q pair. None of them is called Read: they have
-// io.Reader's method set but not its contract, since the unit is a sample of one
-// channel rather than a byte. The width is in the name because every read
-// carries one, and a caller picks a method rather than recalling which width
-// the unqualified name meant.
+// A Reader hands over samples through two generic methods: ReadSamples for one
+// selected channel or I/Q pair, and ReadPlanar for every channel or pair at
+// once into one slice each. The width is the type of dst, and each read
+// decodes straight to it, so a float32 or complex64 read costs no float64
+// detour. Neither is called Read: they have io.Reader's shape but not its
+// contract, since the unit is a sample of one channel rather than a byte.
 //
-// The planar reads are not a convenience over the others. They decode the
-// interleaved run once and split it in one pass instead of gathering each
-// channel a frame at a time, which is 3.1x a Reader per channel for stereo and
-// 2.5x at eight channels.
+// The planar read is not a convenience over the other. It decodes the
+// interleaved run once and splits it in one pass instead of gathering each
+// channel a frame at a time, which is 3.4x a Reader per channel for stereo and
+// 2.7x at eight channels.
+//
+// A stream's shape is a Layout -- format, rate, channels, I/Q and container --
+// which Options carries in and Info carries out.
 //
 // # Formats
 //
@@ -33,7 +34,7 @@
 //
 // Complex is not a format. Interleaved I/Q is a layout over an ordinary element
 // type rather than an encoding of its own -- pcm.Decode into a complex slice
-// reads interleaved pairs of any format -- so it is Options.IQ, and
+// reads interleaved pairs of any format -- so it is Layout.IQ, and
 // ParseFormatSpec reads the leading c of the names an SDR writes: cu8 is
 // rtl-sdr's format, pcm.U8 with IQ set.
 //

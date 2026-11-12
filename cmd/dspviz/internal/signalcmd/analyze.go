@@ -110,7 +110,7 @@ func newChannelViews(label string, info sampleio.Info, out *outputFlags, tn *ton
 
 	if v.needsSTFT() {
 		var err error
-		sopt.Complex = info.Complex
+		sopt.Complex = info.IQ
 		if !v.spectrogram {
 			// Nothing is going to draw the frames, so keep the fewest the
 			// reducer allows and let the averaged spectrum do the work.
@@ -127,7 +127,7 @@ func newChannelViews(label string, info sampleio.Info, out *outputFlags, tn *ton
 			bits = info.ValidBits
 		}
 		s, err := analysis.NewStatsBuilder(analysis.StatsOptions{
-			Rate: info.Rate, Bits: bits, Complex: info.Complex,
+			Rate: info.Rate, Bits: bits, Complex: info.IQ,
 		})
 		if err != nil {
 			return nil, err
@@ -152,7 +152,7 @@ func newChannelViews(label string, info sampleio.Info, out *outputFlags, tn *ton
 		a.add(l)
 	}
 	if v.histogram {
-		h, err := analysis.NewHistogramBuilder(analysis.HistogramOptions{Complex: info.Complex})
+		h, err := analysis.NewHistogramBuilder(analysis.HistogramOptions{Complex: info.IQ})
 		if err != nil {
 			return nil, err
 		}
@@ -160,7 +160,7 @@ func newChannelViews(label string, info sampleio.Info, out *outputFlags, tn *ton
 		a.add(h)
 	}
 	if v.tones {
-		if info.Complex {
+		if info.IQ {
 			return nil, errors.New("the tone view reads a real signal; drop -iq")
 		}
 		if tn.mark <= 0 || tn.space <= 0 {
@@ -461,7 +461,7 @@ func describe(info sampleio.Info) string {
 	if info.Channels == 1 {
 		ch = "mono"
 	}
-	if info.Complex {
+	if info.IQ {
 		ch += ", I/Q"
 	}
 	s := fmt.Sprintf("%s %s, %.0f Hz, %s", info.Container, info.Format, info.Rate, ch)

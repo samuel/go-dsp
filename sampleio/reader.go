@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"samuelks.com/dsp"
+	"samuelks.com/dsp/internal/view"
 	"samuelks.com/dsp/pcm"
 )
 
@@ -21,11 +22,11 @@ const MixChannels Channel = -1
 // syscall overhead, small enough that a Reader costs nothing to hold.
 const blockBytes = 1 << 16
 
-// Info describes what a Reader found.
+// Info describes what a Reader found. Its Layout is the stream as read: the
+// header's where there is one, with any Rate override applied, and Container
+// WAV or Raw.
 type Info struct {
-	Format   pcm.Format
-	Rate     float64
-	Channels int // interleaved channels in the file, before selection
+	Layout
 
 	// Frames is how many samples the Reader will produce, after Skip and Limit, or
 	// -1 when that cannot be known without reading the whole stream.
@@ -36,11 +37,8 @@ type Info struct {
 	// Note.
 	Frames int64
 
-	Complex   bool   // channel pairs are I/Q
-	Container string // "wav" or "raw"
-	Bits      int    // container bits per sample; 0 for a float format
-	ValidBits int    // significant bits, when the header says fewer than Bits
-	Codec     string // "pcm" or "float"
+	Bits      int // container bits per sample; 0 for a float format
+	ValidBits int // significant bits, when the header says fewer than Bits
 
 	// Notes records everything surprising but survivable: a rate override, a
 	// header field not worth trusting, a float sample past full scale.
@@ -57,28 +55,13 @@ func (i Info) Duration() float64 {
 
 // Options configures a Reader. The zero value reads a WAV as it finds it.
 type Options struct {
-	// Format is the encoding of a headerless stream. A container header wins
-	// over it, and reading raw requires it.
-	Format pcm.Format
-
-	// Rate overrides the rate a header states, and is required for raw input.
-	Rate float64
-
-	// Channels is how many are interleaved in a headerless stream. Zero selects
-	// 2 when IQ is set and 1 otherwise.
-	Channels int
+	// Layout describes a headerless stream; see its fields for how each one
+	// combines with a WAV header.
+	Layout
 
 	// Channel selects which one to read. MixChannels takes the mean of all of
 	// them. With IQ set it selects an I/Q pair rather than a single channel.
 	Channel Channel
-
-	// IQ reads channel pairs as interleaved I/Q, so the stream is complex and
-	// half as many channels wide as it looks.
-	IQ bool
-
-	// Raw reads a file as a headerless stream even if it has a header, which is
-	// how you look at a WAV whose header is wrong.
-	Raw bool
 
 	// Skip drops this many frames before the first sample, and Limit stops after
 	// this many. Zero Limit reads to the end.
@@ -103,21 +86,15 @@ type Reader struct {
 	n   int    // valid bytes in buf
 	off int    // bytes of buf already decoded
 
-	gath []byte    // one channel's bytes, gathered contiguously
-	work []float64 // decoded scratch: for mixing, for pairing I/Q, for a planar read
+	gath []byte // one channel's bytes, gathered contiguously
 
-	// Reusable plane headers for a planar read, one field per width.
-	// dsp.Deinterleave writes at the front of the planes it is handed, so a
-	// block landing mid-plane re-points these instead of passing an offset.
-	viewF64 [][]float64
-	viewF32 [][]float32
-
-	// narrow and narrowC are ReadFloat32's and ReadComplex64's staging, and
-	// deliberately not work: the decode owns work and reallocates it, so
-	// holding it out as a destination would hand the caller whatever the decode
-	// last put there.
-	narrow  []float64
-	narrowC []complex128
+	// work is the decoded scratch a mixdown or planar read needs, a []T at the
+	// width of the last read that used it. views is a planar read's [][]T of
+	// plane headers: dsp.Deinterleave writes at the front of the planes it is
+	// handed, so a block landing mid-plane re-points these instead of passing
+	// an offset.
+	work  any
+	views any
 
 	// overrange is set once a float sample outside full scale has been decoded;
 	// see noteOverrange.
@@ -130,7 +107,8 @@ type Reader struct {
 // Open reads the file at path. "-" or "" reads standard input, whose length is
 // not known ahead of time.
 //
-// A file is read as a WAV when it starts with one and Options.Raw is not set.
+// A file is read as a WAV when it starts with one, unless Options.Container
+// says otherwise.
 func Open(path string, opt Options) (*Reader, error) {
 	if path == "" || path == "-" {
 		r, err := newReader(os.Stdin, nil, opt, -1)
@@ -168,24 +146,30 @@ func newReader(src io.Reader, closer io.Closer, opt Options, size int64) (*Reade
 		return nil, errors.New("sampleio: Skip and Limit cannot be negative")
 	}
 
+	if opt.Container < DetectContainer || opt.Container > Raw {
+		return nil, fmt.Errorf("sampleio: %v is not a container", opt.Container)
+	}
+
 	r := &Reader{src: src, closer: closer, left: -1}
-	r.info = Info{Container: "raw", Frames: -1}
+	r.info = Info{Container: Raw, Frames: -1}
 
 	// A header, unless the caller said not to look for one.
 	var dataBytes int64 = -1
-	if !opt.Raw {
+	if opt.Container != Raw {
 		h, err := sniffWAV(&r.src)
 		if err != nil {
 			return nil, err
 		}
+		if h == nil && opt.Container == WAV {
+			return nil, errors.New("sampleio: the stream does not start with a WAV header")
+		}
 		if h != nil {
-			r.info.Container = "wav"
+			r.info.Container = WAV
 			r.info.Format = h.format
 			r.info.Rate = h.rate
 			r.info.Channels = h.channels
 			r.info.Bits = h.bits
 			r.info.ValidBits = h.validBits
-			r.info.Codec = h.codec
 			r.info.Notes = h.notes
 			dataBytes = h.dataBytes
 			if size >= 0 && dataBytes > size {
@@ -198,7 +182,7 @@ func newReader(src io.Reader, closer io.Closer, opt Options, size int64) (*Reade
 		}
 	}
 
-	if r.info.Container == "raw" {
+	if r.info.Container == Raw {
 		if !opt.Format.Valid() {
 			return nil, errors.New("sampleio: reading a headerless stream needs a sample format")
 		}
@@ -214,12 +198,7 @@ func newReader(src io.Reader, closer io.Closer, opt Options, size int64) (*Reade
 				r.info.Channels = 2
 			}
 		}
-		bits := opt.Format.Bits()
-		r.info.Bits = bits
-		r.info.Codec = "pcm"
-		if bits == 0 {
-			r.info.Codec = "float"
-		}
+		r.info.Bits = opt.Format.Bits()
 	} else {
 		if opt.Rate > 0 && opt.Rate != r.info.Rate {
 			r.info.Notes = append(r.info.Notes, fmt.Sprintf(
@@ -239,7 +218,7 @@ func newReader(src io.Reader, closer io.Closer, opt Options, size int64) (*Reade
 	r.elems = r.info.Channels
 	r.stride = r.width * r.elems
 	r.iq = opt.IQ
-	r.info.Complex = opt.IQ
+	r.info.IQ = opt.IQ
 	r.pick = opt.Channel
 
 	if err := r.selectChannel(); err != nil {
@@ -258,7 +237,7 @@ func newReader(src io.Reader, closer io.Closer, opt Options, size int64) (*Reade
 	switch {
 	case dataBytes >= 0:
 		total = dataBytes / int64(r.stride)
-	case r.info.Container == "raw" && size >= 0:
+	case r.info.Container == Raw && size >= 0:
 		total = size / int64(r.stride)
 	}
 
@@ -318,16 +297,29 @@ func (r *Reader) selectChannel() error {
 // full scale, so it lands in [-1, 1) by construction. It matters because every
 // decibel downstream is relative to 1.0, and a float file need not respect it:
 // a peak of +2.0 reads as +6 dBFS, clipping that is not there.
-func (r *Reader) noteOverrange(x []float64) {
-	if r.overrange || r.info.Codec != "float" {
+func noteOverrange[T dsp.Sample](r *Reader, x []T) {
+	if r.overrange || !r.info.Format.Float() {
 		return
 	}
+	switch v := any(x).(type) {
+	case []float32:
+		r.overrange = outsideFullScale(v)
+	case []float64:
+		r.overrange = outsideFullScale(v)
+	case []complex64:
+		r.overrange = outsideFullScale(view.C64ToF32(v))
+	case []complex128:
+		r.overrange = outsideFullScale(view.C128ToF64(v))
+	}
+}
+
+func outsideFullScale[F dsp.Float](x []F) bool {
 	for _, v := range x {
 		if v > 1 || v < -1 {
-			r.overrange = true
-			return
+			return true
 		}
 	}
+	return false
 }
 
 // Info returns what the Reader knows about the stream.
@@ -350,20 +342,18 @@ func (r *Reader) Close() error {
 	return r.closer.Close()
 }
 
-// ReadFloat64 fills dst with samples of the selected channel and returns how
-// many it wrote. It returns io.EOF only when it wrote nothing.
+// ReadSamples fills dst with samples of the selected channel, or I/Q pair, and
+// returns how many it wrote. It returns io.EOF only when it wrote nothing.
 //
-// It is not io.Reader: the unit is a sample of one channel rather than a byte,
-// so the count means something different. The width is in the name because
-// every read carries one -- ReadFloat32, ReadComplex128 and the two planar
-// forms -- so a caller picks a method rather than recalling which one the
-// unqualified name meant.
+// The samples are decoded straight into dst at its width. T is real for a real
+// stream and complex for an I/Q one; the other is an error, since handing back
+// only the real part of an I/Q stream would be worse than saying so.
 //
-// Reading a stream opened with IQ is an error: the samples are complex, and
-// handing back only the real part would be worse than saying so.
-func (r *Reader) ReadFloat64(dst []float64) (int, error) {
-	if r.iq {
-		return 0, errors.New("sampleio: this stream is I/Q; use ReadComplex128")
+// It is not io.Reader's Read: the unit is a sample of one channel rather than
+// a byte, so the count means something different.
+func (r *Reader) ReadSamples[T dsp.Sample](dst []T) (int, error) {
+	if err := r.checkKind(isComplex[T]()); err != nil {
+		return 0, err
 	}
 	total := 0
 	for total < len(dst) {
@@ -374,148 +364,110 @@ func (r *Reader) ReadFloat64(dst []float64) (int, error) {
 			}
 			return 0, err
 		}
-		r.decodeReal(dst[total:total+frames], frames)
+		decodeSelected(r, dst[total:total+frames], frames)
 		r.advance(frames)
 		total += frames
 	}
 	return total, nil
 }
 
-// ReadComplex128 fills dst with I/Q samples of the selected pair.
-func (r *Reader) ReadComplex128(dst []complex128) (int, error) {
-	if !r.iq {
-		return 0, errors.New("sampleio: this stream is real; use ReadFloat64")
-	}
-	total := 0
-	for total < len(dst) {
-		frames, err := r.ready(len(dst) - total)
-		if err != nil {
-			if total > 0 {
-				return total, nil
-			}
-			return 0, err
-		}
-		r.decodeComplex(dst[total:total+frames], frames)
-		r.advance(frames)
-		total += frames
-	}
-	return total, nil
-}
-
-// ReadComplex64 is ReadComplex128 at single precision. It stages a block at a
-// time, as ReadFloat32 does.
-func (r *Reader) ReadComplex64(dst []complex64) (int, error) {
-	if !r.iq {
-		return 0, errors.New("sampleio: this stream is real; use ReadFloat32")
-	}
-	total := 0
-	for total < len(dst) {
-		n := min(len(dst)-total, len(r.buf)/r.stride)
-		if cap(r.narrowC) < n {
-			r.narrowC = make([]complex128, n)
-		}
-		buf := r.narrowC[:n]
-		n, err := r.ReadComplex128(buf)
-		for i, v := range buf[:n] {
-			dst[total+i] = complex64(v)
-		}
-		total += n
-		if err != nil {
-			if total > 0 {
-				return total, nil
-			}
-			return 0, err
-		}
-		if n < len(buf) {
-			// A shortfall is reported by coming back short; the call after this
-			// one is the one that says EOF.
-			return total, nil
-		}
-	}
-	return total, nil
-}
-
-// ReadFloat32 is ReadFloat64 at the width the filters in dsp take. It stages a
-// block at a time, so reading a whole file in one call does not also allocate a
-// float64 copy of it.
-func (r *Reader) ReadFloat32(dst []float32) (int, error) {
-	total := 0
-	for total < len(dst) {
-		buf := r.staging(len(dst) - total)
-		n, err := r.ReadFloat64(buf)
-		for i, v := range buf[:n] {
-			dst[total+i] = float32(v)
-		}
-		total += n
-		if err != nil {
-			if total > 0 {
-				return total, nil
-			}
-			return 0, err
-		}
-		if n < len(buf) {
-			// A shortfall is reported by coming back short; the call after this
-			// one is the one that says EOF.
-			return total, nil
-		}
-	}
-	return total, nil
-}
-
-// ReadFloat64Planar fills one slice per channel with that channel's samples and returns
-// how many frames it wrote to each. It returns io.EOF only when it wrote nothing.
+// ReadPlanar fills one slice per channel with that channel's samples and
+// returns how many frames it wrote to each. It returns io.EOF only when it
+// wrote nothing.
 //
-// dst holds one plane per channel of the file, in file order, and must hold
-// exactly as many as Info().Channels reports. Options.Channel is not consulted:
-// this is the whole frame rather than a selection, and a Reader opened for a
-// mixdown is an error rather than a silent choice between the two.
+// dst holds one plane per channel of the file in file order, or one per I/Q
+// pair when T is complex, and must hold exactly as many as the stream has.
+// Options.Channel is not consulted: this is the whole frame rather than a
+// selection, and a Reader opened for a mixdown is an error rather than a
+// silent choice between the two.
 //
-// It is one pass over the bytes for every channel at once, so it is several
-// times faster than a Reader per channel, which reads the file once per channel.
+// It decodes the interleaved run once and splits it in one pass, so it is
+// several times faster than a Reader per channel, which reads the file once
+// per channel.
 //
 // Planes may differ in length; the shortest is what gets read, and the frames
 // that do not fit are not consumed either. The planes must not overlap.
-func (r *Reader) ReadFloat64Planar(dst [][]float64) (int, error) {
-	if err := r.planarOK(len(dst)); err != nil {
+func (r *Reader) ReadPlanar[T dsp.Sample](dst [][]T) (int, error) {
+	if err := r.checkKind(isComplex[T]()); err != nil {
 		return 0, err
 	}
-	if r.elems == 1 {
-		// One channel is already contiguous, so this is exactly ReadFloat64:
-		// a decode straight into the caller's slice, with no scatter.
-		return r.ReadFloat64(dst[0])
+	if r.pick == MixChannels {
+		return 0, errors.New("sampleio: this Reader mixes its channels down, and a mixdown has no planar form")
 	}
-	r.viewF64 = ensure(r.viewF64, len(dst))
-	return readPlanar(r, dst, r.viewF64)
+	planes, unit := r.elems, "channels"
+	if r.iq {
+		planes, unit = r.elems/2, "I/Q pairs"
+	}
+	if len(dst) != planes {
+		return 0, fmt.Errorf("sampleio: %d planes for a stream of %d %s", len(dst), planes, unit)
+	}
+	if planes == 1 {
+		// One channel is already contiguous, so this is a decode straight into
+		// the caller's slice, with no split.
+		return r.ReadSamples(dst[0])
+	}
+
+	want := len(dst[0])
+	for _, p := range dst[1:] {
+		want = min(want, len(p))
+	}
+	heads := scratch[[]T](&r.views, planes)
+	total := 0
+	for total < want {
+		frames, err := r.ready(want - total)
+		if err != nil {
+			if total > 0 {
+				break
+			}
+			return 0, err
+		}
+		for c, p := range dst {
+			heads[c] = p[total : total+frames]
+		}
+		w := scratch[T](&r.work, frames*planes)
+		pcm.Decode(w, r.buf[r.off:], r.info.Format)
+		noteOverrange(r, w)
+		dsp.Deinterleave(heads, w)
+		r.advance(frames)
+		total += frames
+	}
+	// The arrays behind these headers are the caller's; leaving them pointed at
+	// the planes would keep them alive as long as the Reader is held.
+	clear(heads)
+	return total, nil
 }
 
-// ReadFloat32Planar is ReadFloat64Planar at the width the filters in dsp take.
-func (r *Reader) ReadFloat32Planar(dst [][]float32) (int, error) {
-	if err := r.planarOK(len(dst)); err != nil {
-		return 0, err
+// checkKind reports whether a read at a real or complex width fits the stream.
+func (r *Reader) checkKind(complexT bool) error {
+	switch {
+	case complexT == r.iq:
+		return nil
+	case r.iq:
+		return errors.New("sampleio: this stream is I/Q; read it into complex64 or complex128")
+	default:
+		return errors.New("sampleio: this stream is real; read it into float32 or float64")
 	}
-	if r.elems == 1 {
-		return r.ReadFloat32(dst[0])
-	}
-	r.viewF32 = ensure(r.viewF32, len(dst))
-	return readPlanar(r, dst, r.viewF32)
 }
 
-// ensure returns s with room for n elements, reallocating only when it is short.
-func ensure[T any](s []T, n int) []T {
+func isComplex[T dsp.Sample]() bool {
+	var z T
+	switch any(z).(type) {
+	case complex64, complex128:
+		return true
+	}
+	return false
+}
+
+// scratch returns n elements of the []E held in *slot, replacing it when it is
+// short or holds another type. Storing a slice in an interface allocates, so
+// it is done only on growth.
+func scratch[E any](slot *any, n int) []E {
+	s, _ := (*slot).([]E)
 	if cap(s) < n {
-		return make([]T, n)
+		s = make([]E, n)
+		*slot = s
 	}
 	return s[:n]
-}
-
-// staging returns a float64 buffer of up to want frames, bounded by the frames
-// one raw block holds so that it cannot grow with the caller's request.
-func (r *Reader) staging(want int) []float64 {
-	n := min(want, len(r.buf)/r.stride)
-	if cap(r.narrow) < n {
-		r.narrow = make([]float64, n)
-	}
-	return r.narrow[:n]
 }
 
 // ready makes sure at least one whole frame is decodable and returns how many
@@ -593,157 +545,62 @@ func (r *Reader) advance(frames int) {
 	}
 }
 
-// decodeReal writes frames samples of the selected channel into dst.
-func (r *Reader) decodeReal(dst []float64, frames int) {
+// decodeSelected writes frames samples of the selected channel or I/Q pair
+// into dst.
+func decodeSelected[T dsp.Sample](r *Reader, dst []T, frames int) {
 	src := r.buf[r.off:]
 	f := r.info.Format
+	first, count := int(r.pick), 1
+	if r.iq {
+		first, count = 2*first, 2
+	}
 
 	switch {
 	case r.pick == MixChannels:
-		w := r.decodeFrames(frames)
-		inv := 1 / float64(r.elems)
-		for i := range dst {
-			var sum float64
-			for c := range r.elems {
-				sum += w[i*r.elems+c]
-			}
-			dst[i] = sum * inv
+		// Only a real stream reaches here: selectChannel refuses to mix I/Q.
+		w := scratch[float64](&r.work, frames*r.elems)
+		pcm.Decode(w, src, f)
+		noteOverrange(r, w)
+		switch d := any(dst).(type) {
+		case []float64:
+			mixdown(d, w, r.elems)
+		case []float32:
+			mixdown(d, w, r.elems)
 		}
+		return
 
-	case r.elems == 1:
-		// The common case: mono, so the samples are already contiguous and the
-		// decode is one call over the whole run.
+	case r.elems == count:
+		// The common case: one channel or one pair, so the samples are already
+		// contiguous and the decode is one call over the whole run. src runs to
+		// the end of buf, and pcm.Decode stops at the shorter of its two
+		// slices.
 		pcm.Decode(dst, src, f)
 
 	default:
-		pcm.Decode(dst, r.gather(src, frames, int(r.pick), 1), f)
+		pcm.Decode(dst, r.gather(src, frames, first, count), f)
 	}
-	r.noteOverrange(dst)
+	noteOverrange(r, dst)
 }
 
-// decodeFrames decodes whole frames of every channel and returns the
-// interleaved run.
-//
-// It is what a mixdown and a planar read share, and why neither gathers. The
-// exactly-sized run bounds the decode: src runs to the end of buf and
-// pcm.Decode stops at the shorter of its two slices. It also normalizes
-// every channel in one vectorized pass.
-func (r *Reader) decodeFrames(frames int) []float64 {
-	n := frames * r.elems
-	if cap(r.work) < n {
-		r.work = make([]float64, n)
-	}
-	w := r.work[:n]
-	pcm.Decode(w, r.buf[r.off:], r.info.Format)
-	r.noteOverrange(w)
-	return w
-}
-
-// planarOK reports whether a planar read makes sense on this Reader, and
-// whether the caller brought the right number of planes. MixChannels is
-// rejected rather than ignored: a mixdown has no planar form.
-func (r *Reader) planarOK(planes int) error {
-	if r.iq {
-		return errors.New("sampleio: this stream is I/Q; use ReadComplex128")
-	}
-	if r.pick == MixChannels {
-		return errors.New("sampleio: this Reader mixes its channels down, and a mixdown has no planar form")
-	}
-	if planes != r.elems {
-		return fmt.Errorf("sampleio: %d planes for a %d-channel stream", planes, r.elems)
-	}
-	return nil
-}
-
-// readPlanar is the body of both planar reads. It is a function because a method
-// cannot take a type parameter, and it takes the plane view as an argument
-// because each width has its own headers on the Reader.
-func readPlanar[T dsp.Float](r *Reader, dst, view [][]T) (int, error) {
-	want := planeFrames(dst)
-	total := 0
-	for total < want {
-		frames, err := r.ready(want - total)
-		if err != nil {
-			if total > 0 {
-				return total, nil
-			}
-			return 0, err
-		}
-		for c, p := range dst {
-			view[c] = p[total : total+frames]
-		}
-		deinterleave(view, r.decodeFrames(frames))
-		r.advance(frames)
-		total += frames
-	}
-	// The arrays behind these headers are the caller's; leaving them pointed at
-	// the planes would keep them alive as long as the Reader is held.
-	clear(view)
-	return total, nil
-}
-
-// planeFrames is how many frames a planar read can write: as many as the
-// shortest plane holds. planarOK has already checked there is at least one.
-func planeFrames[T dsp.Float](dst [][]T) int {
-	n := len(dst[0])
-	for _, p := range dst[1:] {
-		n = min(n, len(p))
-	}
-	return n
-}
-
-// deinterleave splits a decoded interleaved run into one plane per channel.
-//
-// At float64 that is dsp.Deinterleave. At float32 it cannot be: Deinterleave is
-// a permutation and deliberately does not convert width, so the narrowing read
-// fuses the two here instead of allocating float64 planes to narrow in a second
-// pass. The type switch is an optimization, not a correctness fork -- the loop
-// below is right at float64 too, only slower.
-func deinterleave[T dsp.Float](dst [][]T, w []float64) {
-	if d, ok := any(dst).([][]float64); ok {
-		dsp.Deinterleave(d, w)
-		return
-	}
-	channels := len(dst)
-	frames := len(w) / channels
-	for _, p := range dst {
-		frames = min(frames, len(p))
-	}
-	if frames <= 0 {
-		return
-	}
-	for c, p := range dst {
-		p = p[:frames]
-		src := w[c:]
-		for i := range p {
-			p[i] = T(src[i*channels])
-		}
-	}
-}
-
-// decodeComplex writes frames I/Q samples of the selected pair into dst.
-func (r *Reader) decodeComplex(dst []complex128, frames int) {
-	src := r.buf[r.off:]
-	f := r.info.Format
-	if r.elems != 2 {
-		src = r.gather(src, frames, int(r.pick)*2, 2)
-	}
-	if cap(r.work) < 2*frames {
-		r.work = make([]float64, 2*frames)
-	}
-	w := r.work[:2*frames]
-	pcm.Decode(w, src, f)
-	r.noteOverrange(w)
+// mixdown writes the mean of each frame of the interleaved run w to dst. It
+// sums in float64 and narrows once, so a float32 mixdown is the float64 one
+// narrowed.
+func mixdown[F dsp.Float](dst []F, w []float64, channels int) {
+	inv := 1 / float64(channels)
 	for i := range dst {
-		dst[i] = complex(w[i*2], w[i*2+1])
+		var sum float64
+		for _, v := range w[i*channels : (i+1)*channels] {
+			sum += v
+		}
+		dst[i] = F(sum * inv)
 	}
 }
 
 // gather copies count elements per frame, starting at element first, into one
 // contiguous run.
 //
-// It is a byte shuffle rather than a strided decode so the twelve decode loops
-// only ever see contiguous input; the mono case and a planar read skip it. It
+// It is a byte shuffle rather than a strided decode so the decode kernels only
+// ever see contiguous input; the mono case and a planar read skip it. It
 // is the slow way round for more than one channel, because the copy length is
 // not a constant, so each frame costs a call rather than a move.
 func (r *Reader) gather(src []byte, frames, first, count int) []byte {
