@@ -113,6 +113,21 @@ func TestProcessorContract(t *testing.T) {
 				return NewRotator90[complex128]()
 			}, cplx128, -9999)
 		}},
+		{"Mixer/float32/complex64", func(t *testing.T) {
+			checkProcessor(t, func() Processor[float32, complex64] {
+				return must(NewMixer[float32, complex64](0.11))
+			}, real32, -9999)
+		}},
+		{"Mixer/complex64/complex64", func(t *testing.T) {
+			checkProcessor(t, func() Processor[complex64, complex64] {
+				return must(NewMixer[complex64, complex64](-0.3))
+			}, cplx64, -9999)
+		}},
+		{"Mixer/complex128/complex128", func(t *testing.T) {
+			checkProcessor(t, func() Processor[complex128, complex128] {
+				return must(NewMixer[complex128, complex128](0.25))
+			}, cplx128, -9999)
+		}},
 		{"SDFT/complex128", func(t *testing.T) {
 			checkProcessor(t, func() Processor[complex128, complex128] {
 				return must(NewSDFT[complex128](3, 16, HannFreqCoeff()))

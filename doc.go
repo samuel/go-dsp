@@ -1,6 +1,7 @@
 // Package dsp is the primary API for the go-dsp SDR library: generic vector
 // operations (VScale, VAdd, ...), FM demodulation, IIR/biquad/FIR filters and
-// decimators, fixed-size FFT, Goertzel tone detection, sliding DFT,
+// decimators, an oscillator and mixer, fixed-size FFT, Goertzel tone
+// detection, sliding DFT,
 // transfer-function evaluation, window functions, windowed-sinc FIR design,
 // FIR interpolation and fractional-position interpolation.
 //

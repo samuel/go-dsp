@@ -1,8 +1,8 @@
 package dsp
 
 // Processor is the contract every stateful block processor in the package
-// follows: filters, rate changers, the FM demodulator and the quarter-rate
-// rotator.
+// follows: filters, rate changers, the FM demodulator, the quarter-rate
+// rotator and the mixer.
 //
 // Process consumes all of src and returns how many samples it wrote to dst,
 // which is OutputLen(len(src)). It panics if dst is shorter than that. State
@@ -33,6 +33,7 @@ func _[T Sample, F Float, C Complex]() {
 		_ Processor[C, F] = (*FMDemod[C, F])(nil)
 		_ Processor[C, C] = (*Rotator90[C])(nil)
 		_ Processor[C, C] = (*SDFT[C])(nil)
+		_ Processor[T, C] = (*Mixer[T, C])(nil)
 	)
 }
 

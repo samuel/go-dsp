@@ -18,7 +18,7 @@ Paths are relative to the module, `samuelks.com/dsp`, whose root is package
 
 | Path | Contents |
 | --- | --- |
-| `.` (`dsp`) | The main API: generic vector operations (`VScale`, `VAdd`, ...), FM demodulation, IIR/biquad/FIR filters, boxcar and FIR decimators, Goertzel tone detection, sliding DFT, fixed-size FFT, transfer-function evaluation, window functions, Kaiser-windowed sinc low-pass design (`LowPassFIR`), FIR interpolation (`FIRInterpolator`, zero-phase `Upsample`), interpolators including a polyphase `SincInterpolator`, interleave/deinterleave, `FastAtan2`. |
+| `.` (`dsp`) | The main API: generic vector operations (`VScale`, `VAdd`, ...), FM demodulation, a phase-continuous `Oscillator` and `Mixer`, IIR/biquad/FIR filters, boxcar and FIR decimators, Goertzel tone detection, sliding DFT, fixed-size FFT, transfer-function evaluation, window functions, Kaiser-windowed sinc low-pass design (`LowPassFIR`), FIR interpolation (`FIRInterpolator`, zero-phase `Upsample`), interpolators including a polyphase `SincInterpolator`, interleave/deinterleave, `FastAtan2`. |
 | `pcm` | The sample codec: `Format` names an encoding (`U8`, `I16LE`, `F32BE`, ...), and `Decode` and `Encode` move between bytes and full-scale samples of any width, real or interleaved complex. |
 | `ax25` | AX.25/HDLC frame decoding plus CRC-16/X-25 `FCS`/`CheckFCS`. |
 | `dtmf` | DTMF decoding built on Goertzel. |
@@ -66,7 +66,7 @@ out := make([]float32, len(in))
 lp.Process(out, in)
 ```
 
-Every filter, rate changer, `FMDemod`, `Rotator90` and `SDFT` implements
+Every filter, rate changer, `FMDemod`, `Rotator90`, `Mixer` and `SDFT` implements
 `dsp.Processor`: `Process(dst, src)` consumes all of `src` and returns the
 count it wrote, which is `OutputLen(len(src))`, and panics if `dst` is shorter.
 `dst` may alias `src` wherever the output is no longer than the input, so
@@ -115,6 +115,21 @@ y := s.At(iq, 10.25) // iq is []complex64
 fmd := dsp.NewFMDemod[complex64, float32]() // complex64 uses FastAtan2
 out := make([]float32, len(iq))
 fmd.Process(out, iq)
+```
+
+### Oscillator and mixer
+
+`dsp.Oscillator` generates a phase-continuous tone, a cosine for a real width
+and `exp(+j*2*pi*f*n)` for a complex one; `dsp.Mixer` multiplies a stream by
+that tone, so a positive frequency shifts the spectrum up. Both take cycles per
+sample, carry their phase across calls and change frequency without a phase
+jump. The phase is kept in cycles, so a binary-fraction frequency such as 0.25
+steps exactly.
+
+```go
+// Tune an I/Q capture 100 kHz down to baseband.
+mix, err := dsp.NewMixer[complex64, complex64](-100e3 / 2.4e6)
+mix.Process(iq, iq) // in place
 ```
 
 ### Tone detection
