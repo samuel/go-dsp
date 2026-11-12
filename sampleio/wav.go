@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 
 	"samuelks.com/dsp/pcm"
 )
@@ -270,4 +271,105 @@ func skipBytes(r io.Reader, n int64) error {
 		return err
 	}
 	return nil
+}
+
+// ds64Size is the payload of RF64's ds64 chunk with no table: the RIFF, data
+// and frame counts at 64 bits and a zero table length. A Writer reserves it as
+// a JUNK chunk of the same size.
+const ds64Size = 28
+
+// Speaker masks for WAVE_FORMAT_EXTENSIBLE: front center for mono, front left
+// and right for stereo.
+const (
+	maskMono   = 0x4
+	maskStereo = 0x3
+)
+
+// wavLayout is where the fields a Writer patches on Close sit in the header it
+// wrote. junk and fact are -1 when the header has no such chunk.
+type wavLayout struct {
+	size int // header bytes, up to the first sample
+	junk int // the JUNK chunk's id
+	fact int // the fact chunk's frame count
+	data int // the data chunk's size
+}
+
+// wavHeaderBytes builds a WAV header with the placeholder sizes a pipe reader
+// expects, and a JUNK chunk to become ds64 when junk is set.
+//
+// U8 and I16 with one or two channels get the plain PCM chunk, I24, I32 and
+// more than two channels WAVE_FORMAT_EXTENSIBLE, and a float format the IEEE
+// float tag, or the extensible float subtype past two channels, with the fact
+// chunk a float WAV requires.
+func wavHeaderBytes(f pcm.Format, channels int, rate uint32, junk bool) ([]byte, wavLayout) {
+	le := binary.LittleEndian
+	l := wavLayout{junk: -1, fact: -1}
+	b := []byte("RIFF")
+	b = le.AppendUint32(b, math.MaxUint32)
+	b = append(b, "WAVE"...)
+
+	if junk {
+		l.junk = len(b)
+		b = append(b, "JUNK"...)
+		b = le.AppendUint32(b, ds64Size)
+		b = append(b, make([]byte, ds64Size)...)
+	}
+
+	tag := uint16(wavPCM)
+	if f.Float() {
+		tag = wavFloat
+	}
+	bits := f.Width() * 8
+	block := channels * f.Width()
+	extensible := f == pcm.I24LE || f == pcm.I32LE || channels > 2
+
+	b = append(b, "fmt "...)
+	switch {
+	case extensible:
+		b = le.AppendUint32(b, 40)
+	case f.Float():
+		b = le.AppendUint32(b, 18)
+	default:
+		b = le.AppendUint32(b, 16)
+	}
+	if extensible {
+		b = le.AppendUint16(b, wavExtensible)
+	} else {
+		b = le.AppendUint16(b, tag)
+	}
+	b = le.AppendUint16(b, uint16(channels))
+	b = le.AppendUint32(b, rate)
+	b = le.AppendUint32(b, rate*uint32(block))
+	b = le.AppendUint16(b, uint16(block))
+	b = le.AppendUint16(b, uint16(bits))
+	switch {
+	case extensible:
+		var mask uint32
+		switch channels {
+		case 1:
+			mask = maskMono
+		case 2:
+			mask = maskStereo
+		}
+		b = le.AppendUint16(b, 22)
+		b = le.AppendUint16(b, uint16(bits)) // valid bits
+		b = le.AppendUint32(b, mask)
+		b = le.AppendUint16(b, tag)
+		b = append(b, ksSuffix[:]...)
+	case f.Float():
+		b = le.AppendUint16(b, 0)
+	}
+
+	if f.Float() {
+		b = append(b, "fact"...)
+		b = le.AppendUint32(b, 4)
+		l.fact = len(b)
+		b = le.AppendUint32(b, 0)
+	}
+
+	b = append(b, "data"...)
+	l.data = len(b)
+	b = le.AppendUint32(b, math.MaxUint32)
+	l.size = len(b)
+	return b, l
 }

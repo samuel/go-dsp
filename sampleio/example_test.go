@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 
+	"samuelks.com/dsp/pcm"
 	"samuelks.com/dsp/sampleio"
 )
 
@@ -64,4 +66,31 @@ func ExampleOpen() {
 		log.Fatal(err)
 	}
 	fmt.Printf("%d frames, %.2f s at %g Hz\n", frames, float64(frames)/info.Rate, info.Rate)
+}
+
+// A Writer takes full-scale samples and owns the container and encoding. A
+// stereo pair is written as one slice per channel; Close fills in the WAV
+// sizes, since a file can be sought.
+func ExampleWriter() {
+	w, err := sampleio.Create("tone.wav", sampleio.WriterOptions{
+		Format:   pcm.I16LE,
+		Rate:     48000,
+		Channels: 2,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	left := make([]float32, 48000)
+	right := make([]float32, 48000)
+	for i := range left {
+		left[i] = 0.5 * float32(math.Sin(2*math.Pi*440*float64(i)/48000))
+		right[i] = -left[i]
+	}
+	if _, err := w.WritePlanar([][]float32{left, right}); err != nil {
+		log.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(w.Info().Frames, "frames")
 }

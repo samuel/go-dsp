@@ -275,6 +275,7 @@ jobs:
       matrix:
         include:
           - { pkg: ./sampleio, target: FuzzReadWAVHeader }
+          - { pkg: ./sampleio, target: FuzzWriteRead }
           - { pkg: ./firpm, target: FuzzDesign }
           - { pkg: ./ax25, target: FuzzFeed }
           - { pkg: ./pcm, target: FuzzDecode }

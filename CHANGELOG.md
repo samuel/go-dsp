@@ -47,6 +47,8 @@ Go 1.27.
   `cu8`, as normalized samples. `Reader.ReadSamples` and `ReadPlanar` are
   generic over the sample width and decode straight to it; `Options` and
   `Info` share a `Layout` of format, rate, channels, I/Q and `Container`.
+  `Writer` writes WAV, RF64 and headerless streams from samples of any width,
+  filling in the WAV sizes on `Close` when the destination can seek.
 - `analysis`: measuring a `dsp.Processor[float64, float64]` at a given input
   rate, exactly from its transfer function where it has a real one, and
   analyzing recordings in one pass. `Adapt` measures a filter at any sample

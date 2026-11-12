@@ -22,7 +22,7 @@ Paths are relative to the module, `samuelks.com/dsp`, whose root is package
 | `pcm` | The sample codec: `Format` names an encoding (`U8`, `I16LE`, `F32BE`, ...), and `Decode` and `Encode` move between bytes and full-scale samples of any width, real or interleaved complex. |
 | `ax25` | AX.25/HDLC frame decoding plus CRC-16/X-25 `FCS`/`CheckFCS`. |
 | `dtmf` | DTMF decoding built on Goertzel. |
-| `sampleio` | Reading WAV/RF64 audio and headerless I/Q captures, handing over scale-normalized samples. |
+| `sampleio` | Reading and writing WAV/RF64 audio and headerless I/Q captures as full-scale samples. |
 | `firpm` | Parks-McClellan (Remez exchange) linear-phase FIR design. |
 | `analysis` | Measuring filters (frequency response, impulse, step, tone spectrum, sweep) and recordings (PSD, spectrogram, level, histogram, statistics, tone tracking) as single-pass builders. |
 | `plot` | Charts over `analysis` results: axes, palettes, stdlib-only SVG and PNG. |
@@ -168,6 +168,24 @@ a real stream, complex for an I/Q one. Read every channel, or every I/Q pair,
 at once with `ReadPlanar`, which decodes the interleaved run once and splits it
 in a single pass. `Info` reports the stream's `Layout` (format, rate,
 channels, I/Q and `Container`), the same struct `Options` takes.
+
+### Writing a capture
+
+`sampleio.Writer` takes full-scale samples at any width and writes a WAV,
+RF64 past 4 GiB, or a headerless stream. `Close` fills in the WAV sizes when
+the destination can seek; a WAV down a pipe keeps the streaming placeholders.
+
+```go
+w, err := sampleio.Create("out.wav", sampleio.WriterOptions{
+    Format: pcm.I16LE, Rate: 48000, Channels: 2,
+})
+_, err = w.WritePlanar([][]float32{left, right})
+err = w.Close()
+```
+
+Writing with a Reader's `Info().Layout` reproduces a capture's shape. An
+integer sample past full scale is clipped, and `Info` records a Note the first
+time.
 
 ### Sample formats
 

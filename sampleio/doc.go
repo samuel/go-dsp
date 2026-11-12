@@ -1,4 +1,4 @@
-// Package sampleio reads audio and I/Q sample files.
+// Package sampleio reads and writes audio and I/Q sample files.
 //
 // It covers the two forms signal captures arrive in: a WAV file, which carries
 // its own rate and encoding, and a headerless stream of samples, which carries
@@ -22,6 +22,19 @@
 //
 // A stream's shape is a Layout -- format, rate, channels, I/Q and container --
 // which Options carries in and Info carries out.
+//
+// # Writing
+//
+// A Writer is the mirror of a Reader: WriteSamples takes one channel or I/Q
+// pair, WritePlanar one slice per channel, at any width, and the Writer
+// encodes, interleaves and wraps them in the container its Layout names. A
+// Reader's Info().Layout given to a Writer writes the same shape back out.
+//
+// A WAV written to a file that can be sought has its sizes filled in by Close,
+// and becomes RF64 past 4 GiB. One written down a pipe carries the
+// placeholder sizes a streaming reader expects and runs to the end of the
+// stream. An integer sample past full scale is clipped, with a Note in Info
+// the first time it happens.
 //
 // # Formats
 //

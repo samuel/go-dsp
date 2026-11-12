@@ -2,23 +2,27 @@ package sampleio
 
 import (
 	"flag"
+	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
+
+	"samuelks.com/dsp/pcm"
 )
 
 // oracle runs the fixture headers past sox, which wrote them, and past ffprobe,
-// which did not.
+// which did not, and every header the Writer produces past both.
 //
 // It is off by default and skips when the binary is absent, the same form and
 // the same rule as firpm's generate-and-compare: developer-run, never
 // CI-blocking. Only the header fields are compared, never the numbers. A test
 // asserting agreement with another tool's decibel convention would fail on that
 // tool's next release, and it would be testing sox.
-var oracle = flag.Bool("oracle", false, "cross-check the WAV fixtures against sox and ffprobe")
+var oracle = flag.Bool("oracle", false, "cross-check the WAV fixtures and the Writer against sox and ffprobe")
 
 func TestHeadersAgreeWithSox(t *testing.T) {
 	if !*oracle {
@@ -158,6 +162,125 @@ func TestHeadersAgreeWithFFprobe(t *testing.T) {
 				if mine, ok := got[key]; ok && mine != want {
 					t.Errorf("%s: got %d, ffprobe says %d", key, mine, want)
 				}
+			}
+		})
+	}
+}
+
+// writerFile is a WAV the Writer produced for the oracle, with what it holds.
+type writerFile struct {
+	path     string
+	channels int
+	rate     int64
+	frames   int64 // -1 for the pipe form, whose sizes are placeholders
+}
+
+// writeOracleFiles writes every WAV format at one, two and three channels, in
+// the form a file gets and the form a pipe gets.
+func writeOracleFiles(t *testing.T) []writerFile {
+	t.Helper()
+	dir := t.TempDir()
+	var files []writerFile
+	for _, f := range []pcm.Format{pcm.U8, pcm.I16LE, pcm.I24LE, pcm.I32LE, pcm.F32LE, pcm.F64LE} {
+		for _, channels := range []int{1, 2, 3} {
+			for _, seek := range []bool{true, false} {
+				l := Layout{Format: f, Rate: 22050, Channels: channels, Container: WAV}
+				const frames = 333
+				planes := narrowPlanes[float64](testSignal(channels, frames))
+				b := writeAll(t, WriterOptions{Layout: l}, seek, func(w *Writer) (int, error) {
+					if channels == 1 {
+						return w.WriteSamples(planes[0])
+					}
+					return w.WritePlanar(planes)
+				})
+				form, n := "file", int64(frames)
+				if !seek {
+					form, n = "pipe", -1
+				}
+				path := filepath.Join(dir, fmt.Sprintf("%v-%dch-%s.wav", f, channels, form))
+				if err := os.WriteFile(path, b, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				files = append(files, writerFile{path, channels, 22050, n})
+			}
+		}
+	}
+	return files
+}
+
+// TestWriterAgreesWithSox checks that sox reads every header the Writer
+// produces as the layout it was written with, and decodes the samples.
+func TestWriterAgreesWithSox(t *testing.T) {
+	if !*oracle {
+		t.Skip("run with -oracle to cross-check against sox and ffprobe")
+	}
+	sox, err := exec.LookPath("sox")
+	if err != nil {
+		t.Skip("sox is not installed")
+	}
+	for _, wf := range writeOracleFiles(t) {
+		t.Run(filepath.Base(wf.path), func(t *testing.T) {
+			out, err := exec.Command(sox, "--i", wf.path).CombinedOutput()
+			if err != nil {
+				t.Fatalf("sox --i: %v\n%s", err, out)
+			}
+			fields := soxFields(string(out))
+			if fields["Channels"] != int64(wf.channels) || fields["Sample Rate"] != wf.rate {
+				t.Errorf("sox reads %d channels at %d Hz, want %d at %d:\n%s",
+					fields["Channels"], fields["Sample Rate"], wf.channels, wf.rate, out)
+			}
+			if wf.frames >= 0 && fields["samples"] != wf.frames {
+				t.Errorf("sox counts %d frames, want %d", fields["samples"], wf.frames)
+			}
+			// Decoding to nowhere fails on a header sox accepts but cannot
+			// read samples through.
+			if out, err := exec.Command(sox, wf.path, "-n", "stat").CombinedOutput(); err != nil {
+				t.Errorf("sox could not decode it: %v\n%s", err, out)
+			} else if wf.frames < 0 && !strings.Contains(string(out), "Samples read") {
+				t.Errorf("sox stat printed no sample count:\n%s", out)
+			}
+		})
+	}
+}
+
+// TestWriterAgreesWithFFprobe checks the same headers against ffprobe, and
+// that ffmpeg decodes as many frames as were written.
+func TestWriterAgreesWithFFprobe(t *testing.T) {
+	if !*oracle {
+		t.Skip("run with -oracle to cross-check against sox and ffprobe")
+	}
+	ffprobe, err := exec.LookPath("ffprobe")
+	if err != nil {
+		t.Skip("ffprobe is not installed")
+	}
+	for _, wf := range writeOracleFiles(t) {
+		t.Run(filepath.Base(wf.path), func(t *testing.T) {
+			out, err := exec.Command(ffprobe, "-v", "error", "-count_packets",
+				"-show_entries", "stream=sample_rate,channels,duration_ts",
+				"-of", "default=noprint_wrappers=1", wf.path).CombinedOutput()
+			if err != nil {
+				t.Fatalf("ffprobe: %v\n%s", err, out)
+			}
+			want := map[string]int64{"sample_rate": wf.rate, "channels": int64(wf.channels)}
+			if wf.frames >= 0 {
+				want["duration_ts"] = wf.frames
+			}
+			for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+				key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
+				if !ok {
+					continue
+				}
+				got, err := strconv.ParseInt(value, 10, 64)
+				if err != nil {
+					continue
+				}
+				if w, ok := want[key]; ok && w != got {
+					t.Errorf("%s: ffprobe says %d, want %d", key, got, w)
+				}
+				delete(want, key)
+			}
+			for key := range want {
+				t.Errorf("ffprobe did not report %s:\n%s", key, out)
 			}
 		})
 	}
