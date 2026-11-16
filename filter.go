@@ -2,6 +2,8 @@ package dsp
 
 import (
 	"errors"
+	"fmt"
+	"math"
 	"slices"
 
 	"samuelks.com/dsp/internal/view"
@@ -162,27 +164,74 @@ func (f *IIRFilter[T]) Reset() {
 	clear(f.pOut)
 }
 
-// DCFilter is a one-pole DC blocker: a high-pass with its zero at DC and its
-// pole at a, which removes a constant offset. a is just below 1, and the
-// closer it is the narrower the notch. State is kept between calls.
+// DCFilter is a one-pole DC blocker: a high-pass with its zero at DC and a
+// real pole just below 1, which removes a constant offset. It takes real or
+// complex samples; on complex IQ it removes the spike at the center of the
+// spectrum, such as an RTL-SDR's, filtering the real and imaginary parts
+// independently. State is kept between calls.
+//
+// It runs in direct form 1, y[n] = x[n] - x[n-1] + a·y[n-1], so the state is
+// the previous input and output and does not depend on the pole: once the
+// output has settled, SetCutoff moves the pole without a transient.
 //
 // The pole and the state are float64 whatever the sample type is, as
-// Biquad's are and for the same reason: this is a leaky integrator whose
-// pole sits just inside the unit circle, exactly where a narrower accumulator
-// shows up as drift. The sample type therefore has to be given, as in
-// NewDCFilter[float32](0.95).
-type DCFilter[T Float] struct {
-	a float64
-	w float64
+// Biquad's are and for the same reason: the recursion's pole sits just inside
+// the unit circle, exactly where a narrower accumulator shows up as drift. The sample type therefore has to be given, as in
+// NewDCFilter[complex64](0.0002).
+type DCFilter[T Sample] struct {
+	cutoff float64
+	a      float64
+	// The previous input and output: index 0 for a real sample or a complex
+	// sample's real part, 1 for its imaginary part.
+	x, y [2]float64
 }
 
-// NewDCFilter returns a DC blocker with pole a, which must be in [0, 1).
-func NewDCFilter[T Float](a float64) (*DCFilter[T], error) {
-	if !(a >= 0 && a < 1) {
-		return nil, errors.New("dsp: DC blocker pole must be in [0, 1)")
+// MaxDCFilterCutoff is the highest cutoff a DCFilter accepts, acos(3/4)/2π
+// cycles per sample, where the pole reaches 0. Above it the pole would go
+// negative and the filter would stop being a DC blocker.
+const MaxDCFilterCutoff = 0.11502672808130794
+
+// NewDCFilter returns a DC blocker whose -3 dB point is at cutoff, in cycles
+// per sample, which must be in (0, MaxDCFilterCutoff]. A cutoff in Hz is
+// cutoffHz/sampleRate.
+func NewDCFilter[T Sample](cutoff float64) (*DCFilter[T], error) {
+	f := &DCFilter[T]{}
+	if err := f.SetCutoff(cutoff); err != nil {
+		return nil, err
 	}
-	return &DCFilter[T]{a: a}, nil
+	return f, nil
 }
+
+// SetCutoff moves the -3 dB point to cutoff, in cycles per sample, and keeps
+// the state, so a running stream sees no reset and, once settled, no
+// transient. An invalid cutoff returns an
+// error and leaves the filter as it was.
+func (f *DCFilter[T]) SetCutoff(cutoff float64) error {
+	if !(cutoff > 0 && cutoff <= MaxDCFilterCutoff) {
+		return fmt.Errorf("dsp: DC blocker cutoff %v must be in (0, %.4f] cycles per sample", cutoff, MaxDCFilterCutoff)
+	}
+	f.cutoff = cutoff
+	f.a = dcPole(cutoff)
+	return nil
+}
+
+// dcPole returns the pole that puts the blocker's -3 dB point at cutoff.
+// Setting |H|² = 1/2 for H(z) = (1 - z⁻¹)/(1 - a·z⁻¹) at ω = 2π·cutoff gives
+// a² - 2a·cos ω + 4cos ω - 3 = 0, whose root inside the unit circle is
+// cos ω - √((1 - cos ω)(3 - cos ω)). For small ω it is about 1 - ω. 1 - cos ω
+// is computed as 2sin²(ω/2), which does not cancel at the small cutoffs a DC
+// blocker usually has.
+func dcPole(cutoff float64) float64 {
+	h := math.Sin(math.Pi * cutoff)
+	s := 2 * h * h
+	return max(1-s-math.Sqrt(s*(2+s)), 0)
+}
+
+// Cutoff returns the -3 dB point in cycles per sample, as last given.
+func (f *DCFilter[T]) Cutoff() float64 { return f.cutoff }
+
+// Pole returns the pole the cutoff gives.
+func (f *DCFilter[T]) Pole() float64 { return f.a }
 
 // OutputLen returns inputs: the filter writes one sample per input.
 func (f *DCFilter[T]) OutputLen(inputs int) int { return inputs }
@@ -191,22 +240,57 @@ func (f *DCFilter[T]) OutputLen(inputs int) int { return inputs }
 // panics if dst is shorter than src. The slices may be the same.
 func (f *DCFilter[T]) Process(dst, src []T) int {
 	checkDst("DCFilter", len(dst), len(src))
-	lw := f.w
-	for i, x := range src {
-		w := float64(x) + f.a*lw
-		dst[i] = T(w - lw)
-		lw = w
+	dst = dst[:len(src)]
+	switch d := any(dst).(type) {
+	case []float32:
+		dcReal(d, any(src).([]float32), f.a, &f.x[0], &f.y[0])
+	case []float64:
+		dcReal(d, any(src).([]float64), f.a, &f.x[0], &f.y[0])
+	case []complex64:
+		dcInterleaved(view.C64ToF32(d), view.C64ToF32(any(src).([]complex64)), f.a, &f.x, &f.y)
+	case []complex128:
+		dcInterleaved(view.C128ToF64(d), view.C128ToF64(any(src).([]complex128)), f.a, &f.x, &f.y)
+	default:
+		panic("dsp: DCFilter: no case for this width")
 	}
-	f.w = lw
 	return len(src)
 }
 
-// ProcessOne filters a single sample.
+// dcReal runs the blocker over real samples, updating the previous input px
+// and output py.
+func dcReal[F Float](dst, src []F, a float64, px, py *float64) {
+	xp, yp := *px, *py
+	for i, v := range src {
+		x := float64(v)
+		yp = x - xp + a*yp
+		xp = x
+		dst[i] = F(yp)
+	}
+	*px, *py = xp, yp
+}
+
+// dcInterleaved runs the blocker over interleaved real and imaginary parts,
+// each with its own previous input and output.
+func dcInterleaved[F Float](dst, src []F, a float64, px, py *[2]float64) {
+	dst = dst[:len(src)]
+	xr, xi, yr, yi := px[0], px[1], py[0], py[1]
+	for i := 0; i+1 < len(src); i += 2 {
+		r, m := float64(src[i]), float64(src[i+1])
+		yr = r - xr + a*yr
+		yi = m - xi + a*yi
+		xr, xi = r, m
+		dst[i] = F(yr)
+		dst[i+1] = F(yi)
+	}
+	*px, *py = [2]float64{xr, xi}, [2]float64{yr, yi}
+}
+
+// ProcessOne filters a single sample with the same arithmetic as Process, so
+// the two give bit-identical streams.
 func (f *DCFilter[T]) ProcessOne(x T) T {
-	w := float64(x) + f.a*f.w
-	y := w - f.w
-	f.w = w
-	return T(y)
+	buf := [1]T{x}
+	f.Process(buf[:], buf[:])
+	return buf[0]
 }
 
 // RealCoefficients returns the blocker written as an ordinary IIR filter: b is
@@ -218,5 +302,5 @@ func (f *DCFilter[T]) RealCoefficients() (b, a []float64, ok bool) {
 
 // Reset clears the filter state, so it starts a new stream from silence.
 func (f *DCFilter[T]) Reset() {
-	f.w = 0
+	f.x, f.y = [2]float64{}, [2]float64{}
 }

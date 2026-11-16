@@ -21,7 +21,7 @@ func FuzzHandleAnalyze(f *testing.F) {
 	f.Add(`{"kind":"firpm","params":{"rate":8000,"taps":401},"points":100000,"frame":100000}`)
 	f.Add(`{"kind":"rational","params":{"fast":8000,"slow":8000}}`)
 	f.Add(`{"kind":"decimate","params":{"factor":-1e300},"points":-5,"frame":-5,"taps":-5,"toneHz":-1}`)
-	f.Add(`{"kind":"dcblock","params":{"pole":1e308},"toneHz":1e308}`)
+	f.Add(`{"kind":"dcblock","params":{"cutoff":1e308},"toneHz":1e308}`)
 	f.Add(`{}`)
 	f.Add(`not json`)
 

@@ -43,11 +43,11 @@ func TestImpulseAndStep(t *testing.T) {
 // TestDCFilterStepDecay checks a black-box measurement against the closed form
 // the filter's own tests use: a DC blocker's step response is a^n.
 func TestDCFilterStepDecay(t *testing.T) {
-	const a = 0.95
-	f, err := dsp.NewDCFilter[float64](a)
+	f, err := dsp.NewDCFilter[float64](0.008)
 	if err != nil {
 		t.Fatal(err)
 	}
+	a := f.Pole()
 	for i, v := range Step(f, 60) {
 		want := math.Pow(a, float64(i))
 		if math.Abs(v-want) > 1e-12 {

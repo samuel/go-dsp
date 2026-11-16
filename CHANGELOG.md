@@ -27,6 +27,9 @@ Go 1.27.
   frequency shifter, in cycles per sample at every width, with the phase held
   in cycles so a binary-fraction frequency is exact. `Mixer` implements
   `Processor` and takes a real IF to complex baseband.
+- `dsp.DCFilter`: a one-pole DC blocker over real or complex samples, set by
+  its -3 dB cutoff in cycles per sample (up to `MaxDCFilterCutoff`). Its state
+  is float64 at every width, and `SetCutoff` retunes it without a reset.
 - `riff`: a reader and writer for RIFF containers, formerly the
   `samuelks.com/wave/riff` package. The reader also accepts an RF64 header
   (`Reader.RF64`) and can disregard a wrong container size

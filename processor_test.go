@@ -50,8 +50,23 @@ func TestProcessorContract(t *testing.T) {
 		}},
 		{"DCFilter/float64", func(t *testing.T) {
 			checkProcessor(t, func() Processor[float64, float64] {
-				return must(NewDCFilter[float64](0.95))
+				return must(NewDCFilter[float64](0.008))
 			}, ramp, -9999)
+		}},
+		{"DCFilter/float32", func(t *testing.T) {
+			checkProcessor(t, func() Processor[float32, float32] {
+				return must(NewDCFilter[float32](0.008))
+			}, real32, -9999)
+		}},
+		{"DCFilter/complex64", func(t *testing.T) {
+			checkProcessor(t, func() Processor[complex64, complex64] {
+				return must(NewDCFilter[complex64](0.008))
+			}, cplx64, -9999)
+		}},
+		{"DCFilter/complex128", func(t *testing.T) {
+			checkProcessor(t, func() Processor[complex128, complex128] {
+				return must(NewDCFilter[complex128](0.008))
+			}, cplx128, -9999)
 		}},
 		{"FIRFilter/float64", func(t *testing.T) {
 			checkProcessor(t, func() Processor[float64, float64] {

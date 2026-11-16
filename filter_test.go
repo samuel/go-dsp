@@ -235,60 +235,177 @@ func TestComplexIIRFilterMatchesReal(t *testing.T) {
 }
 
 // TestDCFilterStepResponse checks the closed form of the step response. With
-// w[n] = x[n] + a*w[n-1] and y[n] = w[n] - w[n-1], a unit step from n = 0 gives
-// y[n] = a^n exactly.
+// y[n] = x[n] - x[n-1] + a*y[n-1], a unit step from n = 0 gives y[n] = a^n. A complex step runs each part through it independently.
 func TestDCFilterStepResponse(t *testing.T) {
-	const a = 0.95
-	src := make([]float64, 32)
+	const cutoff = 0.008
+	const n = 32
+	want := func(f interface{ Pole() float64 }, k int) float64 { return math.Pow(f.Pole(), float64(k)) }
+
+	t.Run("float64", func(t *testing.T) {
+		src := make([]float64, n)
+		for i := range src {
+			src[i] = 1
+		}
+		got := runBoth(t, must(NewDCFilter[float64](cutoff)), must(NewDCFilter[float64](cutoff)), src)
+		f := must(NewDCFilter[float64](cutoff))
+		for k, v := range got {
+			if math.Abs(v-want(f, k)) > 1e-12 {
+				t.Fatalf("sample %d: got %v, want %v", k, v, want(f, k))
+			}
+		}
+	})
+	t.Run("float32", func(t *testing.T) {
+		src := make([]float32, n)
+		for i := range src {
+			src[i] = 1
+		}
+		got := runBoth(t, must(NewDCFilter[float32](cutoff)), must(NewDCFilter[float32](cutoff)), src)
+		f := must(NewDCFilter[float32](cutoff))
+		for k, v := range got {
+			if math.Abs(float64(v)-want(f, k)) > 1e-5 {
+				t.Fatalf("sample %d: got %v, want %v", k, v, want(f, k))
+			}
+		}
+	})
+	t.Run("complex64", func(t *testing.T) {
+		src := make([]complex64, n)
+		for i := range src {
+			src[i] = complex(1, -2)
+		}
+		got := runBoth(t, must(NewDCFilter[complex64](cutoff)), must(NewDCFilter[complex64](cutoff)), src)
+		f := must(NewDCFilter[complex64](cutoff))
+		for k, v := range got {
+			w := want(f, k)
+			if math.Abs(float64(real(v))-w) > 1e-5 || math.Abs(float64(imag(v))+2*w) > 1e-5 {
+				t.Fatalf("sample %d: got %v, want %v", k, v, complex(w, -2*w))
+			}
+		}
+	})
+	t.Run("complex128", func(t *testing.T) {
+		src := make([]complex128, n)
+		for i := range src {
+			src[i] = complex(1, -2)
+		}
+		got := runBoth(t, must(NewDCFilter[complex128](cutoff)), must(NewDCFilter[complex128](cutoff)), src)
+		f := must(NewDCFilter[complex128](cutoff))
+		for k, v := range got {
+			w := want(f, k)
+			if math.Abs(real(v)-w) > 1e-12 || math.Abs(imag(v)+2*w) > 1e-12 {
+				t.Fatalf("sample %d: got %v, want %v", k, v, complex(w, -2*w))
+			}
+		}
+	})
+}
+
+// runBoth runs src through block with Process and through one with ProcessOne,
+// requires the two to be bit-identical, and returns the output.
+func runBoth[T Sample](t *testing.T, block, one *DCFilter[T], src []T) []T {
+	t.Helper()
+	dst := make([]T, len(src))
+	block.Process(dst, src)
+	for i, x := range src {
+		if got := one.ProcessOne(x); got != dst[i] {
+			t.Fatalf("ProcessOne sample %d: got %v, Process gave %v", i, got, dst[i])
+		}
+	}
+	return dst
+}
+
+// TestDCFilterComplexMatchesParts checks that a complex filter is exactly two
+// real filters run over the parts.
+func TestDCFilterComplexMatchesParts(t *testing.T) {
+	const cutoff = 0.01
+	src := make([]complex128, 200)
 	for i := range src {
-		src[i] = 1
+		x := float64(i)
+		src[i] = complex(0.3+math.Sin(0.37*x), -0.7+math.Cos(0.11*x))
 	}
+	dst := make([]complex128, len(src))
+	// Two calls, so the state carries across a block boundary.
+	c := must(NewDCFilter[complex128](cutoff))
+	c.Process(dst[:77], src[:77])
+	c.Process(dst[77:], src[77:])
+	re, im := must(NewDCFilter[float64](cutoff)), must(NewDCFilter[float64](cutoff))
+	for i, x := range src {
+		want := complex(re.ProcessOne(real(x)), im.ProcessOne(imag(x)))
+		if dst[i] != want {
+			t.Fatalf("sample %d: got %v, want %v", i, dst[i], want)
+		}
+	}
+}
+
+// TestDCFilterCutoff checks that the response is down 3 dB at the cutoff.
+func TestDCFilterCutoff(t *testing.T) {
+	for _, fc := range []float64{1e-6, 1e-4, 0.001, 0.01, 0.05, 0.1, MaxDCFilterCutoff} {
+		f := must(NewDCFilter[float64](fc))
+		if f.Cutoff() != fc {
+			t.Errorf("Cutoff() = %v, want %v", f.Cutoff(), fc)
+		}
+		b, a := realBA(f.RealCoefficients())
+		got := cmplx.Abs(Freqz(b, a, []float64{fc})[0])
+		if math.Abs(got-1/math.Sqrt2) > 1e-9 {
+			t.Errorf("cutoff %v: |H| = %v, want %v", fc, got, 1/math.Sqrt2)
+		}
+	}
+	if p := dcPole(MaxDCFilterCutoff); math.Abs(p) > 1e-12 {
+		t.Errorf("pole at MaxDCFilterCutoff = %v, want 0", p)
+	}
+	if want := math.Acos(0.75) / (2 * math.Pi); MaxDCFilterCutoff != want {
+		t.Errorf("MaxDCFilterCutoff = %v, want %v", MaxDCFilterCutoff, want)
+	}
+}
+
+// TestDCFilterSetCutoff checks that a cutoff change keeps the state: the stream
+// matches the recursion with the pole changed at that sample and nothing reset.
+func TestDCFilterSetCutoff(t *testing.T) {
+	const fc1, fc2, split = 0.01, 0.002, 40
+	src := make([]float64, 100)
+	for i := range src {
+		src[i] = 1 + math.Sin(0.2*float64(i))
+	}
+	f := must(NewDCFilter[float64](fc1))
 	dst := make([]float64, len(src))
-	f, err := NewDCFilter[float64](a)
-	if err != nil {
+	f.Process(dst[:split], src[:split])
+	if err := f.SetCutoff(fc2); err != nil {
 		t.Fatal(err)
 	}
-	f.Process(dst, src)
-	for n := range dst {
-		want := math.Pow(a, float64(n))
-		if math.Abs(dst[n]-want) > 1e-12 {
-			t.Fatalf("sample %d: got %v, want %v", n, dst[n], want)
+	f.Process(dst[split:], src[split:])
+
+	a1, a2 := must(NewDCFilter[float64](fc1)).Pole(), must(NewDCFilter[float64](fc2)).Pole()
+	var xp, yp float64
+	for i, x := range src {
+		a := a1
+		if i >= split {
+			a = a2
+		}
+		yp = x - xp + a*yp
+		xp = x
+		if dst[i] != yp {
+			t.Fatalf("sample %d: got %v, want %v", i, dst[i], yp)
 		}
 	}
 
-	// ProcessOne has to walk the same trajectory.
-	f, err = NewDCFilter[float64](a)
-	if err != nil {
+	// Once a constant input has settled, retuning leaves the output at zero.
+	settled := must(NewDCFilter[complex128](0.016))
+	dc := make([]complex128, 4000)
+	for i := range dc {
+		dc[i] = complex(1, -0.5)
+	}
+	settled.Process(dc, dc)
+	if err := settled.SetCutoff(0.002); err != nil {
 		t.Fatal(err)
 	}
-	for n := range dst {
-		if got := f.ProcessOne(src[n]); got != dst[n] {
-			t.Fatalf("ProcessOne sample %d: got %v, want %v", n, got, dst[n])
-		}
+	if y := settled.ProcessOne(complex(1, -0.5)); cmplx.Abs(y) > 1e-12 {
+		t.Errorf("output after retuning a settled filter = %v, want 0", y)
 	}
 
-	out32 := make([]float32, len(src))
-	in32 := make([]float32, len(src))
-	for i := range in32 {
-		in32[i] = 1
+	// A rejected cutoff changes nothing.
+	pole, before := f.Pole(), *f
+	if err := f.SetCutoff(1); err == nil {
+		t.Fatal("SetCutoff(1) returned no error")
 	}
-	f32, err := NewDCFilter[float32](a)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f32.Process(out32, in32)
-	f32, err = NewDCFilter[float32](a)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for n := range out32 {
-		want := float32(math.Pow(a, float64(n)))
-		if math.Abs(float64(out32[n]-want)) > 1e-5 {
-			t.Fatalf("float32 sample %d: got %v, want %v", n, out32[n], want)
-		}
-		if got := f32.ProcessOne(in32[n]); got != out32[n] {
-			t.Fatalf("ProcessOne32 sample %d: got %v, want %v", n, got, out32[n])
-		}
+	if *f != before || f.Pole() != pole || f.Cutoff() != fc2 {
+		t.Errorf("rejected SetCutoff changed the filter: %+v, was %+v", *f, before)
 	}
 }
 
@@ -340,25 +457,19 @@ func TestIIRFilterReset(t *testing.T) {
 }
 
 func TestDCFilterReset(t *testing.T) {
-	f, err := NewDCFilter[float64](0.9)
-	if err != nil {
-		t.Fatal(err)
-	}
-	first := f.ProcessOne(1)
+	f := must(NewDCFilter[complex64](0.01))
+	first := f.ProcessOne(complex(1, 2))
 	f.Reset()
-	if again := f.ProcessOne(1); again != first {
+	if again := f.ProcessOne(complex(1, 2)); again != first {
 		t.Errorf("after Reset got %v, want %v", again, first)
 	}
 }
 
 func TestNewDCFilterRejects(t *testing.T) {
-	for _, a := range []float64{-0.1, 1, 1.5} {
-		func() {
-			_, err := NewDCFilter[float64](a)
-			if err == nil {
-				t.Errorf("did not return error for pole %v", a)
-			}
-		}()
+	for _, fc := range []float64{0, -0.1, math.NaN(), math.Inf(1), math.Inf(-1), MaxDCFilterCutoff * (1 + 1e-12), 0.5} {
+		if _, err := NewDCFilter[float64](fc); err == nil {
+			t.Errorf("did not return error for cutoff %v", fc)
+		}
 	}
 }
 

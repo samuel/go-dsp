@@ -177,7 +177,7 @@ func TestUnwrap(t *testing.T) {
 // TestDCFilterCoefficients checks that the blocker's transfer function really
 // describes the filter, by running a tone through it and comparing.
 func TestDCFilterCoefficients(t *testing.T) {
-	f, err := NewDCFilter[float64](0.95)
+	f, err := NewDCFilter[float64](0.008)
 	if err != nil {
 		t.Fatal(err)
 	}

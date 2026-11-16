@@ -87,6 +87,16 @@ f.Reset()
 c, err := dsp.NewRealCoefIIRFilter[complex64](b, a)
 ```
 
+A DC blocker removes a constant offset, such as the spike at the center of
+an SDR's IQ. It is set by its -3 dB cutoff in cycles per sample, and
+`SetCutoff` retunes it while it runs without resetting its state:
+
+```go
+dc, err := dsp.NewDCFilter[complex64](10.0 / 2.048e6) // 10 Hz at 2.048 MHz
+dc.Process(iq, iq)
+err = dc.SetCutoff(50.0 / 2.048e6)
+```
+
 ### Vector operations
 
 Elementwise binary operations are three-operand `f(dst, a, b)` and may alias,

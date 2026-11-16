@@ -124,7 +124,7 @@ func Catalog() []Kind {
 			Name: "dcblock", Label: "DC blocker",
 			Params: []Param{
 				{Name: "rate", Label: "Sample rate", Min: 8000, Max: 192000, Default: 48000, Step: 100, Unit: "Hz"},
-				{Name: "pole", Label: "Pole", Min: 0, Max: 0.9999, Default: 0.995, Step: 0.0001},
+				{Name: "cutoff", Label: "Cutoff", Min: 1, Max: 500, Default: 40, Step: 1, Unit: "Hz"},
 			},
 		},
 	}
@@ -339,7 +339,7 @@ func Build(kind string, params map[string]float64, choices map[string]string) (d
 		return analysis.Adapt(f), float64(fast), nil
 
 	case "dcblock":
-		f, err := dsp.NewDCFilter[float64](get("pole"))
+		f, err := dsp.NewDCFilter[float64](get("cutoff") / get("rate"))
 		if err != nil {
 			return nil, 0, err
 		}
