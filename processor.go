@@ -34,6 +34,9 @@ func _[T Sample, F Float, C Complex]() {
 		_ Processor[C, C] = (*Rotator90[C])(nil)
 		_ Processor[C, C] = (*SDFT[C])(nil)
 		_ Processor[T, C] = (*Mixer[T, C])(nil)
+		_ Processor[T, T] = (*Resampler[T])(nil)
+		_ Processor[T, T] = (*AGC[T])(nil)
+		_ Processor[T, T] = (*PowerSquelch[T])(nil)
 	)
 }
 

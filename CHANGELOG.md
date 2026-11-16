@@ -27,6 +27,13 @@ Go 1.27.
   frequency shifter, in cycles per sample at every width, with the phase held
   in cycles so a binary-fraction frequency is exact. `Mixer` implements
   `Processor` and takes a real IF to complex baseband.
+- `dsp.Resampler`: an arbitrary-ratio resampler built on `SincInterpolator`,
+  with a filter sized for the ratio it is built with and `SetRatio` to follow
+  clock drift without a glitch. Its output does not depend on block sizes.
+- `dsp.AGC`: holds a signal's envelope near a target, with separate attack and
+  decay time constants and a gain cap.
+- `dsp.PowerSquelch`: passes a signal while its average power is above a
+  threshold in dBFS, with hysteresis, and writes zeros otherwise.
 - `dsp.DCFilter`: a one-pole DC blocker over real or complex samples, set by
   its -3 dB cutoff in cycles per sample (up to `MaxDCFilterCutoff`). Its state
   is float64 at every width, and `SetCutoff` retunes it without a reset.
