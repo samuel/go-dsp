@@ -350,7 +350,9 @@ func TestDCFilterCutoff(t *testing.T) {
 	if p := dcPole(MaxDCFilterCutoff); math.Abs(p) > 1e-12 {
 		t.Errorf("pole at MaxDCFilterCutoff = %v, want 0", p)
 	}
-	if want := math.Acos(0.75) / (2 * math.Pi); MaxDCFilterCutoff != want {
+	// Within a few ulps: s390x's assembly Acos differs from the others in the
+	// last bit.
+	if want := math.Acos(0.75) / (2 * math.Pi); math.Abs(MaxDCFilterCutoff-want) > 1e-15*want {
 		t.Errorf("MaxDCFilterCutoff = %v, want %v", MaxDCFilterCutoff, want)
 	}
 }
