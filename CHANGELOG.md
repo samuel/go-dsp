@@ -32,6 +32,11 @@ Go 1.27.
   clock drift without a glitch. Its output does not depend on block sizes.
 - `dsp.AGC`: holds a signal's envelope near a target, with separate attack and
   decay time constants and a gain cap.
+- `dsp.PLL`: a second-order phase-locked loop that tracks a carrier and
+  derotates the signal by it, for synchronous AM.
+- `dsp.SidebandDemod`: band-passes a complex signal, shifts it, and takes the
+  real part, which demodulates SSB (upper or lower) and, with a shift for the
+  beat frequency, CW.
 - `dsp.PowerSquelch`: passes a signal while its average power is above a
   threshold in dBFS, with hysteresis, and writes zeros otherwise.
 - `dsp.DCFilter`: a one-pole DC blocker over real or complex samples, set by

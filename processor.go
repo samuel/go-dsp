@@ -37,6 +37,8 @@ func _[T Sample, F Float, C Complex]() {
 		_ Processor[T, T] = (*Resampler[T])(nil)
 		_ Processor[T, T] = (*AGC[T])(nil)
 		_ Processor[T, T] = (*PowerSquelch[T])(nil)
+		_ Processor[C, C] = (*PLL[C])(nil)
+		_ Processor[C, F] = (*SidebandDemod[C, F])(nil)
 	)
 }
 

@@ -18,7 +18,7 @@ Paths are relative to the module, `samuelks.com/dsp`, whose root is package
 
 | Path | Contents |
 | --- | --- |
-| `.` (`dsp`) | The main API: generic vector operations (`VScale`, `VAdd`, ...), FM demodulation, a phase-continuous `Oscillator` and `Mixer`, IIR/biquad/FIR filters, boxcar and FIR decimators, Goertzel tone detection, sliding DFT, fixed-size FFT, transfer-function evaluation, window functions, Kaiser-windowed sinc low-pass design (`LowPassFIR`), FIR interpolation (`FIRInterpolator`, zero-phase `Upsample`), interpolators including a polyphase `SincInterpolator`, an arbitrary-ratio `Resampler`, `AGC` and `PowerSquelch`, interleave/deinterleave, `FastAtan2`. |
+| `.` (`dsp`) | The main API: generic vector operations (`VScale`, `VAdd`, ...), FM demodulation, a phase-continuous `Oscillator` and `Mixer`, IIR/biquad/FIR filters, boxcar and FIR decimators, Goertzel tone detection, sliding DFT, fixed-size FFT, transfer-function evaluation, window functions, Kaiser-windowed sinc low-pass design (`LowPassFIR`), FIR interpolation (`FIRInterpolator`, zero-phase `Upsample`), interpolators including a polyphase `SincInterpolator`, an arbitrary-ratio `Resampler`, `AGC` and `PowerSquelch`, a carrier-tracking `PLL` and a `SidebandDemod` for SSB and CW, interleave/deinterleave, `FastAtan2`. |
 | `pcm` | The sample codec: `Format` names an encoding (`U8`, `I16LE`, `F32BE`, `MuLaw`, ...), and `Decode` and `Encode` move between bytes and full-scale samples of any width, real or interleaved complex. |
 | `ax25` | AX.25/HDLC frame encoding and decoding, NRZI line coding and CRC-16/X-25 `FCS`/`CheckFCS`. |
 | `fsk` | Binary FSK modulation and demodulation: Bell 202 and Bell 103 AFSK, or complex baseband, at any samples per symbol. |
