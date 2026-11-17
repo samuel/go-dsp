@@ -196,7 +196,9 @@ func NewSincInterpolator[F Float](taps, phases int, cutoff, beta float64) (*Sinc
 		for k := range taps {
 			t := float64(k) - float64(taps/2-1) - alpha
 			win[k] = kaiserAt(t, halfLen, beta)
-			row[k] = sinc(2*cutoff*t) * win[k]
+			// The conversion rounds the product so arm64 cannot fuse it
+			// into the sum, which would depend on the compiler's choices.
+			row[k] = float64(sinc(2*cutoff*t) * win[k])
 			sum += row[k]
 		}
 		// A beta large enough to overflow besselI0 makes the window NaN.
@@ -265,9 +267,10 @@ func (s *SincInterpolator[F]) DownsampleCoeffs(dst []F, phase int, cutoff float6
 		if wt := w * t; math.Abs(wt) > 1e-9 {
 			v = sin / wt
 		}
-		row[k] = v * win[k]
+		// Rounded products, as in NewSincInterpolator.
+		row[k] = float64(v * win[k])
 		sum += row[k]
-		sin, cos = sin*stepCos+cos*stepSin, cos*stepCos-sin*stepSin
+		sin, cos = float64(sin*stepCos)+float64(cos*stepSin), float64(cos*stepCos)-float64(sin*stepSin)
 		t++
 	}
 	setReal(dst[:s.taps], row, sum)

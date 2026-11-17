@@ -195,7 +195,7 @@ func refSincTables() (table, window [refSincPhases][refSincTaps]float64) {
 		for k := range refSincTaps {
 			t := float64(k) - float64(refSincHalf-1) - alpha
 			window[p][k] = kaiserAt(t, refSincHalf, refSincBeta)
-			taps[k] = sinc(2*refSincCutoff*t) * window[p][k]
+			taps[k] = float64(sinc(2*refSincCutoff*t) * window[p][k])
 			sum += taps[k]
 		}
 		for k, v := range taps {
@@ -217,9 +217,9 @@ func refSincDownCoeffs(window *[refSincPhases][refSincTaps]float64, phase int, f
 		if wt := w * t; math.Abs(wt) > 1e-9 {
 			v = sin / wt
 		}
-		taps[k] = v * window[phase][k]
+		taps[k] = float64(v * window[phase][k])
 		sum += taps[k]
-		sin, cos = sin*stepCos+cos*stepSin, cos*stepCos-sin*stepSin
+		sin, cos = float64(sin*stepCos)+float64(cos*stepSin), float64(cos*stepCos)-float64(sin*stepSin)
 		t++
 	}
 	for k, v := range taps {
@@ -461,4 +461,25 @@ func TestSincInterpolatorMixedWidths(t *testing.T) {
 func TestSincInterpolatorComplex(t *testing.T) {
 	t.Run("complex64", testSincInterpolatorComplex[complex64, float32])
 	t.Run("complex128", testSincInterpolatorComplex[complex128, float64])
+}
+
+func BenchmarkNewSincInterpolator(b *testing.B) {
+	for b.Loop() {
+		if _, err := NewSincInterpolator[float32](refSincTaps, refSincPhases, refSincCutoff, refSincBeta); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkSincInterpolatorDownsampleCoeffs(b *testing.B) {
+	s, err := NewSincInterpolator[float32](refSincTaps, refSincPhases, refSincCutoff, refSincBeta)
+	if err != nil {
+		b.Fatal(err)
+	}
+	dst := make([]float32, refSincTaps)
+	var p int
+	for b.Loop() {
+		s.DownsampleCoeffs(dst, p, refSincCutoff/1.7)
+		p = (p + 1) % refSincPhases
+	}
 }
