@@ -155,7 +155,7 @@ func TestPhase(t *testing.T) {
 			t.Errorf("Phase(%v) = %v, want %v", x, got, want)
 		}
 		// FastPhase shares FastAtan2's error bound.
-		if got := FastPhase(x); math.Abs(float64(got)-want) > 0.02 {
+		if got := FastPhase(x); math.Abs(float64(got)-want) > 1.7e-4 {
 			t.Errorf("FastPhase(%v) = %v, want %v", x, got, want)
 		}
 	}
@@ -175,7 +175,7 @@ func TestPolarDiscriminator(t *testing.T) {
 		if got := PolarDiscriminator(a, b); math.Abs(got-want) > 1e-12 {
 			t.Errorf("PolarDiscriminator(%v, %v) = %v, want %v", a, b, got, want)
 		}
-		if got := FastPolarDiscriminator(complex64(a), complex64(b)); math.Abs(float64(got)-want) > 0.02 {
+		if got := FastPolarDiscriminator(complex64(a), complex64(b)); math.Abs(float64(got)-want) > 1.7e-4 {
 			t.Errorf("FastPolarDiscriminator(%v, %v) = %v, want %v", a, b, got, want)
 		}
 	}
@@ -226,16 +226,19 @@ func TestExportedWrappers(t *testing.T) {
 	}
 }
 
-// TestFastAtan2FineAxes covers the branches for a vector on an axis, where the
-// ratio the approximation divides by is zero or infinite.
-func TestFastAtan2FineAxes(t *testing.T) {
+// TestFastAtan2Edges covers the axes and diagonals, where the octant folding
+// branches, and the zero, infinite and NaN arguments FastAtan2 documents.
+func TestFastAtan2Edges(t *testing.T) {
+	inf := float32(math.Inf(1))
+	nan := float32(math.NaN())
+	negZero := float32(math.Copysign(0, -1))
 	for _, tc := range []struct {
 		y, x float32
 		want float64
 	}{
-		{0, 0, 0},
 		{1, 0, math.Pi / 2},
 		{-1, 0, -math.Pi / 2},
+		{1, negZero, math.Pi / 2},
 		{0, 1, 0},
 		{0, -1, math.Pi},
 		{-0.0001, -1, -math.Pi},
@@ -243,12 +246,33 @@ func TestFastAtan2FineAxes(t *testing.T) {
 		{-1, -1, -3 * math.Pi / 4},
 		{1, -1, 3 * math.Pi / 4},
 		{-1, 1, -math.Pi / 4},
+		{1, inf, 0},
+		{inf, 1, math.Pi / 2},
+		{1, -inf, math.Pi},
 	} {
-		if got := FastAtan2Fine(tc.y, tc.x); math.Abs(float64(got)-tc.want) > 0.005 {
-			t.Errorf("FastAtan2Fine(%v, %v) = %v, want %v", tc.y, tc.x, got, tc.want)
-		}
-		if got := FastAtan2(tc.y, tc.x); math.Abs(float64(got)-tc.want) > 0.02 {
+		if got := FastAtan2(tc.y, tc.x); math.Abs(float64(got)-tc.want) > 1.7e-4 {
 			t.Errorf("FastAtan2(%v, %v) = %v, want %v", tc.y, tc.x, got, tc.want)
+		}
+	}
+	// A zero y gives +0 or +Pi whatever the signs of the zeros.
+	for _, tc := range []struct {
+		y, x float32
+		want float32
+	}{
+		{0, 0, 0},
+		{negZero, 0, 0},
+		{0, negZero, 0},
+		{negZero, negZero, 0},
+		{negZero, 1, 0},
+		{negZero, -1, math.Pi},
+	} {
+		if got := FastAtan2(tc.y, tc.x); math.Float32bits(got) != math.Float32bits(tc.want) {
+			t.Errorf("FastAtan2(%v, %v) = %v, want %v", tc.y, tc.x, got, tc.want)
+		}
+	}
+	for _, tc := range [][2]float32{{nan, 1}, {1, nan}, {nan, 0}, {0, nan}, {nan, nan}, {inf, inf}, {-inf, -inf}} {
+		if got := FastAtan2(tc[0], tc[1]); got == got {
+			t.Errorf("FastAtan2(%v, %v) = %v, want NaN", tc[0], tc[1], got)
 		}
 	}
 }

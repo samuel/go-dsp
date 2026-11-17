@@ -10,83 +10,61 @@ import "math"
 // They hold no state. The stateful types in dsp pass theirs in and store what
 // comes back.
 
+const pi2 = math.Pi / 2
+
+// The coefficients of atan(z) ~ z*(atanC1 + atanC3*z^2 + atanC5*z^4 +
+// atanC7*z^6) on [0, 1], fitted by Remez exchange to the least maximum
+// relative error, 2.1e-4. Relative rather than absolute error keeps the slope
+// at zero within that bound, so an FM discriminator's small phase steps come
+// out at the right scale; the absolute error is at most 1.7e-4 radians.
 const (
-	pi2  = math.Pi / 2
-	pi4  = math.Pi / 4
-	pi34 = math.Pi * 3 / 4
+	atanC1 = 0.999787867
+	atanC3 = -0.325808436
+	atanC5 = 0.155578747
+	atanC7 = -0.0443266146
 )
 
-// fastAtan2 is the reference for FastAtan2.
+// fastAtan2 is the reference for FastAtan2. It folds (x, y) into the first
+// octant, where the smaller magnitude over the larger is in [0, 1], and
+// unfolds the polynomial's angle from there.
 func fastAtan2(y, x float32) float32 {
-	absY := max(y, -y)
-	absY += 1e-20 // kludge to prevent 0/0 condition
-	var angle float32
+	ax, ay := abs(x), abs(y)
+	var a float32
 	switch {
-	case x < 0.0:
-		r := (x + absY) / (absY - x)
-		angle = pi34 + float32(quadPoly(r)*r)
-	case x > 0.0:
-		r := (x - absY) / (x + absY)
-		angle = pi4 + float32(quadPoly(r)*r)
-	case y < 0.0:
-		return -pi2
-	case y > 0.0:
-		return pi2
+	case ay > ax:
+		a = pi2 - atanPoly(ax/ay)
+	case ax > 0:
+		a = atanPoly(ay / ax)
 	default:
-		return 0.0
+		// Both zero, or a NaN in either: +0 or NaN.
+		return ax + ay
 	}
-	if y < 0.0 {
-		return -angle // negate if in quad III or IV
+	if x < 0 {
+		a = math.Pi - a
 	}
-	return angle
+	if y < 0 {
+		a = -a
+	}
+	return a
 }
 
-// quadPoly is 0.1963*r*r - 0.9817, the odd part of FastAtan2's quadrant
-// polynomial, with the product rounded before the subtraction.
-//
-// The explicit conversion is needed to ensure that arm64 does not change
-// the multiply and the subtraction into one FMSUB, which the unfused
-// MULF/SUBF pair in sample_arm.s cannot reproduce, and the two architectures
-// then disagree on the low bit of most inputs. Its caller rounds
-// the outer product for the same reason -- FMADD with pi34 or pi4.
-func quadPoly(r float32) float32 { return float32(0.1963*r*r) - 0.9817 }
-
-// fastAtan2Fine is the reference for FastAtan2Fine.
-func fastAtan2Fine(y, x float32) float32 {
-	if x == 0.0 {
-		switch {
-		case y > 0.0:
-			return pi2
-		case y < 0.0:
-			return -pi2
-		}
-		return 0.0
-	}
-	z := y / x
-	// Rounded explicitly, so that z*z cannot contract with the + 0.28 below
-	// into an FMADD that sample_arm.s's separate MULF and ADDF do not produce.
-	zz := float32(z * z)
-	if zz < 1.0 {
-		atan := z / (1.0 + float32(0.28*zz))
-		if x < 0.0 {
-			if y < 0.0 {
-				return atan - math.Pi
-			}
-			return atan + math.Pi
-		}
-		return atan
-	}
-	atan := pi2 - z/(zz+0.28)
-	if y < 0.0 {
-		return atan - math.Pi
-	}
-	return atan
+// atanPoly evaluates the polynomial for z in [0, 1]. Each product is rounded
+// before it is added so that arm64 cannot fuse an FMADD that the separate
+// MULF and ADDF in sample_arm.s do not produce.
+func atanPoly(z float32) float32 {
+	s := float32(z * z)
+	p := float32(atanC7*s) + atanC5
+	p = float32(p*s) + atanC3
+	p = float32(p*s) + atanC1
+	return float32(p * z)
 }
+
+func abs(v float32) float32 { return math.Float32frombits(math.Float32bits(v) &^ (1 << 31)) }
 
 // polarDiscriminator is fastAtan2 of a*conj(b). Each product is rounded before
 // it is added or subtracted. Without that, arm64 contracts the two pairs into
 // FMSUB and FMADD, which the four separate MULF instructions in sample_arm.s
-// cannot reproduce; see the note on quadPoly.
+// cannot reproduce.
 func polarDiscriminator(a, b complex64) float32 {
 	return fastAtan2(
 		float32(imag(a)*real(b))-float32(real(a)*imag(b)),

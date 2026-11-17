@@ -5,9 +5,6 @@ package f32
 // FastAtan2 returns an approximation of Atan2(y, x); see dsp.FastAtan2.
 func FastAtan2(y, x float32) float32
 
-// FastAtan2Fine returns an approximation of Atan2(y, x); see dsp.FastAtan2Fine.
-func FastAtan2Fine(y, x float32) float32
-
 // Rotate90 multiplies samples by 1, j, -1, -j in turn, over whole groups of
 // four. A trailing group of fewer than four is left untouched.
 //

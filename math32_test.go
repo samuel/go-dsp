@@ -5,10 +5,6 @@ import (
 	"testing"
 )
 
-const (
-	approxErrorLimit = 0.011
-)
-
 var atanBenchTable = [][2]float32{}
 
 func init() {
@@ -19,72 +15,35 @@ func init() {
 	}
 }
 
-func TestAtan2(t *testing.T) {
-	for y := -1.0; y <= 1.0; y += 0.01 {
-		for x := -1.0; x <= 1.0; x += 0.01 {
-			expected := float32(math.Atan2(y, x))
-			if err := math.Abs(float64(expected - FastAtan2(float32(y), float32(x)))); err > approxErrorLimit {
-				t.Errorf("FastAtan2 gave an error of %f for x=%f y=%f", err, x, y)
-			}
-			if err := math.Abs(float64(expected - FastAtan2Fine(float32(y), float32(x)))); err > approxErrorLimit {
-				t.Errorf("FastAtan2Fine gave an error of %f for x=%f y=%f", err, x, y)
-			}
-		}
-	}
-	x, y := 0.0, 0.0
-	expected := float32(math.Atan2(y, x))
-	if err := math.Abs(float64(expected - FastAtan2(float32(y), float32(x)))); err > approxErrorLimit {
-		t.Errorf("FastAtan2 gave an error of %f for x=%f y=%f", err, x, y)
-	}
-	if err := math.Abs(float64(expected - FastAtan2Fine(float32(y), float32(x)))); err > approxErrorLimit {
-		t.Errorf("FastAtan2Fine gave an error of %f for x=%f y=%f", err, x, y)
-	}
-}
-
+// TestFastAtan2Error holds FastAtan2 to its documented bounds around the whole
+// circle and at several magnitudes, and holds the relative error at angles
+// down to 1e-6, where an FM discriminator's phase steps are.
 func TestFastAtan2Error(t *testing.T) {
-	maxE := 0.0
-	sumE := 0.0
-	count := 0
-	for y := -1.0; y <= 1.0; y += 0.01 {
-		for x := -1.0; x <= 1.0; x += 0.01 {
-			ai := float64(FastAtan2(float32(y), float32(x)))
-			af := math.Atan2(y, x)
-			e := math.Abs(ai - af)
-			sumE += e
-			if e > maxE {
-				maxE = e
+	var maxAbs, maxRel float64
+	for i := range 100000 {
+		th := -math.Pi + 2*math.Pi*(float64(i)+0.5)/100000
+		s, c := math.Sincos(th)
+		for _, r := range []float64{1e-6, 1, 1e6} {
+			got := float64(FastAtan2(float32(r*s), float32(r*c)))
+			e := math.Abs(got - th)
+			maxAbs = max(maxAbs, e)
+			if math.Abs(th) <= math.Pi/2 {
+				maxRel = max(maxRel, e/math.Abs(th))
 			}
-			count++
 		}
 	}
-	if maxE > 0.0102 {
-		t.Errorf("Expected max error of 0.0102 got %f", maxE)
+	for th := 1e-6; th < 0.5; th *= 1.1 {
+		s, c := math.Sincos(th)
+		got := float64(FastAtan2(float32(s), float32(c)))
+		maxRel = max(maxRel, math.Abs(got-th)/th)
 	}
-	t.Logf("Max error %f\n", maxE)
-	t.Logf("Mean absolute error %f", sumE/float64(count))
-}
-
-func TestFastAtan2FineError(t *testing.T) {
-	maxE := 0.0
-	sumE := 0.0
-	count := 0
-	for y := -1.0; y <= 1.0; y += 0.01 {
-		for x := -1.0; x <= 1.0; x += 0.01 {
-			ai := float64(FastAtan2Fine(float32(y), float32(x)))
-			af := math.Atan2(y, x)
-			e := math.Abs(ai - af)
-			sumE += e
-			if e > maxE {
-				maxE = e
-			}
-			count++
-		}
+	t.Logf("max absolute error %.3g, max relative error %.3g", maxAbs, maxRel)
+	if maxAbs > 1.7e-4 {
+		t.Errorf("max absolute error %g, want at most 1.7e-4", maxAbs)
 	}
-	if maxE > 0.005 {
-		t.Errorf("Expected max error of 0.005 got %f", maxE)
+	if maxRel > 2.2e-4 {
+		t.Errorf("max relative error %g, want at most 2.2e-4", maxRel)
 	}
-	t.Logf("Max error %f\n", maxE)
-	t.Logf("Mean absolute error %f", sumE/float64(count))
 }
 
 func BenchmarkConj(b *testing.B) {
@@ -98,14 +57,6 @@ func BenchmarkFastAtan2(b *testing.B) {
 	for range b.N {
 		for _, xy := range atanBenchTable {
 			FastAtan2(xy[1], xy[0])
-		}
-	}
-}
-
-func BenchmarkFastAtan2Fine(b *testing.B) {
-	for range b.N {
-		for _, xy := range atanBenchTable {
-			FastAtan2Fine(xy[1], xy[0])
 		}
 	}
 }

@@ -6,158 +6,68 @@
 
 #define pi $3.14159265358979323846264338327950288419716939937510582097494459
 #define halfPi $1.570796326794896557998981734272092580795288085938
-#define negativeHalfPi $-1.570796326794896557998981734272092580795288085938
 
 #define vmrs_APSR_nzcv_fpscr WORD $0xeef1fa10
 
-// Uses F0, F1, F2, F3, F4, F6
+// F1 = atanPoly(F0), using F5 and F7.
+#define ATAN_POLY \
+	MULF F0, F0, F5;         \
+	MOVF $-0.0443266146, F1; \
+	MULF F5, F1;             \
+	MOVF $0.155578747, F7;   \
+	ADDF F7, F1;             \
+	MULF F5, F1;             \
+	MOVF $-0.325808436, F7;  \
+	ADDF F7, F1;             \
+	MULF F5, F1;             \
+	MOVF $0.999787867, F7;   \
+	ADDF F7, F1;             \
+	MULF F0, F1
+
+// F1 = FastAtan2(y=F6, x=F4), using F0, F2, F3, F5 and F7, continuing at done.
+// The labels are arguments so that each function has its own.
+//
+// F2 and F3 hold |y| and |x|. The first compare (vcmpe.f32 s4, s6) is false
+// for a NaN as well as for |y| <= |x|, and the second (vcmpe.f32 s6, #0) then
+// sends a zero or NaN |x| to F2+F3, which is +0 or NaN as in the reference.
+// Unfolding compares x (s8) and y (s12) with zero and acts on MI rather than
+// LT, which an unordered compare also meets: vnegmi.f32 s2, s2 negates the
+// result for a negative y.
+#define ATAN2(swap, fold, unfold, done) \
+	ABSF F6, F2;            \
+	ABSF F4, F3;            \
+	WORD $0xeeb42ac3;       \
+	vmrs_APSR_nzcv_fpscr;   \
+	BGT  swap;              \
+	WORD $0xeeb53ac0;       \
+	vmrs_APSR_nzcv_fpscr;   \
+	BGT  fold;              \
+	ADDF F2, F3, F1;        \
+	B    done;              \
+fold:                       \
+	DIVF F3, F2, F0;        \
+	ATAN_POLY;              \
+	B    unfold;            \
+swap:                       \
+	DIVF F2, F3, F0;        \
+	ATAN_POLY;              \
+	MOVF halfPi, F0;        \
+	SUBF F1, F0, F1;        \
+unfold:                     \
+	WORD $0xeeb54ac0;       \
+	vmrs_APSR_nzcv_fpscr;   \
+	MOVF    pi, F0;         \
+	SUBF.MI F1, F0, F1;     \
+	WORD $0xeeb56ac0;       \
+	vmrs_APSR_nzcv_fpscr;   \
+	WORD $0x4eb11a41;       \
+done:
+
 TEXT ·FastAtan2(SB), NOSPLIT, $-4
 	MOVF y+0(FP), F6
 	MOVF x+4(FP), F4
-
-	ABSF F6, F2
-
-	MOVF $1e-20, F0
-	ADDF F0, F2
-
-	WORD $0xeeb54ac0   // vcmpe.f32 s8, #0x0
-	vmrs_APSR_nzcv_fpscr
-	BGT  fatan2_pos_x
-	BEQ  fatan2_zero_x
-	BVS  fatan2_zero_x // x is NaN, so the compare is unordered; the Go
-	                   // reference finds it neither negative nor positive
-	                   // and falls through to the y tests too
-
-	ADDF F2, F4, F1             // x + abs(y)
-	SUBF F4, F2, F4             // abs(y) - x
-	MOVF $2.356194496154785, F3 // pi * 3/4
-	B    fatan2_2
-
-fatan2_pos_x:
-	SUBF F2, F4, F1              // x - abs(y)
-	ADDF F2, F4, F4              // abs(y) + x
-	MOVF $0.7853981852531433, F3 // pi * 1/4
-
-fatan2_2:
-	DIVF F4, F1, F2
-
-	MOVF $0.1963, F1
-	MULF F2, F1
-	MULF F2, F1
-	MOVF $0.9817, F0
-	SUBF F0, F1
-	MULF F2, F1
-	ADDF F3, F1
-
-	WORD $0xeeb56ac0   // vcmpe.f32 s12, #0x0
-	vmrs_APSR_nzcv_fpscr
-	WORD $0xbeb11a41   // vneglt.f32 s2, s2
+	ATAN2(atan_swap, atan_fold, atan_unfold, atan_done)
 	MOVF F1, ret+8(FP)
-	RET
-
-fatan2_zero_x:
-	WORD $0xeeb56ac0   // vcmpe.f32 s12, #0x0
-	vmrs_APSR_nzcv_fpscr
-	BGT  fatan2_pos_y
-
-	// MI rather than LT: LT is also true for an unordered compare, which would
-	// send a NaN y to -Pi/2 where the reference returns zero.
-	BMI  fatan2_neg_y
-
-	// y is zero, a negative zero or a NaN. The reference returns a positive
-	// zero for all three, so returning y itself will not do.
-	MOVF $0.0, F6
-	MOVF F6, ret+8(FP)
-	RET
-
-fatan2_neg_y:
-	MOVF negativeHalfPi, F6
-	MOVF F6, ret+8(FP)
-	RET
-
-fatan2_pos_y:
-	MOVF halfPi, F6
-	MOVF F6, ret+8(FP)
-	RET
-
-// Uses F0, F1, F2, F3, F4, F6
-TEXT ·FastAtan2Fine(SB), NOSPLIT, $-4
-	MOVF x+4(FP), F6
-	MOVF y+0(FP), F3
-	WORD $0xeeb56ac0    // vcmpe.f32 s12, #0x0
-	vmrs_APSR_nzcv_fpscr
-	BEQ  fatan22_zero_x
-
-	// y / x
-	DIVF F6, F3, F1
-	MULF F1, F1, F2
-	MOVF $1.0, F0
-
-	// CMPF F0, F2
-	WORD $0xeeb42ac0 // vcmpe.f32 s4, s0
-	vmrs_APSR_nzcv_fpscr
-
-	// GE, not GT: the reference branches on zz < 1.0, so zz == 1.0 takes the
-	// other arm. With GT, FastAtan2Fine(1, 1) returned 0.78125 here against
-	// 0.7895464 everywhere else. GE is false for an unordered compare, which
-	// sends a NaN zz down this arm -- harmless, since z is NaN there and both
-	// arms then produce NaN.
-	BGE  fatan22_5
-
-	// z / (1.0 + 0.28*z*z)
-	MOVF    $0.28, F4
-	MULF    F4, F2
-	ADDF    F0, F2
-	DIVF    F2, F1, F2
-	WORD    $0xeeb56ac0 // vcmpe.f32 s12, #0x0
-	vmrs_APSR_nzcv_fpscr
-	BGE     fatan22_6
-	MOVF    pi, F1
-	WORD    $0xeeb53ac0 // vcmpe.f32 s6, #0x0
-	vmrs_APSR_nzcv_fpscr
-	SUBF.LT F1, F2
-	ADDF.GE F1, F2
-
-fatan22_6:
-	MOVF F2, ret+8(FP)
-	RET
-
-fatan22_5:
-	// pi2 - z/(z*z+0.28)
-	MOVF    $0.28, F4
-	ADDF    F4, F2
-	DIVF    F2, F1, F2
-	MOVF    halfPi, F1
-	SUBF    F2, F1, F2
-	MOVF    pi, F1
-	WORD    $0xeeb53ac0   // vcmpe.f32 s6, #0x0
-	vmrs_APSR_nzcv_fpscr
-	SUBF.LT F1, F2
-	MOVF    F2, ret+8(FP)
-	RET
-
-fatan22_zero_x:
-	WORD $0xeeb53ac0 // vcmpe.f32 s6, #0x0
-	vmrs_APSR_nzcv_fpscr
-	BGT  fatan22_pi2
-
-	// MI rather than LT, for the reason given in FastAtan2 above.
-	BMI  fatan22_neg_pi2
-
-	// F6 still holds x, which is a zero of either sign here; the reference
-	// returns a positive one for it and for a NaN y.
-	MOVF $0.0, F6
-	MOVF F6, ret+8(FP)
-	RET
-
-fatan22_neg_pi2:
-	MOVF negativeHalfPi, F6
-	MOVF F6, ret+8(FP)
-	RET
-
-fatan22_pi2:
-	MOVF halfPi, F6
-	MOVF F6, ret+8(FP)
 	RET
 
 TEXT ·Rotate90(SB), NOSPLIT, $0
@@ -202,8 +112,8 @@ TEXT ·FMDemod(SB), NOSPLIT, $0
 	MOVW src_len+16(FP), R2
 	MOVW dst_base+0(FP), R3
 	MOVW dst_len+4(FP), R4
-	MOVF pre_real+24(FP), F5
-	MOVF pre_imag+28(FP), F1
+	MOVF pre_real+24(FP), F8
+	MOVF pre_imag+28(FP), F9
 
 	// Choose the shortest length
 	CMP     R2, R4
@@ -218,68 +128,18 @@ fmDemod_loop:
 	MOVF 4(R1), F3 // imag(inp)
 	ADD  $8, R1
 
-	MULF F3, F5, F6 // imag(inp)*real(pre)
-	MULF F2, F1, F0 // real(inp)*imag(pre)
-	MULF F2, F5, F4 // real(inp)*real(pre)
-	MULF F3, F1, F7 // imag(inp)*imag(pre)
+	MULF F3, F8, F6 // imag(inp)*real(pre)
+	MULF F2, F9, F0 // real(inp)*imag(pre)
+	MULF F2, F8, F4 // real(inp)*real(pre)
+	MULF F3, F9, F7 // imag(inp)*imag(pre)
 	SUBF F0, F6
 	ADDF F7, F4
 
-	MOVF F2, F5 // real(pre) = real(inp)
-	MOVF F3, F1 // imag(pre) = imag(inp)
+	MOVF F2, F8 // real(pre) = real(inp)
+	MOVF F3, F9 // imag(pre) = imag(inp)
 
-	// FastAtan2(y=F6, x=F4)
-
-	ABSF F6, F2
-	MOVF $1e-20, F0
-	ADDF F0, F2
-	WORD $0xeeb54ac0            // vcmpe.f32 s8, #0x0
-	WORD $0xeef1fa10            // vmrs APSR_nzcv, fpscr
-	BEQ  fmDemod_atan_zero_x
-	BGT  fmDemod_atan_pos_x
-	BVS  fmDemod_atan_zero_x    // x is NaN: unordered, and the Go reference
-	                            // falls through to the y tests for it too
-	ADDF F2, F4, F7             // x + abs(y)
-	SUBF F4, F2, F4             // abs(y) - x
-	MOVF $2.356194496154785, F3 // pi * 3/4
-	B    fmDemod_atan_1
-
-fmDemod_atan_pos_x:
-	SUBF F2, F4, F7              // x - abs(y)
-	ADDF F2, F4, F4              // abs(y) + x
-	MOVF $0.7853981852531433, F3 // pi * 1/4
-
-fmDemod_atan_1:
-	DIVF F4, F7, F2
-	MOVF $0.1963, F7
-	MULF F2, F7
-	MULF F2, F7
-	MOVF $0.9817, F0
-	SUBF F0, F7
-	MULF F2, F7
-	ADDF F3, F7
-	WORD $0xeeb56ac0       // vcmpe.f32 s12, #0x0
-	WORD $0xeef1fa10       // vmrs APSR_nzcv, fpscr
-	WORD $0xbeb17a47       // vneglt.f32 s14, s14
-	MOVF F7, 0(R3)
-	B    fmDemod_atan_done
-
-fmDemod_atan_zero_x:
-	WORD $0xeeb56ac0 // vcmpe.f32 s12, #0x0
-	WORD $0xeef1fa10 // vmrs APSR_nzcv, fpscr
-
-	// LE covers equal, less-than and unordered, so a zero, a negative zero or
-	// a NaN y all start at +0 as the Go reference returns; MI then claims the
-	// strictly negative case, which LT would have shared with a NaN.
-	MOVF.LE $0.0, F6
-	MOVF.MI $-1.570796326794896557998981734272092580795288085938, F6
-	MOVF.GT $1.570796326794896557998981734272092580795288085938, F6
-	MOVF    F6, 0(R3)
-
-fmDemod_atan_done:
-
-	//
-
+	ATAN2(fmDemod_swap, fmDemod_fold, fmDemod_unfold, fmDemod_atan_done)
+	MOVF F1, 0(R3)
 	ADD $4, R3
 
 	SUB $1, R2
@@ -287,8 +147,8 @@ fmDemod_atan_done:
 	BNE fmDemod_loop
 
 fmDemod_done:
-	MOVF F5, ret_real+32(FP)
-	MOVF F1, ret_imag+36(FP)
+	MOVF F8, ret_real+32(FP)
+	MOVF F9, ret_imag+36(FP)
 	RET
 
 TEXT ·BoxcarDecimate(SB), NOSPLIT, $0

@@ -9,8 +9,7 @@ import (
 
 // atan2Sweep is the argument sweep for the exact comparisons: both axes, both
 // diagonals, both zeros, the rails and the non-finite cases, plus enough
-// ordinary values to reach every quadrant and both sides of FastAtan2Fine's
-// |y/x| == 1 branch.
+// ordinary values to reach every octant.
 func atan2Sweep() []float32 {
 	vs := []float32{
 		0, float32(math.Copysign(0, -1)),
@@ -35,7 +34,7 @@ func sameFloat32(a, b float32) bool {
 	return math.Float32bits(a) == math.Float32bits(b)
 }
 
-// TestFastAtan2MatchesReference compares the kernels with the references bit
+// TestFastAtan2MatchesReference compares the kernel with the reference bit
 // for bit rather than within a tolerance.
 //
 // A tolerance is the wrong comparison here: the reference is the definition of
@@ -46,27 +45,17 @@ func sameFloat32(a, b float32) bool {
 // pick.
 func TestFastAtan2MatchesReference(t *testing.T) {
 	vs := atan2Sweep()
-	for _, p := range []struct {
-		name     string
-		got, ref func(y, x float32) float32
-	}{
-		{"FastAtan2", FastAtan2, fastAtan2},
-		{"FastAtan2Fine", FastAtan2Fine, fastAtan2Fine},
-	} {
-		t.Run(p.name, func(t *testing.T) {
-			for _, y := range vs {
-				for _, x := range vs {
-					if got, want := p.got(y, x), p.ref(y, x); !sameFloat32(got, want) {
-						t.Fatalf("%s(%v, %v) = %v, reference gives %v", p.name, y, x, got, want)
-					}
-				}
+	for _, y := range vs {
+		for _, x := range vs {
+			if got, want := FastAtan2(y, x), fastAtan2(y, x); !sameFloat32(got, want) {
+				t.Fatalf("FastAtan2(%v, %v) = %v, reference gives %v", y, x, got, want)
 			}
-		})
+		}
 	}
 }
 
 // TestFMDemodMatchesReference is the same comparison for the demodulator,
-// whose arm implementation inlines its own copy of FastAtan2 and so has to
+// whose arm implementation expands its own copy of FastAtan2 and so has to
 // agree on the same edges, and carry the same sample out.
 func TestFMDemodMatchesReference(t *testing.T) {
 	vs := atan2Sweep()

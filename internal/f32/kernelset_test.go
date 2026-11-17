@@ -18,7 +18,7 @@ func TestKernelSetComplete(t *testing.T) {
 		// The FIR and dot-product leaves behind the checked wrappers in fir.go.
 		{"fir_*.go", []string{"firF32", "cfirReal", "cfir", "dotF32", "cdotReal"}},
 		// The per-sample kernels, assembly on arm and the references elsewhere.
-		{"sample_*.go", []string{"FastAtan2", "FastAtan2Fine", "Rotate90", "FMDemod", "BoxcarDecimate", "RationalBoxcarDecimate"}},
+		{"sample_*.go", []string{"FastAtan2", "Rotate90", "FMDemod", "BoxcarDecimate", "RationalBoxcarDecimate"}},
 	} {
 		t.Run(fam.glob, func(t *testing.T) {
 			kernelset.Check(t, fam.glob, fam.names)
