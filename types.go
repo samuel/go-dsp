@@ -58,6 +58,41 @@ func realSample[T Sample](v float64) T {
 		*p = complex(float32(v), 0)
 	case *complex128:
 		*p = complex(v, 0)
+	default:
+		panic("dsp: realSample: no case for this width")
+	}
+	return z
+}
+
+// toComplex128 returns v as a complex128.
+func toComplex128[T Sample](v T) complex128 {
+	switch x := any(v).(type) {
+	case float32:
+		return complex(float64(x), 0)
+	case float64:
+		return complex(x, 0)
+	case complex64:
+		return complex128(x)
+	case complex128:
+		return x
+	}
+	panic("dsp: toComplex128: no case for this width")
+}
+
+// fromComplex128 returns v as a T, dropping the imaginary part for a real T.
+func fromComplex128[T Sample](v complex128) T {
+	var z T
+	switch p := any(&z).(type) {
+	case *float32:
+		*p = float32(real(v))
+	case *float64:
+		*p = real(v)
+	case *complex64:
+		*p = complex64(v)
+	case *complex128:
+		*p = v
+	default:
+		panic("dsp: fromComplex128: no case for this width")
 	}
 	return z
 }

@@ -32,7 +32,7 @@ func TestPLLLocksToACarrier(t *testing.T) {
 	}
 
 	// A carrier outside the range pins the frequency at its edge.
-	p, err = NewPLL[complex128](0.002, 0.005)
+	p, err = NewPLL[complex128](0.0125, 0.005)
 	if err != nil {
 		t.Fatal(err)
 	}

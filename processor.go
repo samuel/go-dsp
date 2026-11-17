@@ -5,7 +5,9 @@ package dsp
 // rotator and the mixer.
 //
 // Process consumes all of src and returns how many samples it wrote to dst,
-// which is OutputLen(len(src)). It panics if dst is shorter than that. State
+// which is OutputLen(len(src)). It panics if dst is shorter than that. A
+// processor whose output follows its input, such as SymbolSync, says so, and
+// for it OutputLen is an upper bound and Process returns the count. State
 // carries across calls, so a stream can be processed in blocks of any length,
 // and Reset returns the processor to the state its constructor left it in.
 //
@@ -39,6 +41,8 @@ func _[T Sample, F Float, C Complex]() {
 		_ Processor[T, T] = (*PowerSquelch[T])(nil)
 		_ Processor[C, C] = (*PLL[C])(nil)
 		_ Processor[C, F] = (*SidebandDemod[C, F])(nil)
+		_ Processor[C, C] = (*Costas[C])(nil)
+		_ Processor[T, T] = (*SymbolSync[T])(nil)
 	)
 }
 

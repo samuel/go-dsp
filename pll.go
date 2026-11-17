@@ -30,15 +30,17 @@ func NewPLL[C Complex](loopBandwidth, maxFreq float64) (*PLL[C], error) {
 	case !(maxFreq >= 0 && maxFreq <= 0.5):
 		return nil, errors.New("dsp: PLL frequency range must be in [0, 0.5] cycles per sample")
 	}
-	// Gains of a second-order loop with a proportional-plus-integral filter, from its noise
-	// bandwidth and damping (Rice, Digital Communications, appendix C).
-	theta := 2 * math.Pi * loopBandwidth / (pllDamping + 1/(4*pllDamping))
+	alpha, beta := loopGains(loopBandwidth)
+	return &PLL[C]{alpha: alpha, beta: beta, maxFreq: 2 * math.Pi * maxFreq}, nil
+}
+
+// loopGains returns the proportional and integral gains of a second-order loop with a
+// proportional-plus-integral filter and a unit-gain error detector, from its noise bandwidth
+// in cycles per update and pllDamping (Rice, Digital Communications, appendix C).
+func loopGains(loopBandwidth float64) (alpha, beta float64) {
+	theta := loopBandwidth / (pllDamping + 1/(4*pllDamping))
 	d := 1 + 2*pllDamping*theta + theta*theta
-	return &PLL[C]{
-		alpha:   4 * pllDamping * theta / d,
-		beta:    4 * theta * theta / d,
-		maxFreq: 2 * math.Pi * maxFreq,
-	}, nil
+	return 4 * pllDamping * theta / d, 4 * theta * theta / d
 }
 
 // Frequency returns the tracked carrier frequency in cycles per sample.

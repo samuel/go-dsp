@@ -18,7 +18,7 @@ Paths are relative to the module, `samuelks.com/dsp`, whose root is package
 
 | Path | Contents |
 | --- | --- |
-| `.` (`dsp`) | The main API: generic vector operations (`VScale`, `VAdd`, ...), FM demodulation, a phase-continuous `Oscillator` and `Mixer`, IIR/biquad/FIR filters, boxcar and FIR decimators, Goertzel tone detection, sliding DFT, fixed-size FFT, transfer-function evaluation, window functions, Kaiser-windowed sinc low-pass design (`LowPassFIR`), FIR interpolation (`FIRInterpolator`, zero-phase `Upsample`), interpolators including a polyphase `SincInterpolator`, an arbitrary-ratio `Resampler`, `AGC` and `PowerSquelch`, a carrier-tracking `PLL` and a `SidebandDemod` for SSB and CW, interleave/deinterleave, `FastAtan2`. |
+| `.` (`dsp`) | The main API: generic vector operations (`VScale`, `VAdd`, ...), FM demodulation, a phase-continuous `Oscillator` and `Mixer`, IIR/biquad/FIR filters, boxcar and FIR decimators, Goertzel tone detection, sliding DFT, fixed-size FFT, transfer-function evaluation, window functions, Kaiser-windowed sinc low-pass design (`LowPassFIR`), FIR interpolation (`FIRInterpolator`, zero-phase `Upsample`), interpolators including a polyphase `SincInterpolator`, an arbitrary-ratio `Resampler`, `AGC` and `PowerSquelch`, a carrier-tracking `PLL`, a `Costas` loop for BPSK and QPSK, `SymbolSync` timing recovery (Gardner or Mueller-Müller), raised-cosine and root-raised-cosine taps, and a `SidebandDemod` for SSB and CW, interleave/deinterleave, `FastAtan2`. |
 | `pcm` | The sample codec: `Format` names an encoding (`U8`, `I16LE`, `F32BE`, `MuLaw`, ...), and `Decode` and `Encode` move between bytes and full-scale samples of any width, real or interleaved complex. |
 | `ax25` | AX.25/HDLC frame encoding and decoding, NRZI line coding and CRC-16/X-25 `FCS`/`CheckFCS`. |
 | `fsk` | Binary FSK modulation and demodulation: Bell 202 and Bell 103 AFSK, or complex baseband, at any samples per symbol. |
@@ -68,9 +68,11 @@ out := make([]float32, len(in))
 lp.Process(out, in)
 ```
 
-Every filter, rate changer, `FMDemod`, `Rotator90`, `Mixer` and `SDFT` implements
-`dsp.Processor`: `Process(dst, src)` consumes all of `src` and returns the
-count it wrote, which is `OutputLen(len(src))`, and panics if `dst` is shorter.
+Every filter, rate changer, demodulator, loop, `Rotator90`, `Mixer` and `SDFT`
+implements `dsp.Processor`: `Process(dst, src)` consumes all of `src` and
+returns the count it wrote, which is `OutputLen(len(src))`, and panics if `dst`
+is shorter. `SymbolSync`, whose output follows the recovered clock, writes at
+most `OutputLen(len(src))`.
 `dst` may alias `src` wherever the output is no longer than the input, so
 `x = x[:d.Process(x, x)]` decimates in place. Rate changers report
 `Ratio() (in, out int)`: a decimator by 4 is `(4, 1)`, an interpolator by 4 is
@@ -398,7 +400,8 @@ go run ./examples/ax25 -rate 11025 -baud 300 -mark 1600 -space 1800 radio-paket3
   return nothing, and `pcm.Decode` and `pcm.Encode` return the samples
   converted.
 - **Stateful block processors implement `Processor`**: `Process` consumes all
-  of `src`, returns `OutputLen(len(src))` and panics if `dst` is shorter.
+  of `src`, returns `OutputLen(len(src))` (at most that where the output
+  follows the input, as in `SymbolSync`) and panics if `dst` is shorter.
   Rate changers report `Ratio() (in, out int)`, input rate to output rate.
   Accumulators (`Goertzel`, `dtmf.Decoder`, `ax25.Decoder`) take `Feed`.
 - **Stateful types** have a validating constructor and a `Reset`; none are safe

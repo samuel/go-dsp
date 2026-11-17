@@ -37,6 +37,15 @@ Go 1.27.
 - `dsp.SidebandDemod`: band-passes a complex signal, shifts it, and takes the
   real part, which demodulates SSB (upper or lower) and, with a shift for the
   beat frequency, CW.
+- `dsp.Costas`: a Costas loop that tracks the carrier of a BPSK (order 2) or
+  QPSK (order 4) signal and derotates it, with the PLL's loop bandwidth and
+  frequency range in cycles per sample.
+- `dsp.SymbolSync`: symbol timing recovery from a stream at a fractional number
+  of samples per symbol, with a Gardner or Mueller-Müller timing error detector,
+  cubic Farrow interpolation, and a loop bandwidth in cycles per symbol. Its
+  `OutputLen` is an upper bound and `Process` returns the count written.
+- `dsp.RootRaisedCosineFIR` (unit energy) and `dsp.RaisedCosineFIR` (peak 1,
+  zero at the other symbol instants): pulse-shaping and matched filter taps.
 - `dsp.PowerSquelch`: passes a signal while its average power is above a
   threshold in dBFS, with hysteresis, and writes zeros otherwise.
 - `dsp.DCFilter`: a one-pole DC blocker over real or complex samples, set by
