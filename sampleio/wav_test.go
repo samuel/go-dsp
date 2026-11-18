@@ -276,6 +276,13 @@ func pcmFmt(tag uint16, channels int, rate uint32, bits int) []byte {
 func TestWAVMalformed(t *testing.T) {
 	good := pcmFmt(wavPCM, 1, 8000, 16)
 	payload := i16(0.5, -0.5, 0.25, -0.25)
+	// A header whose data size is a placeholder gives no length; every other
+	// file that reads reports the frames it holds.
+	unknownLength := map[string]bool{
+		"placeholder data size":            true,
+		"zero data size":                   true,
+		"empty chunk in an unsized stream": true,
+	}
 
 	for _, tc := range []struct {
 		name    string
@@ -384,10 +391,12 @@ func TestWAVMalformed(t *testing.T) {
 			if err != nil {
 				t.Fatalf("rejected a file it should read: %v", err)
 			}
-			// A stream's length cannot be checked against anything, so it is
-			// reported as unknown whatever the header said.
-			if got := r.Info().Frames; got != -1 {
-				t.Errorf("Frames = %d, want -1 for a stream", got)
+			length := tc.frames
+			if unknownLength[tc.name] {
+				length = -1
+			}
+			if got := r.Info().Frames; got != length {
+				t.Errorf("Frames = %d, want %d", got, length)
 			}
 			// Whatever the header said, the payload has to come out.
 			if got := len(readAll(t, r, 3)); int64(got) != tc.frames {

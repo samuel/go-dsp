@@ -79,9 +79,16 @@ func TestReadRawMono(t *testing.T) {
 	if info := r.Info(); info.Container != Raw || info.Rate != 8000 || info.Channels != 1 {
 		t.Errorf("Info = %+v", info)
 	}
-	// A stream has no length.
-	if got := r.Info().Frames; got != -1 {
-		t.Errorf("Frames = %d, want -1 for a stream", got)
+	if got := r.Info().Frames; got != 4 {
+		t.Errorf("Frames = %d, want 4 for a source that can seek", got)
+	}
+	// A pipe has no length.
+	p, err := NewReader(struct{ io.Reader }{bytes.NewReader(i16(want...))}, Layout{Format: pcm.I16LE, Rate: 8000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Info().Frames; got != -1 {
+		t.Errorf("Frames = %d, want -1 for a pipe", got)
 	}
 }
 

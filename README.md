@@ -238,6 +238,10 @@ other `io.ReadSeeker`. For a WAV, `Chunks` returns the chunks ahead of the
 samples (`LIST`, `bext`, `cue `, ...), up to 1 MiB each and 4 MiB in total, and
 `Info().ChannelMask` the speaker assignment.
 
+`NewReader` reads a source the caller opened, such as an `fs.File` or a file
+from an `os.Root`. It finds the size the way `Open` does, from a `Stat` method
+or by seeking to the end, so it reports the same length. A pipe has none.
+
 ### Writing a capture
 
 `sampleio.Writer` takes full-scale samples at any width and writes a WAV,
@@ -256,7 +260,9 @@ Writing with a Reader's `Info().Layout` reproduces a capture's shape, speaker
 mask included. An integer sample past full scale is clipped, and `Info` records
 a Note the first time. `Layout.ChannelMask` sets a WAV's speaker assignment
 from the `Speaker` constants. `Format: pcm.ALaw` or `pcm.MuLaw` writes G.711, as a WAV
-or as the headerless `.al`/`.ul` stream.
+or as the headerless `.al`/`.ul` stream. A caller that creates the file itself
+for `NewWriter` calls `Layout.CheckWritable` first, so a bad layout does not
+truncate an existing file.
 
 ### RIFF containers
 

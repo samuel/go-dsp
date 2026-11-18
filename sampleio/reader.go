@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"os"
 	"slices"
@@ -99,34 +100,65 @@ type Reader struct {
 // format and rate. The zero Layout reads a WAV as it is.
 func Open(path string, l Layout) (*Reader, error) {
 	if path == "" || path == "-" {
-		return newReader(os.Stdin, nil, l, -1)
+		return newReader(os.Stdin, nil, l)
 	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	// The file size is what lets Info report a length before anything is read.
-	var size int64 = -1
-	if st, err := f.Stat(); err == nil && st.Mode().IsRegular() {
-		size = st.Size()
-	}
-	r, err := newReader(f, f, l, size)
+	r, err := newReader(f, f, l)
 	if err != nil {
-		_ = f.Close()
+		_ = f.Close() // the read error is the one to report
 		return nil, err
 	}
 	return r, nil
 }
 
-// NewReader reads samples from r, with l interpreted as it is by Open. The
-// length of r is not known, so Info().Frames is -1. Close does not close r.
+// NewReader reads samples from r, with l interpreted as it is by Open. Close
+// does not close r.
+//
+// The size of r is what lets Info report a length before anything is read,
+// what a WAV header's size is checked against, and where a headerless stream
+// stops. It is taken from a Stat method, as *os.File and fs.File have, when
+// that reports a regular file, and otherwise from seeking to the end of an
+// io.Seeker and back. When r can seek, the size counts from where r is when
+// NewReader is called; otherwise it counts from the start of the file. When
+// neither works, as for a pipe, Info().Frames is -1.
+//
+// A headerless file still being written stops at the size it had when
+// NewReader was called. Wrapping it as struct{ io.Reader }{f} reads it to EOF.
 func NewReader(r io.Reader, l Layout) (*Reader, error) {
-	return newReader(r, nil, l, -1)
+	return newReader(r, nil, l)
 }
 
-// newReader builds a Reader over src. size is the size of the file in bytes,
-// or -1 when src is not a regular file.
-func newReader(src io.Reader, closer io.Closer, l Layout, size int64) (*Reader, error) {
+// sourceSize returns how many bytes src holds from position at to its end, or
+// -1 when that is not known. s is src when it can seek, and nil otherwise. A
+// source with a Stat method has a size only when it is a regular file: seeking
+// to the end of a device or a pipe does not find one.
+func sourceSize(src io.Reader, s io.Seeker, at int64) (int64, error) {
+	if f, ok := src.(interface{ Stat() (fs.FileInfo, error) }); ok {
+		if st, err := f.Stat(); err == nil {
+			if !st.Mode().IsRegular() {
+				return -1, nil
+			}
+			return max(st.Size()-at, 0), nil
+		}
+	}
+	if s == nil {
+		return -1, nil
+	}
+	end, err := s.Seek(0, io.SeekEnd)
+	if err != nil {
+		return -1, nil //nolint:nilerr // the source has not moved, so it is read without a size
+	}
+	if _, err := s.Seek(at, io.SeekStart); err != nil {
+		return -1, fmt.Errorf("sampleio: returning to the original position after finding the size: %w", err)
+	}
+	return max(end-at, 0), nil
+}
+
+// newReader builds a Reader over src.
+func newReader(src io.Reader, closer io.Closer, l Layout) (*Reader, error) {
 	if l.Container < DetectContainer || l.Container > Raw {
 		return nil, fmt.Errorf("sampleio: %v is not a container", l.Container)
 	}
@@ -134,10 +166,15 @@ func newReader(src io.Reader, closer io.Closer, l Layout, size int64) (*Reader, 
 	r := &Reader{src: src, closer: closer}
 	r.info = Info{Container: Raw, Frames: -1}
 	// A pipe has a Seek method that fails, so try it.
+	var at int64
 	if s, ok := src.(io.ReadSeeker); ok {
-		if _, err := s.Seek(0, io.SeekCurrent); err == nil {
-			r.seeker = s
+		if pos, err := s.Seek(0, io.SeekCurrent); err == nil {
+			r.seeker, at = s, pos
 		}
+	}
+	size, err := sourceSize(src, r.seeker, at)
+	if err != nil {
+		return nil, err
 	}
 
 	// Look for a WAV header unless the caller said the stream has none.
@@ -161,11 +198,12 @@ func newReader(src io.Reader, closer io.Closer, l Layout, size int64) (*Reader, 
 			r.chunks = h.chunks
 			r.info.Notes = h.notes
 			dataBytes = h.dataBytes
-			if size >= 0 && dataBytes > size {
+			if held := size - h.headerBytes; size >= 0 && dataBytes > held {
 				// The writer streamed to a file and never went back to fix the
 				// size. The file size is the one to believe.
 				r.info.Notes = append(r.info.Notes, fmt.Sprintf(
-					"the data chunk claims %d bytes, more than the file holds; reading to the end", dataBytes))
+					"the data chunk claims %d bytes, more than the file holds (%d after the header); reading to the end",
+					dataBytes, max(held, 0)))
 				dataBytes = -1
 			}
 		}

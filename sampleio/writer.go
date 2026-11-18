@@ -65,7 +65,7 @@ func Create(path string, l Layout) (*Writer, error) {
 	}
 	// Check the layout before creating the file, so a bad one does not
 	// truncate a file that is already there.
-	if _, err := writerInfo(l); err != nil {
+	if err := l.CheckWritable(); err != nil {
 		return nil, err
 	}
 	f, err := os.Create(path)
@@ -113,6 +113,14 @@ func NewWriter(w io.Writer, l Layout) (*Writer, error) {
 		wr.n = copy(wr.buf, hdr)
 	}
 	return wr, nil
+}
+
+// CheckWritable returns the error NewWriter would return for l, without
+// writing anything. A caller that opens the destination itself checks the
+// layout first, so a bad one does not truncate a file that is already there.
+func (l Layout) CheckWritable() error {
+	_, err := writerInfo(l)
+	return err
 }
 
 // writerInfo validates l, fills in its defaults and returns the Info a Writer

@@ -167,8 +167,10 @@ type wavHeader struct {
 	wavFmt
 	format    pcm.Format
 	dataBytes int64 // -1 when the size cannot be trusted; read to EOF
-	chunks    []Chunk
-	notes     []string
+	// headerBytes is how many bytes come before the first sample.
+	headerBytes int64
+	chunks      []Chunk
+	notes       []string
 }
 
 // sniffWAV looks for a WAV header at the start of the stream and parses it.
@@ -198,7 +200,25 @@ func sniffWAV(src *io.Reader) (*wavHeader, error) {
 	default:
 		return nil, nil
 	}
-	return readWAVHeader(br)
+	cr := &countingReader{r: br}
+	h, err := readWAVHeader(cr)
+	if err != nil {
+		return nil, err
+	}
+	h.headerBytes = cr.n
+	return h, nil
+}
+
+// countingReader counts the bytes read through it.
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
 }
 
 // readWAVHeader reads the chunks up to the data chunk and leaves the reader

@@ -57,7 +57,10 @@ Go 1.27.
   (`Reader.IgnoreSize`).
 - `sampleio`: `Reader.SeekFrame` on a seekable source, `Reader.Skip` on any
   source, `Reader.Chunks` for the WAV chunks ahead of the samples, and the
-  speaker mask as `Layout.ChannelMask`.
+  speaker mask as `Layout.ChannelMask`. `NewReader` finds the size of a
+  source the caller opened (a `Stat` method or seeking to the end), so it
+  reports a length as `Open` does, and `Layout.CheckWritable` checks a layout
+  before the caller creates the file.
 - `dsp.Processor`: one block contract for every filter, decimator and
   interpolator, `FMDemod`, `Rotator90` and `SDFT`. `Process(dst, src)`
   consumes all of `src`, returns `OutputLen(len(src))` and panics if `dst` is
